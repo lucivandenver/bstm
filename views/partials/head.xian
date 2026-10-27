@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareerBridge</title>
+  
+  <!-- Airplane Favicon SVG to replace pinpoint location icon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈️</text></svg>">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              green: '#007042',
+              darkGreen: '#005230',
+              emerald: '#16a34a',
+              pink: '#F43F5E',
+              coral: '#FB7185',
+              navy: '#0F172A',
+              slate: '#1E293B',
+              bgLight: '#F8FAFC'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .text-gradient-pink {
+      background: linear-gradient(135deg, #FF2E93 0%, #E11D48 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .text-gradient-green {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Floating / Bouncing Subtle Animations for Knowledge Cards */
+    @keyframes floatSlow1 {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-7px); }
+    }
+    @keyframes floatSlow2 {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(8px); }
+    }
+    @keyframes floatSlow3 {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-6px); }
+    }
+    .animate-float-1 {
+      animation: floatSlow1 4s ease-in-out infinite;
+    }
+    .animate-float-2 {
+      animation: floatSlow2 4.6s ease-in-out infinite 0.5s;
+    }
+    .animate-float-3 {
+      animation: floatSlow3 4.2s ease-in-out infinite 1s;
+    }
+
+    /* Card Outline Highlights requested: Top & Bottom have Green outline, Middle has Pink outline */
+    .card-outline-green {
+      border: 2.5px solid #16a34a !important;
+      box-shadow: 0 10px 25px -5px rgba(22, 163, 74, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    }
+    .card-outline-pink {
+      border: 3px solid #E11D48 !important;
+      box-shadow: 0 20px 30px -10px rgba(225, 29, 72, 0.22), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+    }
+  </style>
+
+  <!-- Realtime SSE (Server-Sent Events) for instant live updates without manual reload -->
+  <script>
+    (function initRealtimeLiveReload() {
+      if (!window.EventSource) return;
+      let evtSource;
+      function connect() {
+        evtSource = new EventSource('/api/live-reload');
+        evtSource.onmessage = function(e) {
+          if (e.data === 'reload') {
+            // Instant seamless refresh of DOM or reload
+            console.log('⚡ Realtime SSE update received. Refreshing...');
+            window.location.reload();
+          }
+        };
+        evtSource.onerror = function() {
+          evtSource.close();
+          setTimeout(connect, 2000); // Auto reconnect
+        };
+      }
+      connect();
+    })();
+  </script>
+</head>

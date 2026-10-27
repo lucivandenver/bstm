@@ -1,0 +1,1141 @@
+{{> head }}
+<body class="bg-[#FAFAFA] text-slate-800 antialiased selection:bg-rose-500 selection:text-white">
+
+  <!-- TOP NAVIGATION BAR (Logos pushed far left, Buttons pushed far right) -->
+  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 transition-all">
+    <div class="w-full px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-20">
+        
+        <!-- Left: 4 Logos pushed far to the left side with perfectly balanced sizes -->
+        <a href="/" class="flex items-center gap-3.5 group">
+          <div class="flex items-center space-x-2 shrink-0">
+            <img src="/images/minsu_seal.png" alt="MinSU Seal" class="h-11 w-11 object-contain drop-shadow-sm hover:scale-105 transition-transform" />
+            <img src="/images/cbm_logo.png" alt="CBM Logo" class="h-11 w-11 object-contain drop-shadow-sm hover:scale-105 transition-transform" />
+            <img src="/images/council_tourism_logo.png" alt="Council of Tourism Students" class="h-12 w-12 object-contain drop-shadow-sm hover:scale-105 transition-transform" />
+          </div>
+          <div class="border-l border-gray-200 pl-3 flex items-center">
+            <img src="/images/careerbridge_brand_logo.png" alt="CareerBridge Logo" class="h-14 sm:h-16 w-auto object-contain hover:opacity-95 transition-all" />
+          </div>
+        </a>
+
+        <!-- Desktop Navigation Links -->
+        <nav class="hidden md:flex items-center space-x-8 text-[15px] font-medium text-gray-600">
+          <a href="#home" class="text-rose-600 font-semibold relative after:content-[''] after:absolute after:-bottom-1.5 after:left-0 after:right-0 after:h-0.5 after:bg-rose-600">Home</a>
+          
+          <!-- About Dropdown (Points to dedicated /about page anchors) -->
+          <div class="relative group">
+            <button class="flex items-center gap-1 hover:text-slate-900 transition-colors py-2">
+              <span>About</span>
+              <svg class="w-4 h-4 text-gray-400 group-hover:text-slate-700 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div class="absolute left-0 mt-1 w-52 bg-white rounded-none shadow-xl border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <a href="/about#about-section" class="block px-4 py-2 text-sm text-gray-700 hover:bg-rose-50 hover:text-rose-600 transition-colors">About CareerBridge</a>
+              <a href="/about#faq-section" class="block px-4 py-2 text-sm text-gray-700 hover:bg-rose-50 hover:text-rose-600 transition-colors">FAQ</a>
+            </div>
+          </div>
+
+          <a href="#features" class="hover:text-slate-900 transition-colors">Features</a>
+          
+          <!-- How It Works Dropdown -->
+          <div class="relative group">
+            <button class="flex items-center gap-1 hover:text-slate-900 transition-colors py-2">
+              <span>How It Works</span>
+              <svg class="w-4 h-4 text-gray-400 group-hover:text-slate-700 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div class="absolute left-0 mt-1 w-44 bg-white rounded-none shadow-xl border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <a href="#how-it-works" class="block px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">Overview</a>
+              <a href="#who-its-for" class="block px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">Who It's For</a>
+            </div>
+          </div>
+        </nav>
+
+        <!-- Right Side: Auth Buttons (Boxy corner style, shifted right) + Mobile Hamburger Button -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          <button onclick="openLoginModal()" class="px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-gray-700 hover:text-gray-900 rounded-none hover:bg-gray-100 transition-colors">
+            Log In
+          </button>
+          <button onclick="openRegisterModal()" class="px-4 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-[#007042] hover:bg-[#005a35] rounded-none shadow-sm hover:shadow transition-all duration-200">
+            Sign Up
+          </button>
+
+          <!-- Mobile Hamburger Toggle Button -->
+          <button id="mobileMenuBtn" onclick="toggleMobileNav()" class="md:hidden p-2 text-gray-600 hover:text-slate-900 hover:bg-gray-100 rounded-none focus:outline-none" aria-label="Toggle Navigation">
+            <svg id="hamburgerIcon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+            <svg id="closeMenuIcon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Mobile Navigation Drawer -->
+    <div id="mobileNavMenu" class="md:hidden hidden bg-white border-b border-gray-200 px-4 pt-2 pb-5 space-y-2 shadow-lg">
+      <a href="#home" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-semibold text-rose-600 hover:bg-rose-50 rounded-none">Home</a>
+      <a href="/about#about-section" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-medium text-gray-700 hover:bg-rose-50 hover:text-rose-600 rounded-none">About CareerBridge</a>
+      <a href="/about#faq-section" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-medium text-gray-700 hover:bg-rose-50 hover:text-rose-600 rounded-none">FAQ</a>
+      <a href="#features" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-medium text-gray-700 hover:bg-gray-50 rounded-none">Features</a>
+      <a href="#how-it-works" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-medium text-gray-700 hover:bg-gray-50 rounded-none">How It Works</a>
+      <a href="#who-its-for" onclick="toggleMobileNav()" class="block py-2.5 px-3 font-medium text-gray-700 hover:bg-gray-50 rounded-none">Who It's For</a>
+    </div>
+  </header>
+
+  <!-- 1. HERO SECTION WITH BACKGROUND CAROUSEL -->
+  <section id="home" class="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24">
+    
+    <!-- Hero Background Image Carousel -->
+    <div class="absolute inset-0 z-0 overflow-hidden">
+      <!-- Slide 1 -->
+      <div class="carousel-slide absolute inset-0 transition-opacity duration-1000 ease-in-out opacity-100">
+        <img src="/images/minsu_campus_1.jpg" alt="Mindoro State University Bongabong Campus" class="w-full h-full object-cover object-center filter brightness-[0.92] contrast-[1.05]" />
+      </div>
+      <!-- Slide 2 -->
+      <div class="carousel-slide absolute inset-0 transition-opacity duration-1000 ease-in-out opacity-0 pointer-events-none">
+        <img src="/images/minsu_hostel_2.jpg" alt="MinSU Bongabong Hostel" class="w-full h-full object-cover object-center filter brightness-[0.92] contrast-[1.05]" />
+      </div>
+      <!-- Slide 3 -->
+      <div class="carousel-slide absolute inset-0 transition-opacity duration-1000 ease-in-out opacity-0 pointer-events-none">
+        <img src="/images/minsu_building_3.jpg" alt="MinSU Academic Building" class="w-full h-full object-cover object-center filter brightness-[0.92] contrast-[1.05]" />
+      </div>
+
+      <!-- Gradient Overlay for readability -->
+      <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/80 to-white/40 backdrop-blur-[0.5px]"></div>
+    </div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        
+        <!-- Left Hero Content -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <!-- Campus Badge -->
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none bg-rose-50/90 border border-rose-200/80 backdrop-blur-sm shadow-sm">
+            <span class="w-2 h-2 rounded-none bg-[#E11D48] animate-pulse"></span>
+            <span class="text-xs font-bold tracking-wide uppercase text-rose-700">MINDORO STATE UNIVERSITY • BONGABONG CAMPUS</span>
+          </div>
+
+          <!-- Main Hero Heading -->
+          <h1 class="text-4xl sm:text-5xl lg:text-[54px] font-extrabold text-slate-900 tracking-tight leading-[1.15]">
+            Bridge the Gap Between <br />
+            <span class="text-[#E11D48]">Learning</span> & <span class="text-[#10B981]">Tourism</span> <br />
+            <span class="text-[#16a34a]">Careers</span>
+          </h1>
+
+          <!-- Description Subtext -->
+          <p class="text-base sm:text-lg text-slate-700 max-w-xl font-normal leading-relaxed">
+            A technology-based knowledge-readiness and career-matching platform for graduating Bachelor of Science in Tourism Management (BSTM) students. Discover your strengths, identify skill gaps, and navigate your professional journey.
+          </p>
+
+          <!-- Primary Call-to-actions (Boxy Type) -->
+          <div class="flex flex-wrap items-center gap-4 pt-2">
+            <button onclick="openRegisterModal()" class="inline-flex items-center gap-2 px-7 py-3.5 rounded-none text-base font-bold text-white bg-[#007042] hover:bg-[#005a35] shadow-lg shadow-green-900/10 hover:shadow-xl hover:-translate-y-0.5 transition-all">
+              <span>Take the Assessment</span>
+              <span class="text-lg">→</span>
+            </button>
+            <button onclick="openLoginModal()" class="inline-flex items-center px-7 py-3.5 rounded-none text-base font-bold text-[#E11D48] bg-white border-2 border-rose-200 hover:border-rose-400 hover:bg-rose-50/60 shadow-sm transition-all">
+              Log In to Account
+            </button>
+          </div>
+
+          <!-- Highlights Pills -->
+          <div class="flex flex-wrap items-center gap-2.5 pt-4">
+            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
+              <span>🎓</span> Graduating BSTM Students
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
+              <span>🌴</span> Tourism & Hospitality Focus
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
+              <span>📊</span> Research-Backed System
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Floating Dashboard Visual Cards: TOP & BOTTOM GREEN OUTLINE, MIDDLE PINK OUTLINE -->
+        <div class="lg:col-span-5 relative py-6 flex flex-col items-center lg:items-end">
+          
+          <div class="relative w-full max-w-[370px]">
+            
+            <!-- Card 1: Knowledge Readiness (Top Card: GREEN OUTLINE) -->
+            <div class="animate-float-1 relative z-10 bg-[#F8F9FA] rounded-[24px] p-6 shadow-xl card-outline-green mb-[-32px] w-[95%]">
+              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">KNOWLEDGE READINESS</span>
+              <div class="flex items-baseline gap-1.5 my-1">
+                <span class="text-3xl font-black text-slate-900">78%</span>
+                <span class="text-emerald-600 font-bold text-sm">↑</span>
+              </div>
+              <p class="text-xs text-gray-500 font-medium">Core BSTM Domains Verified</p>
+            </div>
+
+            <!-- Card 2: Top Recommended Match (Middle Protruding Card: PINK OUTLINE) -->
+            <div class="animate-float-2 relative z-20 bg-[#F8F9FA] rounded-[24px] p-6 shadow-2xl card-outline-pink mb-[-32px] w-full ml-[-12px] sm:ml-[-20px] transition-transform duration-300 hover:scale-105">
+              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">TOP RECOMMENDED MATCH</span>
+              <h4 class="text-[17px] font-extrabold text-slate-900 my-1">Tour Operations Manager</h4>
+              <p class="text-xs text-gray-500 font-medium">94% compatibility • Algorithmic Fit</p>
+            </div>
+
+            <!-- Card 3: Target Improvement (Bottom Card: GREEN OUTLINE) -->
+            <div class="animate-float-3 relative z-10 bg-[#F8F9FA] rounded-[24px] p-6 shadow-xl card-outline-green w-[95%]">
+              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">TARGET IMPROVEMENT</span>
+              <h4 class="text-[15px] font-extrabold text-slate-900 my-1">Digital Skills • PMS Tools</h4>
+              <p class="text-xs text-gray-500 font-medium">Smart Development Plan active</p>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Carousel Pagination Indicator Dots -->
+      <div class="flex items-center justify-center gap-2.5 pt-10">
+        <button onclick="setCarouselSlide(0)" class="carousel-dot w-3 h-3 rounded-full bg-rose-500 transition-all shadow-sm" aria-label="Slide 1"></button>
+        <button onclick="setCarouselSlide(1)" class="carousel-dot w-3 h-3 rounded-full bg-rose-200 transition-all hover:bg-rose-300 shadow-sm" aria-label="Slide 2"></button>
+        <button onclick="setCarouselSlide(2)" class="carousel-dot w-3 h-3 rounded-full bg-rose-200 transition-all hover:bg-rose-300 shadow-sm" aria-label="Slide 3"></button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 2. STATS BAR -->
+  <section class="relative z-20 py-8 bg-gradient-to-r from-[#DF707E] via-[#5FB875] to-[#4EA965] text-white shadow-inner">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-6 text-center divide-y md:divide-y-0 md:divide-x divide-white/20">
+        
+        <div class="pt-3 md:pt-0">
+          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">148+</div>
+          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Graduating BSTM Students</div>
+        </div>
+
+        <div class="pt-3 md:pt-0">
+          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">4</div>
+          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Skill Areas Assessed</div>
+        </div>
+
+        <div class="pt-3 md:pt-0">
+          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">7+</div>
+          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Career Pathways Matched</div>
+        </div>
+
+        <div class="pt-3 md:pt-0">
+          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">4.3★</div>
+          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Average System Rating</div>
+        </div>
+
+        <div class="pt-3 md:pt-0 col-span-2 md:col-span-1">
+          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">6</div>
+          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Research Objectives</div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. SYSTEM FEATURES SECTION (BOXY TYPE DESIGN) -->
+  <section id="features" class="py-20 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Section Header -->
+      <div class="text-center max-w-3xl mx-auto space-y-3">
+        <span class="inline-block px-3 py-1 rounded-none text-xs font-bold uppercase tracking-wider text-rose-600 bg-rose-100 border border-rose-200">
+          SYSTEM FEATURES
+        </span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          Everything You Need to Plan Your Career
+        </h2>
+        <p class="text-slate-600 text-base sm:text-lg">
+          CareerBridge gives students a complete set of tools to assess readiness and find the right tourism career path.
+        </p>
+      </div>
+
+      <!-- Feature Cards Grid: Fully Adaptive across all screensizes (xs, sm, md, lg, xl, 2xl) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 lg:gap-8 mt-10 sm:mt-14">
+        
+        <!-- Feature 1 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-emerald-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-orange-50 border border-orange-100 group-hover:scale-110 transition-transform">📋</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-orange-600 bg-orange-50 px-2 py-0.5 border border-orange-200">Assessment</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-emerald-700 transition-colors">Knowledge-Readiness Assessment</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Structured 10-section comprehensive survey evaluating Tourism Core, Communication, Workplace, and Digital PMS skills.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-emerald-700">
+            <span>10 Structured Modules</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-rose-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-rose-50 border border-rose-100 group-hover:scale-110 transition-transform">🎯</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 px-2 py-0.5 border border-rose-200">Matching</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-rose-600 transition-colors">Smart Career Matching</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Algorithmic engine cross-analyzes student scores, interests, OJT, and qualifications against 7+ tourism career tracks.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-rose-600">
+            <span>7+ Career Pathways</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-blue-50 border border-blue-100 group-hover:scale-110 transition-transform">📈</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 border border-blue-200">Diagnostic</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">Skills Gap Analysis</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Instantly detects specific competencies needing improvement with priority levels and targeted action guidelines.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-blue-600">
+            <span>Targeted Skill Action</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-purple-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-purple-50 border border-purple-100 group-hover:scale-110 transition-transform">📊</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-2 py-0.5 border border-purple-200">Admin</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-purple-600 transition-colors">Analytics Dashboard</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Equips faculty advisors with real-time class readiness distributions, completion tracking, and cohort evaluations.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-purple-600">
+            <span>Realtime Cohort Data</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-pink-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-pink-50 border border-pink-100 group-hover:scale-110 transition-transform">🤖</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-pink-600 bg-pink-50 px-2 py-0.5 border border-pink-200">AI Logic</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-pink-600 transition-colors">AI-Powered Suggestions</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Personalized algorithmic recommendations based on individual assessment trends and career development priorities.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-pink-600">
+            <span>Automated Guidance</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-teal-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-3xl p-3 bg-teal-50 border border-teal-100 group-hover:scale-110 transition-transform">⬇️</span>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-teal-600 bg-teal-50 px-2 py-0.5 border border-teal-200">Export</span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-teal-600 transition-colors">Downloadable Reports</h3>
+            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
+              Graduating students can generate and export their comprehensive verified readiness profile and matching certificate.
+            </p>
+          </div>
+          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-teal-600">
+            <span>Instant PDF Export</span>
+            <span class="group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 4. HOW IT WORKS SECTION (BOXY DESIGN) -->
+  <section id="how-it-works" class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Section Header -->
+      <div class="text-center max-w-3xl mx-auto space-y-3">
+        <span class="inline-block px-3 py-1 rounded-none text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 border border-emerald-200">
+          HOW IT WORKS
+        </span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          Your Path to Career Clarity
+        </h2>
+        <p class="text-slate-600 text-base sm:text-lg">
+          In a few simple steps, CareerBridge helps you discover your readiness level and find a career that fits you.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center mt-14">
+        
+        <!-- Left: Steps 1-5 -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+              1
+            </div>
+            <div>
+              <h4 class="text-lg font-bold text-slate-900">Create Your Account</h4>
+              <p class="text-slate-600 text-sm mt-0.5">Register with your student ID and set up your academic profile and OJT experience.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+              2
+            </div>
+            <div>
+              <h4 class="text-lg font-bold text-slate-900">Take the Assessment</h4>
+              <p class="text-slate-600 text-sm mt-0.5">Complete the 10-section knowledge-readiness survey at your own pace.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+              3
+            </div>
+            <div>
+              <h4 class="text-lg font-bold text-slate-900">Get Your Career Matches</h4>
+              <p class="text-slate-600 text-sm mt-0.5">The system analyzes your profile and generates ranked tourism career options.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+              4
+            </div>
+            <div>
+              <h4 class="text-lg font-bold text-slate-900">Explore & Improve</h4>
+              <p class="text-slate-600 text-sm mt-0.5">Review your skills gap analysis and follow recommended steps to bridge your gaps.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="w-10 h-10 rounded-none bg-[#839788] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+              5
+            </div>
+            <div>
+              <h4 class="text-lg font-bold text-slate-900">Submit Your Evaluation</h4>
+              <p class="text-slate-600 text-sm mt-0.5">Rate the system and share feedback to contribute to the ongoing research study.</p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: Process Status Card Preview (Boxy) -->
+        <div class="lg:col-span-5">
+          <div class="bg-[#F6FAF6] border border-emerald-100 rounded-none p-6 shadow-md space-y-3.5">
+            
+            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl">🪪</span>
+              <div>
+                <h5 class="text-sm font-bold text-slate-900">Profile Created</h5>
+                <p class="text-xs text-gray-500">Student ID & academic background captured</p>
+              </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl">📋</span>
+              <div>
+                <h5 class="text-sm font-bold text-slate-900">Assessment Done</h5>
+                <p class="text-xs text-gray-500">78% overall readiness score recorded</p>
+              </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl">🎯</span>
+              <div>
+                <h5 class="text-sm font-bold text-slate-900">Top Match Found</h5>
+                <p class="text-xs text-gray-500">Hotel & Resort Operations – 94% match</p>
+              </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl">📈</span>
+              <div>
+                <h5 class="text-sm font-bold text-slate-900">Gap Report Ready</h5>
+                <p class="text-xs text-gray-500">2 high-priority skill areas identified</p>
+              </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl">🤖</span>
+              <div>
+                <h5 class="text-sm font-bold text-slate-900">AI Suggestions Sent</h5>
+                <p class="text-xs text-gray-500">5 personalized career tips generated</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 5. WHO IT'S FOR SECTION (BOXY DESIGN AS REQUESTED) -->
+  <section id="who-its-for" class="py-20 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Section Header -->
+      <div class="text-center max-w-3xl mx-auto space-y-3">
+        <span class="inline-block px-3 py-1 rounded-none text-xs font-bold uppercase tracking-wider text-rose-600 bg-rose-100 border border-rose-200">
+          WHO IT'S FOR
+        </span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          Designed for Two Types of Users
+        </h2>
+        <p class="text-slate-600 text-base sm:text-lg">
+          CareerBridge serves both graduating students exploring their career path and teachers or administrators overseeing the assessment process.
+        </p>
+      </div>
+
+      <!-- 2 Boxy Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-14">
+        
+        <!-- Graduating BSTM Students Card (Boxy) -->
+        <div class="bg-[#FFF5F6] rounded-none p-8 sm:p-10 border border-rose-200/80 shadow-sm hover:shadow-lg transition-all">
+          <div class="text-4xl mb-4">🎓</div>
+          <h3 class="text-2xl font-black text-slate-900 mb-3">Graduating BSTM Students</h3>
+          <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
+            You're about to enter the tourism and hospitality industry. CareerBridge helps you understand where you stand, what careers suit you best, and what you need to work on.
+          </p>
+
+          <ul class="space-y-3 text-sm font-semibold text-slate-700">
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-rose-500"></span>
+              Take the knowledge-readiness assessment
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-rose-500"></span>
+              View personalized career match results
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-rose-500"></span>
+              Identify and address skills gaps
+            </li>
+          </ul>
+        </div>
+
+        <!-- Teachers & Administrators Card (Boxy) -->
+        <div class="bg-[#F0FDF4] rounded-none p-8 sm:p-10 border border-emerald-200/80 shadow-sm hover:shadow-lg transition-all">
+          <div class="text-4xl mb-4">👨‍🏫</div>
+          <h3 class="text-2xl font-black text-slate-900 mb-3">Teachers & Administrators</h3>
+          <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
+            Monitor student progress, analyze class-wide readiness scores, and use the data to improve career guidance, training, and curriculum support.
+          </p>
+
+          <ul class="space-y-3 text-sm font-semibold text-slate-700">
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
+              View all student assessment records
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
+              Monitor class readiness scores and trends
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
+              Analyze career match distributions
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
+              Generate and export research reports
+            </li>
+          </ul>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 6. SIGNIFICANCE OF THE STUDY SECTION (BOXY BENEFICIARY CARDS) -->
+  <section id="about-significance" class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Section Header -->
+      <div class="text-center max-w-3xl mx-auto space-y-3">
+        <span class="inline-block px-3 py-1 rounded-none text-xs font-bold uppercase tracking-wider text-rose-600 bg-rose-100 border border-rose-200">
+          SIGNIFICANCE OF THE STUDY
+        </span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          Who Benefits from This Study
+        </h2>
+        <p class="text-slate-600 text-base sm:text-lg">
+          The findings of this research benefit multiple stakeholders in the education, industry, and research communities.
+        </p>
+      </div>
+
+      <!-- Top 4 Beneficiaries (Boxy) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-14">
+        
+        <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
+          <div class="text-4xl mb-4">🎓</div>
+          <h4 class="text-base font-bold text-slate-900 mb-2">Graduating BSTM Students</h4>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Understand knowledge readiness, identify areas for improvement, and explore aligned career options before entering the industry.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
+          <div class="text-4xl mb-4">📚</div>
+          <h4 class="text-base font-bold text-slate-900 mb-2">BSTM Program & Faculty</h4>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Gain insights into student preparation and skill gaps to enhance career guidance, training, and curriculum support.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
+          <div class="text-4xl mb-4">🏫</div>
+          <h4 class="text-base font-bold text-slate-900 mb-2">MinSU Bongabong Campus</h4>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            A technology-based approach for supporting graduating students as they transition from academics to the workforce.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
+          <div class="text-4xl mb-4">🌴</div>
+          <h4 class="text-base font-bold text-slate-900 mb-2">Tourism & Hospitality Industry</h4>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Understand the knowledge, skills, and interests that graduating BSTM students associate with available career opportunities.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Bottom Centered 5th Beneficiary: Future Researchers (Boxy) -->
+      <div class="max-w-md mx-auto mt-6">
+        <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
+          <div class="text-4xl mb-4">🔬</div>
+          <h4 class="text-base font-bold text-slate-900 mb-2">Future Researchers</h4>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Serves as a reference and foundation for future studies on career readiness, tourism education, and technology-based assessment systems.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 7. CALL TO ACTION BANNER (BOXY BUTTONS) -->
+  <section class="bg-[#1E293B] text-white py-16">
+    <div class="max-w-4xl mx-auto px-4 text-center space-y-4">
+      <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight">
+        Ready to Find Your Career Path?
+      </h2>
+      <p class="text-slate-300 text-sm sm:text-base max-w-xl mx-auto">
+        Take the knowledge-readiness assessment and discover which tourism careers are the best match for you.
+      </p>
+      <div class="flex items-center justify-center gap-4 pt-4">
+        <!-- Boxy buttons with corners -->
+        <button onclick="openRegisterModal()" class="px-7 py-3.5 rounded-none font-bold text-white bg-[#007042] hover:bg-[#005a35] shadow-md transition-all">
+          Create Account
+        </button>
+        <button onclick="openLoginModal()" class="px-7 py-3.5 rounded-none font-bold text-slate-200 bg-transparent border border-slate-600 hover:bg-slate-800 transition-all">
+          Log In
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. DETAILED FOOTER (BALANCED LOGOS) -->
+  <footer class="bg-[#111827] text-gray-400 py-12 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        
+        <!-- Col 1: Brand & 3 Perfectly Balanced Logos + Transparent CareerBridge Logo -->
+        <div class="space-y-4">
+          <div class="flex items-center space-x-2.5">
+            <img src="/images/minsu_seal.png" alt="MinSU Seal" class="h-10 w-10 object-contain" />
+            <img src="/images/cbm_logo.png" alt="CBM Logo" class="h-10 w-10 object-contain" />
+            <img src="/images/council_tourism_logo.png" alt="Council of Tourism Students" class="h-11 w-11 object-contain" />
+          </div>
+          <div class="mt-2">
+            <img src="/images/careerbridge_brand_logo.png" alt="CareerBridge" class="h-12 w-auto object-contain brightness-110 mb-2" />
+            <p class="text-xs text-gray-400 leading-relaxed">
+              Technology-based knowledge-readiness assessment and career matching platform for graduating BSTM students at Mindoro State University – Bongabong Campus.
+            </p>
+          </div>
+        </div>
+
+        <!-- Col 2: Navigation -->
+        <div>
+          <h6 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Navigation</h6>
+          <ul class="space-y-2 text-xs">
+            <li><a href="#home" class="hover:text-white transition-colors">Home</a></li>
+            <li><a href="#features" class="hover:text-white transition-colors">Platform Features</a></li>
+            <li><a href="#how-it-works" class="hover:text-white transition-colors">How It Works</a></li>
+            <li><a href="#who-its-for" class="hover:text-white transition-colors">Who It's For</a></li>
+          </ul>
+        </div>
+
+        <!-- Col 3: About & Help (Points to /about) -->
+        <div>
+          <h6 class="text-xs font-bold text-white uppercase tracking-wider mb-3">About & Help</h6>
+          <ul class="space-y-2 text-xs">
+            <li><a href="/about#about-section" class="hover:text-white transition-colors">About CareerBridge</a></li>
+            <li><a href="/about#faq-section" class="hover:text-white transition-colors">Frequently Asked Questions</a></li>
+            <li><a href="#features" class="hover:text-white transition-colors">Core Competencies</a></li>
+          </ul>
+        </div>
+
+        <!-- Col 4: Access Portal (Opens Modals) -->
+        <div>
+          <h6 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Access Portal</h6>
+          <ul class="space-y-2 text-xs">
+            <li><button onclick="openLoginModal()" class="hover:text-white transition-colors text-left">Student Sign In</button></li>
+            <li><button onclick="openRegisterModal()" class="hover:text-white transition-colors text-left">Create Student Account</button></li>
+            <li><button onclick="openLoginModal()" class="hover:text-white transition-colors text-left">Faculty / Admin Sign In</button></li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- Bottom Line -->
+      <div class="mt-12 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-500">
+        <div>
+          &copy; 2026 BSTM CareerBridge • Mindoro State University Bongabong Campus
+        </div>
+        <div class="mt-2 sm:mt-0 font-medium text-gray-400">
+          College of Business and Management (CBM) • Council of Tourism Students
+        </div>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- ================= POPUP MODALS (BOXY DESIGN WITH SHARP CORNERS) ================= -->
+
+  <!-- 1. LOGIN POPUP MODAL (BOXY) -->
+  <div id="loginModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div class="relative w-full max-w-[440px] my-8 bg-white rounded-none shadow-2xl p-8 sm:p-10 border border-gray-300 transition-all scale-95 opacity-0 duration-200" id="loginModalCard">
+      
+      <!-- Close Button -->
+      <button onclick="closeLoginModal()" class="absolute top-5 right-5 text-gray-400 hover:text-gray-700 p-1.5 hover:bg-gray-100 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <!-- Modal Card Header -->
+      <div class="mb-6">
+        <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign In</h2>
+      </div>
+
+      <!-- Form -->
+      <form action="/login" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_login_email">Email address</label>
+          <input 
+            type="email" 
+            id="modal_login_email" 
+            name="email" 
+            placeholder="you@example.com" 
+            required 
+            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-sm font-semibold text-slate-700" for="modal_login_password">Password</label>
+            <a href="/forgot-password" class="text-xs font-semibold text-[#007042] hover:text-[#005230] transition-colors">Forgot?</a>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="modal_login_password" 
+              name="password" 
+              placeholder="Enter your password" 
+              required 
+              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+            />
+            <button 
+              type="button" 
+              onclick="toggleModalPassword('modal_login_password', this)" 
+              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          class="w-full py-3 px-4 bg-[#007042] hover:bg-[#005a35] text-white font-bold rounded-none shadow-sm hover:shadow transition-all duration-200 mt-2 text-sm tracking-wide"
+        >
+          Log in
+        </button>
+      </form>
+
+      <!-- OR Divider -->
+      <div class="relative flex py-5 items-center">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="flex-shrink mx-4 text-xs font-medium text-gray-400 uppercase">or</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+      </div>
+
+      <!-- Google Sign In -->
+      <a 
+        href="#" 
+        class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        Sign in with Google
+      </a>
+
+      <!-- Switch to Register -->
+      <p class="text-center text-xs text-slate-600 mt-5">
+        New to CareerBridge? 
+        <button onclick="switchToRegisterModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create an account</button>
+      </p>
+
+      <!-- Terms -->
+      <p class="text-center text-[11px] text-gray-400 mt-4 leading-relaxed">
+        By logging in, you agree to CareerBridge's 
+        <a href="#" class="underline text-gray-500 hover:text-gray-700">Terms</a> & 
+        <a href="#" class="underline text-gray-500 hover:text-gray-700">Privacy Policy</a>
+      </p>
+
+    </div>
+  </div>
+
+
+  <!-- 2. REGISTER POPUP MODAL (BOXY) -->
+  <div id="registerModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div class="relative w-full max-w-[460px] my-8 bg-white rounded-none shadow-2xl p-8 sm:p-10 border border-gray-300 transition-all scale-95 opacity-0 duration-200" id="registerModalCard">
+      
+      <!-- Close Button -->
+      <button onclick="closeRegisterModal()" class="absolute top-5 right-5 text-gray-400 hover:text-gray-700 p-1.5 hover:bg-gray-100 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <!-- Modal Card Header -->
+      <div class="mb-5">
+        <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign Up</h2>
+      </div>
+
+      <!-- Form -->
+      <form action="/register" method="POST" class="space-y-3.5">
+        
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_name">Full name</label>
+          <input 
+            type="text" 
+            id="modal_reg_name" 
+            name="name" 
+            placeholder="Juan Dela Cruz" 
+            required 
+            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_student_id">Student ID</label>
+          <input 
+            type="text" 
+            id="modal_reg_student_id" 
+            name="student_id" 
+            placeholder="e.g. 2021-0001" 
+            required 
+            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_section">Section</label>
+          <div class="relative">
+            <select 
+              id="modal_reg_section" 
+              name="section" 
+              required 
+              class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm bg-white appearance-none focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+            >
+              <option value="" disabled selected>Select Section</option>
+              <option value="-1">-1</option>
+              <option value="-2">-2</option>
+              <option value="-3">-3</option>
+              <option value="-4">-4</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-500">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_email">Email address</label>
+          <input 
+            type="email" 
+            id="modal_reg_email" 
+            name="email" 
+            placeholder="you@example.com" 
+            required 
+            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_password">Password</label>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="modal_reg_password" 
+              name="password" 
+              placeholder="Create a strong password" 
+              required 
+              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+            />
+            <button 
+              type="button" 
+              onclick="toggleModalPassword('modal_reg_password', this)" 
+              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_confirm_password">Confirm password</label>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="modal_reg_confirm_password" 
+              name="confirm_password" 
+              placeholder="Re-enter your password" 
+              required 
+              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+            />
+            <button 
+              type="button" 
+              onclick="toggleModalPassword('modal_reg_confirm_password', this)" 
+              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          class="w-full py-3 px-4 bg-[#007042] hover:bg-[#005a35] text-white font-bold rounded-none shadow-sm hover:shadow transition-all duration-200 mt-2 text-sm tracking-wide"
+        >
+          Create account
+        </button>
+      </form>
+
+      <!-- OR Divider -->
+      <div class="relative flex py-4 items-center">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="flex-shrink mx-4 text-xs font-medium text-gray-400 uppercase">or</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+      </div>
+
+      <!-- Google Sign In -->
+      <a 
+        href="#" 
+        class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        Sign up with Google
+      </a>
+
+      <!-- Switch to Login -->
+      <p class="text-center text-xs text-slate-600 mt-4">
+        Already have an account? 
+        <button onclick="switchToLoginModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Log in</button>
+      </p>
+
+      <!-- Terms -->
+      <p class="text-center text-[11px] text-gray-400 mt-3 leading-relaxed">
+        By creating an account, you agree to CareerBridge's 
+        <a href="#" class="underline text-gray-500 hover:text-gray-700">Terms</a> & 
+        <a href="#" class="underline text-gray-500 hover:text-gray-700">Privacy Policy</a>
+      </p>
+
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC: MODAL & CAROUSEL -->
+  <script>
+    // --- Background Carousel Logic ---
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.carousel-slide');
+    const dots = document.querySelectorAll('.carousel-dot');
+    let slideInterval;
+
+    function setCarouselSlide(index) {
+      currentSlide = index;
+      slides.forEach((slide, i) => {
+        if (i === currentSlide) {
+          slide.classList.remove('opacity-0', 'pointer-events-none');
+          slide.classList.add('opacity-100');
+        } else {
+          slide.classList.remove('opacity-100');
+          slide.classList.add('opacity-0', 'pointer-events-none');
+        }
+      });
+
+      dots.forEach((dot, i) => {
+        if (i === currentSlide) {
+          dot.classList.add('bg-rose-500');
+          dot.classList.remove('bg-rose-200');
+        } else {
+          dot.classList.remove('bg-rose-500');
+          dot.classList.add('bg-rose-200');
+        }
+      });
+    }
+
+    function startAutoSlide() {
+      slideInterval = setInterval(() => {
+        let nextSlide = (currentSlide + 1) % slides.length;
+        setCarouselSlide(nextSlide);
+      }, 4500);
+    }
+
+    if (slides.length > 0) {
+      startAutoSlide();
+    }
+
+    // --- Modal Management (Boxy) ---
+    const loginModal = document.getElementById('loginModal');
+    const loginModalCard = document.getElementById('loginModalCard');
+    const registerModal = document.getElementById('registerModal');
+    const registerModalCard = document.getElementById('registerModalCard');
+
+    function openLoginModal() {
+      closeRegisterModal();
+      loginModal.classList.remove('hidden');
+      loginModal.classList.add('flex');
+      setTimeout(() => {
+        loginModalCard.classList.remove('scale-95', 'opacity-0');
+        loginModalCard.classList.add('scale-100', 'opacity-100');
+      }, 10);
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeLoginModal() {
+      loginModalCard.classList.remove('scale-100', 'opacity-100');
+      loginModalCard.classList.add('scale-95', 'opacity-0');
+      setTimeout(() => {
+        loginModal.classList.add('hidden');
+        loginModal.classList.remove('flex');
+        document.body.style.overflow = '';
+      }, 150);
+    }
+
+    function openRegisterModal() {
+      closeLoginModal();
+      registerModal.classList.remove('hidden');
+      registerModal.classList.add('flex');
+      setTimeout(() => {
+        registerModalCard.classList.remove('scale-95', 'opacity-0');
+        registerModalCard.classList.add('scale-100', 'opacity-100');
+      }, 10);
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeRegisterModal() {
+      registerModalCard.classList.remove('scale-100', 'opacity-100');
+      registerModalCard.classList.add('scale-95', 'opacity-0');
+      setTimeout(() => {
+        registerModal.classList.add('hidden');
+        registerModal.classList.remove('flex');
+        document.body.style.overflow = '';
+      }, 150);
+    }
+
+    function switchToRegisterModal() {
+      closeLoginModal();
+      setTimeout(openRegisterModal, 160);
+    }
+
+    function switchToLoginModal() {
+      closeRegisterModal();
+      setTimeout(openLoginModal, 160);
+    }
+
+    loginModal.addEventListener('click', (e) => {
+      if (e.target === loginModal) closeLoginModal();
+    });
+
+    registerModal.addEventListener('click', (e) => {
+      if (e.target === registerModal) closeRegisterModal();
+    });
+
+    function toggleModalPassword(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.style.opacity = isPassword ? '0.7' : '1';
+    }
+
+    function toggleMobileNav() {
+      const menu = document.getElementById('mobileNavMenu');
+      const hamburger = document.getElementById('hamburgerIcon');
+      const closeIcon = document.getElementById('closeMenuIcon');
+      const isHidden = menu.classList.contains('hidden');
+      if (isHidden) {
+        menu.classList.remove('hidden');
+        hamburger.classList.add('hidden');
+        closeIcon.classList.remove('hidden');
+      } else {
+        menu.classList.add('hidden');
+        hamburger.classList.remove('hidden');
+        closeIcon.classList.add('hidden');
+      }
+    }
+  </script>
+
+</body>
+</html>
