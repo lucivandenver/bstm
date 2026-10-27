@@ -6,3 +6,9 @@ build/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Private environment variants and downloaded OAuth credentials
+.env.*
+!.env.example
+client_secret*.json
+credentials*.json

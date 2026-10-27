@@ -107,7 +107,7 @@ export const startServer = async (port = PORT) => {
   await sequelize.authenticate();
   await sessionStore.sync();
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => { console.log(`CareerBridge running on port ${server.address().port}`); resolve(server); });
+    const server = app.listen(port, () => { console.log(`CareerBridge is running. Open http://localhost:${server.address().port} in your browser.`); resolve(server); });
     server.on('error', reject);
   });
 };
