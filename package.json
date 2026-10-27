@@ -33,7 +33,6 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "connect-flash": "^0.1.1",
     "connect-session-sequelize": "^8.0.6",
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.1",

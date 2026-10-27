@@ -12,3 +12,6 @@ Thumbs.db
 !.env.example
 client_secret*.json
 credentials*.json
+
+# Hosting certificate files belong in the provider secret store
+*.pem
