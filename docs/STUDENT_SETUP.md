@@ -40,6 +40,10 @@ Open `http://localhost:3000`. Create a student account and complete My Profile b
 
 `npm run seed:student` adds four optional starter courses and does not overwrite existing courses. The course seed is practice material, not a faculty-approved curriculum or validated research instrument. Faculty/Admin course publishing screens are not part of this Student release. Without seeding or later publishing, the catalog displays an honest empty state.
 
+## Opening the running app
+
+`CareerBridge running on port 3000` means the Node server has started. It does not open a browser window automatically. Keep the terminal running and visit `http://localhost:3000` (not the Apache/Laragon hostname or a Live Server port). If the browser cannot connect, run `Test-NetConnection localhost -Port 3000` in a second VS Code PowerShell terminal and report the browser error. A successful startup does not prove every database table has been migrated.
+
 ## Google signup / sign-in
 
 This integration authenticates a Google account (including Gmail) using OAuth/OpenID Connect. It does not request inbox access, send email OTPs, or send password-reset emails.
@@ -57,6 +61,14 @@ GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
 ```
+
+Alternatively, keep the downloaded Web client JSON outside the repository, for example in Downloads, and import it without printing its credentials:
+
+```powershell
+npm run setup:google -- "$env:USERPROFILE\Downloads\client_secret_YOUR_CLIENT.apps.googleusercontent.com.json"
+```
+
+Use the actual downloaded filename. This creates/updates the private local `.env`, preserves existing database settings, replaces the example session secret with a random value when needed, and checks that the downloaded JSON authorises the callback for `APP_URL`. It does not edit the Google Cloud project. The Google account that owns the OAuth client is not automatically an Admin/Faculty account or the only student allowed to sign in. Test-user access is managed separately in Google Auth Platform.
 
 6. Restart `npm run xian`, then choose **Sign up with Google** or **Sign in with Google** on the existing pages or landing-page modals.
 7. A new Google user is redirected to the Student portal and must supply Student ID, section and the academic profile before learning.

@@ -28,7 +28,8 @@
     "dist": "electron-builder --publish=never",
     "seed:student": "node scripts/seedStudent.js",
     "test:student": "node --test tests/*.test.js",
-    "build:css": "tailwindcss -i ./assets/tailwind.css -o ./public/tailwind.css --minify"
+    "build:css": "tailwindcss -i ./assets/tailwind.css -o ./public/tailwind.css --minify",
+    "setup:google": "node scripts/setupGoogle.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
