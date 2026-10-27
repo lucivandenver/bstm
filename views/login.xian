@@ -1,5 +1,6 @@
 {{> head }}
 <body class="min-h-screen bg-[#F8FAFC] flex flex-col justify-between antialiased selection:bg-rose-500 selection:text-white">
+<div class="auth-status">{{> messages}}</div>
 
   <!-- Header Branding with 3 Logos + CareerBridge Brand Logo (Pushed to corners) -->
   <header class="w-full px-6 sm:px-10 py-5 flex items-center justify-between border-b border-gray-200 bg-white shadow-sm">
@@ -30,7 +31,7 @@
       </div>
 
       <!-- Login Form -->
-      <form action="/login" method="POST" class="space-y-5">
+      <form action="/login" method="POST" class="space-y-5"><input type="hidden" name="_csrf" value="{{csrf}}">
         
         <!-- Email address -->
         <div>
@@ -92,7 +93,7 @@
 
       <!-- Google Sign In (Boxy) -->
       <a 
-        href="#" 
+        href="/auth/google" 
         class="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24">

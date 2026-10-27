@@ -23,160 +23,101 @@
     SOFTWARE.
     */
     
-import express from "express";
-import path from "path";
-import session from "express-session";
-import flash from "connect-flash";
-import router from "./routes/index.js";
-import fs from 'fs';
-import hbs from "hbs";
-import { fileURLToPath, pathToFileURL } from "url";
-import { dirname } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
+import './config/env.js';
+import express from 'express';
+import path from 'node:path';
+import session from 'express-session';
+import flash from 'connect-flash';
+import connectSessionSequelize from 'connect-session-sequelize';
+import fs from 'node:fs';
+import hbs from 'hbs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import router from './routes/index.js';
+import { sequelize } from './models/learningModels.js';
+import { csrf } from './middleware/security.js';
+import { production, sessionSecret, googleReady } from './config/env.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(process.cwd(), "public")));
-
-app.use(session({
-  secret: "xianfire-secret-key",
-  resave: false,
-  saveUninitialized: false
-}));
-app.use(flash());
-
-app.engine("xian", async (filePath, options, callback) => {
-  try {
-     const originalPartialsDir = hbs.partialsDir;
-    hbs.partialsDir = path.join(__dirname, 'views');
-
-    const result = await new Promise((resolve, reject) => {
-      hbs.__express(filePath, options, (err, html) => {
-        if (err) return reject(err);
-        resolve(html);
-      });
-    });
-
-    hbs.partialsDir = originalPartialsDir;
-    callback(null, result);
-  } catch (err) {
-    callback(err);
-  }
-});
+app.disable('x-powered-by');
+if (production) app.set('trust proxy', 1);
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
-  res.locals.success_msg = req.flash("success_msg");
-  res.locals.error_msg = req.flash("error_msg");
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
-
-
-app.set("views", path.join(__dirname, "views"));
-app.set("view engine", "xian");
-const partialsDir = path.join(__dirname, "views/partials");
-fs.readdir(partialsDir, (err, files) => {
-  if (err) {
-    console.error("❌ Could not read partials directory:", err);
-    return;
-  }
-
-   files
-    .filter(file => file.endsWith('.xian'))
-    .forEach(file => {
-      const partialName = file.replace('.xian', ''); 
-      const fullPath = path.join(partialsDir, file);
-
-      fs.readFile(fullPath, 'utf8', (err, content) => {
-        if (err) {
-          console.error(`❌ Failed to read partial: ${file}`, err);
-          return;
-        }
-        hbs.registerPartial(partialName, content);
-        
-      });
-    });
+const SequelizeStore = connectSessionSequelize(session.Store);
+const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'Sessions', expiration: 8 * 60 * 60 * 1000 });
+app.use(session({ name: 'careerbridge.sid', secret: sessionSecret, store: sessionStore,
+  resave: false, saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', secure: production, maxAge: 8 * 60 * 60 * 1000 }
+}));
+app.use(flash());
+app.use(csrf);
+app.use((req, res, next) => {
+  res.locals.success_msg = req.flash('success_msg');
+  res.locals.error_msg = req.flash('error_msg');
+  res.locals.googleReady = googleReady();
+  res.locals.devReload = !production && process.env.NODE_ENV !== 'test';
+  next();
 });
-
-// Realtime Live-Reload SSE (Server-Sent Events) setup
-const sseClients = new Set();
-
-app.get("/api/live-reload", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders?.();
-
-  sseClients.add(res);
-
-  // Send initial connected ping
-  res.write("data: connected\n\n");
-
-  req.on("close", () => {
-    sseClients.delete(res);
-  });
-});
-
-// Broadcast change event to all connected browser tabs
-let reloadDebounceTimer = null;
-const notifyClientsOfChange = (fileChanged) => {
-  clearTimeout(reloadDebounceTimer);
-  reloadDebounceTimer = setTimeout(() => {
-    console.log(`⚡ Live change detected (${fileChanged}) -> broadcasting to ${sseClients.size} clients`);
-    for (const client of sseClients) {
-      try {
-        client.write(`data: reload\n\n`);
-      } catch (e) {
-        sseClients.delete(client);
-      }
-    }
-  }, 100);
-};
-
-// Watch views and public folders for real-time live updates without full manual reload
-try {
-  const watchPaths = [
-    path.join(__dirname, "views"),
-    path.join(__dirname, "views", "partials"),
-    path.join(__dirname, "public")
-  ];
-  watchPaths.forEach(dir => {
-    if (fs.existsSync(dir)) {
-      fs.watch(dir, { recursive: true }, (eventType, filename) => {
-        if (filename && !filename.includes('.git')) {
-          notifyClientsOfChange(filename);
-        }
-      });
-    }
-  });
-} catch (err) {
-  console.log("File watcher info:", err.message);
+app.engine('xian', hbs.__express);
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'xian');
+// Register synchronously before listening, including shared student layout partials.
+for (const file of fs.readdirSync(path.join(__dirname, 'views/partials'))) {
+  if (file.endsWith('.xian')) hbs.registerPartial(file.replace('.xian', ''), fs.readFileSync(path.join(__dirname, 'views/partials', file), 'utf8'));
 }
-
-app.use("/", router);
-
+hbs.registerHelper('eq', (a, b) => a === b);
+hbs.registerHelper('selected', (a, b) => a === b ? 'selected' : '');
+// Developer-only file reload. Student progress updates use persisted application endpoints.
+const clients = new Set();
+const watchers = [];
+if (!production && process.env.NODE_ENV !== 'test') {
+  app.get('/api/live-reload', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    res.flushHeaders(); clients.add(res); res.write('data: connected\n\n');
+    req.on('close', () => clients.delete(res));
+  });
+  let debounce;
+  for (const dir of ['views', 'public']) {
+    try {
+      const watcher = fs.watch(path.join(__dirname, dir), { recursive: true }, () => {
+        clearTimeout(debounce); debounce = setTimeout(() => { for (const client of clients) client.write('data: reload\n\n'); }, 100);
+      });
+      watchers.push(watcher);
+    } catch (error) { console.log('Live reload:', error.message); }
+  }
+}
+app.use('/', router);
+app.use((req, res) => res.status(404).render('student/message', { title: 'Page not found', message: 'This page does not exist.', currentUser: null }));
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const expected = error.status && error.status < 500;
+  if (!expected) console.error('Request failed:', error.name); // Do not log tokens, personal data or DB SQL.
+  res.status(expected ? error.status : 500).render('student/message', { title: 'Unable to continue',
+    message: expected ? error.message : 'Something went wrong. Please retry. Check database setup if this persists.' });
+});
 export default app;
-
-// Start the HTTP server; resolves once the server is listening.
-// Exported so the Electron main process can control startup itself.
-export const startServer = (port = PORT) => {
+export const startServer = async (port = PORT) => {
+  await sequelize.authenticate();
+  await sessionStore.sync();
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => {
-      console.log(`🔥 XianFire running at http://localhost:${port}`);
-      resolve(server);
-    });
-    server.on("error", reject);
+    const server = app.listen(port, () => { console.log(`CareerBridge running on port ${server.address().port}`); resolve(server); });
+    server.on('error', reject);
   });
 };
-
-// Auto-start only when executed directly (node index.js).
-// When imported by electron/main.js, Electron manages the server lifecycle.
-const isDirectRun =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
+export async function closeResources() {
+  for (const watcher of watchers) watcher.close();
+  for (const client of clients) client.end();
+  sessionStore.stopExpiringSessions();
+  await sequelize.close();
+}
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun && !process.env.XIAN_ELECTRON) {
-  startServer();
+  startServer().catch(error => { console.error('Startup failed:', error.message); process.exit(1); });
 }

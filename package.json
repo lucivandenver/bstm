@@ -18,33 +18,41 @@
     "create:upload-middleware": "node create.js upload-middleware",
     "route:list": "node list-routes.js",
     "route:cache": "node route-cache.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test": "node --test tests/*.test.js",
+    "test:watch": "node --test --watch tests/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage tests/*.test.js",
     "electron": "electron .",
     "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "electron-builder",
     "run": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "dist": "electron-builder --publish=never"
+    "dist": "electron-builder --publish=never",
+    "seed:student": "node scripts/seedStudent.js",
+    "test:student": "node --test tests/*.test.js",
+    "build:css": "tailwindcss -i ./assets/tailwind.css -o ./public/tailwind.css --minify"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "inquirer": "^9.2.15",
-    "bcrypt": "^5.1.0",
-    "express-session": "^1.17.3",
+    "bcryptjs": "^3.0.3",
     "connect-flash": "^0.1.1",
+    "connect-session-sequelize": "^8.0.6",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.17.3",
+    "google-auth-library": "^11.3.1",
     "hbs": "^4.2.0",
+    "inquirer": "^9.2.15",
     "multer": "^2.0.2",
     "mysql2": "^3.9.2",
+    "pdfkit": "^0.20.2",
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0",
+    "concurrently": "^10.0.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.0.0",
-    "concurrently": "^10.0.0",
-    "wait-on": "^9.0.0",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "tailwindcss": "^3.4.19",
+    "wait-on": "^9.0.0"
   },
   "build": {
     "appId": "com.xianfire.app",
@@ -66,5 +74,8 @@
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
       "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ]
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

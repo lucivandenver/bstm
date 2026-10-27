@@ -1,0 +1,1 @@
+{{#each questions}}<fieldset class="question"><legend>{{prompt}}</legend>{{#each options}}<label class="answer"><input type="radio" name="answers[{{../id}}]" value="{{@index}}" required><span>{{this}}</span></label>{{/each}}</fieldset>{{/each}}

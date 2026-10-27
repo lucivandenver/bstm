@@ -1,0 +1,4 @@
+{{> studentTop}}
+<div class="page-heading"><div><p class="eyebrow">YOUR LEARNING UPDATES</p><h1>Notifications</h1><p class="muted">Course starts and achievement updates for your account.</p></div><form method="post" action="/student/notifications/read"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="button secondary">Mark all as read</button></form></div>
+<div class="stack">{{#each notifications}}<article class="card"><div class="row"><h2>{{title}}</h2><span class="chip {{#unless unread}}gray{{/unless}}">{{#if unread}}New{{else}}Read{{/if}}</span></div><p>{{message}}</p><div class="row"><span class="small muted">{{date}}</span><a href="{{href}}" class="small">View →</a></div></article>{{else}}<div class="card empty"><strong>You’re all caught up.</strong>Start a course to see your learning updates here.</div>{{/each}}</div>
+{{> studentBottom}}

@@ -1,5 +1,6 @@
 {{> head }}
 <body class="bg-white text-slate-800 antialiased selection:bg-rose-500 selection:text-white">
+<div class="auth-status">{{> messages}}</div>
 
   <!-- TOP NAVIGATION BAR (Logos pushed far left, Buttons pushed far right) -->
   <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 transition-all">
@@ -444,7 +445,7 @@
         <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign In</h2>
       </div>
 
-      <form action="/login" method="POST" class="space-y-4">
+      <form action="/login" method="POST" class="space-y-4"><input type="hidden" name="_csrf" value="{{csrf}}">
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_login_email">Email address</label>
           <input 
@@ -499,7 +500,7 @@
       </div>
 
       <a 
-        href="#" 
+        href="/auth/google" 
         class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24">
@@ -533,7 +534,7 @@
         <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign Up</h2>
       </div>
 
-      <form action="/register" method="POST" class="space-y-3.5">
+      <form action="/register" method="POST" class="space-y-3.5"><input type="hidden" name="_csrf" value="{{csrf}}">
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_name">Full name</label>
           <input type="text" id="modal_reg_name" name="name" placeholder="Juan Dela Cruz" required class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all" />
@@ -549,10 +550,10 @@
           <div class="relative">
             <select id="modal_reg_section" name="section" required class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm bg-white appearance-none focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all">
               <option value="" disabled selected>Select Section</option>
-              <option value="-1">-1</option>
-              <option value="-2">-2</option>
-              <option value="-3">-3</option>
-              <option value="-4">-4</option>
+              <option value="BSTM 4-1">BSTM 4-1</option>
+              <option value="BSTM 4-2">BSTM 4-2</option>
+              <option value="BSTM 4-3">BSTM 4-3</option>
+              <option value="BSTM 4-4">BSTM 4-4</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-500">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
@@ -705,3 +706,4 @@
 
 </body>
 </html>
+

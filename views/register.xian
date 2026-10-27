@@ -1,5 +1,6 @@
 {{> head }}
 <body class="min-h-screen bg-[#F8FAFC] flex flex-col justify-between antialiased selection:bg-rose-500 selection:text-white">
+<div class="auth-status">{{> messages}}</div>
 
   <!-- Header Branding with 3 Logos + CareerBridge Brand Logo (Pushed to corners) -->
   <header class="w-full px-6 sm:px-10 py-5 flex items-center justify-between border-b border-gray-200 bg-white shadow-sm">
@@ -30,7 +31,7 @@
       </div>
 
       <!-- Register Form -->
-      <form action="/register" method="POST" class="space-y-4">
+      <form action="/register" method="POST" class="space-y-4"><input type="hidden" name="_csrf" value="{{csrf}}">
         
         <!-- Full name -->
         <div>
@@ -69,10 +70,10 @@
               class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm bg-white appearance-none focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
             >
               <option value="" disabled selected>Select Section</option>
-              <option value="-1">-1</option>
-              <option value="-2">-2</option>
-              <option value="-3">-3</option>
-              <option value="-4">-4</option>
+              <option value="BSTM 4-1">BSTM 4-1</option>
+              <option value="BSTM 4-2">BSTM 4-2</option>
+              <option value="BSTM 4-3">BSTM 4-3</option>
+              <option value="BSTM 4-4">BSTM 4-4</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-500">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,7 +103,7 @@
             <input 
               type="password" 
               id="password" 
-              name="password" 
+              name="password" minlength="10" maxlength="72" 
               placeholder="Create a strong password" 
               required 
               class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
@@ -164,7 +165,7 @@
 
       <!-- Google Sign In (Boxy) -->
       <a 
-        href="#" 
+        href="/auth/google" 
         class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24">

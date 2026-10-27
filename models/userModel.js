@@ -25,11 +25,15 @@
     */
 import { DataTypes } from "sequelize";
 import { sequelize } from "./db.js";
-
 export const User = sequelize.define("User", {
   name: { type: DataTypes.STRING, allowNull: false },
-  email: { type: DataTypes.STRING, allowNull: false },
-  password: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.ENUM("admin", "staff", "visitors"), allowNull: false, defaultValue: "visitors" }
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  password: { type: DataTypes.STRING, allowNull: true },
+  role: { type: DataTypes.ENUM("admin", "faculty", "student", "staff", "visitors"), allowNull: false, defaultValue: "student" },
+  studentId: { type: DataTypes.STRING(40), unique: true, allowNull: true },
+  section: { type: DataTypes.STRING(60), allowNull: true },
+  googleId: { type: DataTypes.STRING, unique: true, allowNull: true },
+  emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
 });
-export { sequelize }; 
+export { sequelize };

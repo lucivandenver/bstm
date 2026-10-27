@@ -25,19 +25,26 @@
     */
     
 import express from "express";
+import { rateLimit } from 'express-rate-limit';
 import { homePage } from "../controllers/homeController.js";
+import { loginPage, registerPage, forgotPasswordPage, dashboardPage, loginUser, registerUser, logoutUser } from "../controllers/authController.js";
+import { googleStart, googleCallback } from '../controllers/googleController.js';
+import { verify } from '../controllers/studentController.js';
+import { asyncRoute, requireUser } from '../middleware/security.js';
+import studentRoutes from './student.js';
 const router = express.Router();
+const authLimit = rateLimit({ windowMs: 15 * 60000, limit: 30, message: 'Too many sign-in attempts. Try again in 15 minutes.' });
 router.get("/", homePage);
 router.get("/about", (req, res) => res.render("about", { title: "About CareerBridge" }));
-
-import { loginPage, registerPage, forgotPasswordPage, dashboardPage, loginUser, registerUser, logoutUser } from "../controllers/authController.js";
-
 router.get("/login", loginPage);
-router.post("/login", loginUser);
+router.post("/login", authLimit, asyncRoute(loginUser));
 router.get("/register", registerPage);
-router.post("/register", registerUser);
+router.post("/register", authLimit, asyncRoute(registerUser));
 router.get("/forgot-password", forgotPasswordPage);
-router.get("/dashboard", dashboardPage);
-router.get("/logout", logoutUser);
-
+router.get("/auth/google", authLimit, googleStart);
+router.get("/auth/google/callback", authLimit, asyncRoute(googleCallback));
+router.get("/dashboard", requireUser, dashboardPage);
+router.post("/logout", logoutUser);
+router.use('/student', studentRoutes);
+router.get('/verify/:id', asyncRoute(verify));
 export default router;

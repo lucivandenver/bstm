@@ -1,15 +1,7 @@
-# BSTM
+# BSTM CareerBridge
 
-XianFire Framework Project.
+XianFire / Express / Sequelize / MySQL learning and career exploration portal for graduating BSTM students at MinSU Bongabong Campus.
 
-## Getting Started
+The Student portal includes profiling, course enrollment, sequential lessons and quizzes, knowledge diagnostics, course attempt history, downloadable certificates and badges, credential verification, notifications, skills-gap views, transparent career pathways and optional Gemini guidance. Google signup/sign-in is supported after OAuth configuration.
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Run development server:
-   ```bash
-   npm run dev
-   ```
+See [Student setup](docs/STUDENT_SETUP.md) for Laragon installation, safe migration, Google credentials, Gemini configuration and validation instructions. Faculty course authoring and Admin management remain future work; four optional starter courses are included for testing.
