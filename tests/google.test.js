@@ -5,10 +5,10 @@ process.env.GOOGLE_CLIENT_ID = 'test-client-id'; process.env.GOOGLE_CLIENT_SECRE
 const { OAuth2Client } = await import('google-auth-library');
 const { sequelize, User } = await import('../models/learningModels.js');
 const { startServer, closeResources } = await import('../index.js');
-let payload, exchanges = 0;
+let payload, exchangeError, exchanges = 0;
 const originalGet = OAuth2Client.prototype.getToken;
 const originalVerify = OAuth2Client.prototype.verifyIdToken;
-OAuth2Client.prototype.getToken = async function () { exchanges++; return { tokens: { id_token: 'mock-id-token' } }; };
+OAuth2Client.prototype.getToken = async function () { exchanges++; if (exchangeError) throw exchangeError; return { tokens: { id_token: 'mock-id-token' } }; };
 OAuth2Client.prototype.verifyIdToken = async function () { return { getPayload: () => payload }; };
 await test('Google signup verifies state, nonce and email; linking requires an existing login', async () => {
   await sequelize.sync({ force: true });
@@ -35,6 +35,16 @@ await test('Google signup verifies state, nonce and email; linking requires an e
     let flow = await start();
     let r = await request('/auth/google/callback?state=invalid&code=test-code');
     assert.equal(r.r.headers.get('location'), '/login'); assert.equal(exchanges, 0);
+    flow = await start();
+    const originalLog = console.error;
+    const logs = [];
+    console.error = (...args) => logs.push(args.join(' '));
+    exchangeError = { response: { data: { error: 'invalid_client', error_description: 'private-placeholder' } }, config: { client_secret: 'private-placeholder' } };
+    try { await callback(flow); } finally { exchangeError = undefined; console.error = originalLog; }
+    const failed = await request('/login');
+    assert.ok(failed.html.includes('GOOGLE_CLIENT_CONFIGURATION'));
+    assert.ok(logs.join(' ').includes('GOOGLE_CLIENT_CONFIGURATION'));
+    assert.ok(!logs.join(' ').includes('private-placeholder'));
     flow = await start(); await callback(flow, { nonce: 'wrong' }); assert.equal(await User.count(), 0);
     flow = await start(); await callback(flow, { email_verified: false }); assert.equal(await User.count(), 0);
     flow = await start(); r = await callback(flow);
