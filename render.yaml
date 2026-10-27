@@ -1,0 +1,38 @@
+# Apply only after reviewing the PR and creating the external MySQL database.
+services:
+  - type: web
+    name: bstm-careerbridge
+    runtime: node
+    plan: free
+    region: singapore
+    repo: https://github.com/lucivandenver/bstm
+    branch: main
+    autoDeployTrigger: commit
+    buildCommand: npm ci --omit=dev --ignore-scripts
+    startCommand: npm run migrate && npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSL
+        value: 'true'
+      - key: DB_SSL_CA
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

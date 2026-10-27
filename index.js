@@ -27,7 +27,7 @@ import './config/env.js';
 import express from 'express';
 import path from 'node:path';
 import session from 'express-session';
-import flash from 'connect-flash';
+import flash from './middleware/flash.js';
 import connectSessionSequelize from 'connect-session-sequelize';
 import fs from 'node:fs';
 import hbs from 'hbs';
@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import router from './routes/index.js';
 import { sequelize } from './models/learningModels.js';
 import { csrf } from './middleware/security.js';
-import { production, sessionSecret, googleReady } from './config/env.js';
+import { production, sessionSecret, googleReady, appUrl } from './config/env.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +49,11 @@ app.use((req, res, next) => {
   res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.set('X-Frame-Options', 'SAMEORIGIN');
   next();
+});
+app.get('/healthz', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { await sequelize.authenticate(); res.json({ status: 'ok' }); }
+  catch { res.status(503).json({ status: 'unavailable' }); }
 });
 const SequelizeStore = connectSessionSequelize(session.Store);
 const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'Sessions', expiration: 8 * 60 * 60 * 1000 });
@@ -107,7 +112,7 @@ export const startServer = async (port = PORT) => {
   await sequelize.authenticate();
   await sessionStore.sync();
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => { console.log(`CareerBridge is running. Open http://localhost:${server.address().port} in your browser.`); resolve(server); });
+    const server = app.listen(port, () => { console.log(`CareerBridge is running. Open ${production ? appUrl : 'http://localhost:' + server.address().port} in your browser.`); resolve(server); });
     server.on('error', reject);
   });
 };

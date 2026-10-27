@@ -28,6 +28,9 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
   for (const c of starterCourses) await Course.create({ ...c, published: true, starter: true });
   server = await startServer(0); base = `http://127.0.0.1:${server.address().port}`;
   try {
+    const health = await fetch(base + '/healthz');
+    assert.equal(health.status, 200); assert.deepEqual(await health.json(), { status: 'ok' });
+    assert.equal(health.headers.get('set-cookie'), null);
     const student = new Browser();
     let response = await student.get('/student');
     assert.equal(response.r.status, 302); assert.equal(response.r.headers.get('location'), '/login');
