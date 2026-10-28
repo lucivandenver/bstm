@@ -141,3 +141,17 @@ Manual checks after local setup:
 ## Scope remaining
 
 Faculty course creation/upload/AI generation, practical grading, Admin management, institution-approved certificates/signatories, email password-reset delivery and a validated assessment/question bank remain separate implementation work. The existing Faculty/Admin dashboard remains a placeholder. No production secrets, academic approval or professional accreditation are implied by this release.
+
+## Diagnosing a Google callback failure
+
+The sign-in page and VS Code terminal now show a fixed error code and reference. Share only the code/reference and the browser error, not `.env`, the OAuth JSON, raw callback URLs or tokens.
+
+- `GOOGLE_CLIENT_CONFIGURATION`: re-import the correct Web client JSON, then restart Node.
+- `GOOGLE_CALLBACK_CONFIGURATION`: match the authorised redirect URI exactly.
+- `GOOGLE_CODE_REJECTED`: start a fresh attempt from `/login`.
+- `DATABASE_SCHEMA`: back up the local database and run `npm run migrate`; share only the migration error with credentials removed if it fails.
+- `GOOGLE_NETWORK`: check server connectivity, Windows date/time and certificates. Do not disable TLS validation.
+- `GOOGLE_IDENTITY_VERIFICATION`: retry and verify the client configuration and server clock.
+- `ACCOUNT_DATABASE` / `ACCOUNT_SESSION`: check migration status and database connectivity.
+
+Diagnostic logging records only a random reference, a fixed processing stage and a fixed code. It does not print exception objects, SQL, provider descriptions, credentials or identity data.
