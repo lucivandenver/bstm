@@ -17,4 +17,4 @@
 <a href="/student/notifications" class="{{#if (eq nav 'notifications')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">♧</span>Notifications</a>
 </nav><div class="sidebar-bottom"><strong class="small">Your future starts here.</strong><small>BSTM · MinSU Bongabong Campus</small><a class="small" href="/">Visit CareerBridge home →</a></div></aside>
 <div class="workspace"><header class="app-header"><div class="row"><button class="mobile-menu" id="open-menu" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button><div class="breadcrumb">STUDENT / WORKSPACE<strong>{{title}}</strong></div></div><div class="user-menu"><span class="avatar" aria-hidden="true">S</span><div class="user-copy"><strong>{{currentUser.name}}</strong><small>Student account</small></div><form action="/logout" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="logout" type="submit">Log out</button></form></div></header>
-<main id="main" class="page">{{> messages}}
+<main id="main" class="page">{{> messages}}{{> announcements}}

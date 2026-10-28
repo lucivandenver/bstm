@@ -1,3 +1,5 @@
+import { CareerPath } from '../models/adminModels.js';
+import { setting, genders } from '../services/accounts.js';
 import PDFDocument from 'pdfkit';
 import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notification, sequelize } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
@@ -18,7 +20,7 @@ function decorate(attempt) {
 }
 async function requireProfile(req, res) {
   const profile = await StudentProfile.findOne({ where: { userId: req.user.id } });
-  if (!profile?.complete || !req.user.studentId || !req.user.section) {
+  if (!profile?.complete || !req.user.studentId || !req.user.section || !genders.includes(req.user.gender)) {
     req.flash('error_msg', 'Complete your student profile before starting an assessment or course.');
     res.redirect('/student/profile'); return null;
   }
@@ -34,7 +36,7 @@ export const dashboard = async (req, res) => {
   const ongoing = attempts.filter(a => a.status === 'ongoing').map(decorate);
   const completed = attempts.filter(a => a.status === 'completed');
   const evidence = careerMatches(attempts, plain(baseline));
-  render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section,
+  render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
     ongoing, completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
     totalStars: credentials.reduce((sum, c) => sum + c.stars, 0), baseline: plain(baseline),
     domains: domains.map(name => ({ name, score: evidence.scores[name], known: evidence.scores[name] !== null })),
@@ -43,17 +45,18 @@ export const dashboard = async (req, res) => {
 };
 export const profilePage = async (req, res) => {
   const profile = plain(await StudentProfile.findOne({ where: { userId: req.user.id } })) || {};
-  render(res, 'profile', { title: 'My profile', profile, googleConnected: Boolean(req.user.googleId), googleReady: googleReady() });
+  render(res, 'profile', { title: 'My profile', profile, googleConnected: Boolean(req.user.googleId), googleReady: googleReady(), genders });
 };
 export const saveProfile = async (req, res) => {
   let data, studentId, section, name;
   try {
-    data = profileInput(req.body); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100);
+    data = profileInput(req.body);
+    if (!genders.includes(req.body.gender)) throw new Error('Select your gender.'); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100);
     if (!/^[\w-]{3,40}$/.test(studentId) || !section || name.length < 2) throw new Error('Enter your full name, Student ID and section.');
   } catch (err) { req.flash('error_msg', err.message); return res.redirect('/student/profile'); }
   try {
     await sequelize.transaction(async transaction => {
-      await req.user.update({ name, studentId, section }, { transaction });
+      await req.user.update({ name, studentId, section, gender: req.body.gender }, { transaction });
       const [profile] = await StudentProfile.findOrCreate({ where: { userId: req.user.id }, defaults: data, transaction });
       await profile.update(data, { transaction });
     });
@@ -221,7 +224,9 @@ export const careers = async (req, res) => {
     attemptsFor(req.user.id), Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
     StudentProfile.findOne({ where: { userId: req.user.id } }), Course.findAll({ where: { published: true } })
   ]);
-  const evidence = careerMatches(attempts, plain(baseline), profile?.careerInterest);
+  const evidence = careerMatches(attempts, plain(baseline), profile?.careerInterest, (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
+  const fingerprint = JSON.stringify({ scores: evidence.scores, tracks: evidence.tracks.map(t => [t.title, t.required]) });
+  if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
   const recommendations = courses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(plain);
   render(res, 'careers', { title: 'Career pathways', tracks: evidence.tracks, recommendations,
     aiReady: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL), ai: req.session.careerAi || null });
@@ -232,9 +237,10 @@ export const generateGuidance = async (req, res) => {
   const baseline = await Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] });
   if (!baseline && !attempts.some(a => a.status === 'completed')) return fail(res, 'Complete a diagnostic or a course first.');
   try {
-    const ai = await explainCareer(careerMatches(attempts, plain(baseline)));
+    const evidence = careerMatches(attempts, plain(baseline), '', (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
+    const ai = await explainCareer(evidence);
     if (!ai) throw new Error('Gemini is not configured yet.');
-    req.session.careerAi = { ...ai, generatedAt: date(new Date()) };
+    req.session.careerAi = { ...ai, generatedAt: date(new Date()), fingerprint: JSON.stringify({ scores: evidence.scores, tracks: evidence.tracks.map(t => [t.title, t.required]) }) };
     req.flash('success_msg', 'AI learning guidance generated. Review it alongside your assessed results.');
   } catch (err) { req.flash('error_msg', err.message === 'Gemini is not configured yet.' ? err.message : 'AI guidance is temporarily unavailable. Your evidence-based pathways remain available.'); }
   res.redirect('/student/careers');
@@ -259,7 +265,7 @@ export const certificate = async (req, res) => {
   doc.moveDown().fontSize(13).text('successfully completed the learning requirements for', { align: 'center' });
   doc.moveDown().fontSize(22).text(c.courseTitle, { align: 'center' });
   doc.moveDown().fontSize(12).text(`Version ${c.courseVersion}  |  Final score: ${c.score}%  |  Issued: ${date(c.issuedAt)}`, { align: 'center' });
-  doc.moveDown().fontSize(10).text('Platform course completion record. Not a TESDA or professional licence.', { align: 'center' });
+  doc.moveDown().fontSize(10).text(await setting('certificateFooter', 'Platform course completion record. Not a professional licence.'), { align: 'center' });
   const url = `${appUrl}/verify/${c.id}`;
   doc.moveDown().fillColor('#007042').fontSize(9).text(`Verify: ${url}`, { align: 'center', link: url });
   doc.moveDown().fillColor('#64748b').text(`Credential ID: ${c.id}`, { align: 'center' }); doc.end();

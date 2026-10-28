@@ -24,6 +24,8 @@
     */
     
 import './config/env.js';
+import { Section, Announcement } from './models/adminModels.js';
+import { Op } from 'sequelize';
 import express from 'express';
 import path from 'node:path';
 import session from 'express-session';
@@ -34,7 +36,7 @@ import hbs from 'hbs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import router from './routes/index.js';
 import { sequelize } from './models/learningModels.js';
-import { csrf } from './middleware/security.js';
+import { csrf, asyncRoute } from './middleware/security.js';
 import { production, sessionSecret, googleReady, appUrl } from './config/env.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -98,6 +100,14 @@ if (!production && process.env.NODE_ENV !== 'test') {
     } catch (error) { console.log('Live reload:', error.message); }
   }
 }
+app.use(asyncRoute(async (req, res, next) => {
+  res.locals.openLoginModal = req.query.auth === 'login';
+  if (req.method === 'GET' && ['/', '/about', '/register'].includes(req.path)) {
+    res.locals.sections = (await Section.findAll({ where: { active: true }, order: [['name', 'ASC']] })).map(s => s.get({ plain: true }));
+    res.locals.registrationRole = 'student';
+  }
+  next();
+}));
 app.use('/', router);
 app.use((req, res) => res.status(404).render('student/message', { title: 'Page not found', message: 'This page does not exist.', currentUser: null }));
 app.use((error, req, res, next) => {

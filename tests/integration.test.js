@@ -5,6 +5,7 @@ process.env.TEST_DB_STORAGE = ':memory:';
 const { sequelize, User, Course, CourseAttempt, StudentProfile, Credential, Assessment } = await import('../models/learningModels.js');
 const { starterCourses } = await import('../data/starterCourses.js');
 const { default: app, startServer, closeResources } = await import('../index.js');
+const { seedAdministration } = await import('../services/accounts.js');
 const { issueChallenge } = await import('../services/learning.js');
 let server, base;
 class Browser {
@@ -24,7 +25,8 @@ class Browser {
   }
 }
 await test('student HTTP workflow, ownership, scoring, retakes and downloads', async t => {
-  await sequelize.sync({ force: true }); // Isolated in-memory test database only.
+  await sequelize.sync({ force: true });
+  await seedAdministration(); // Isolated in-memory test database only.
   for (const c of starterCourses) await Course.create({ ...c, published: true, starter: true });
   server = await startServer(0); base = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -36,15 +38,15 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     assert.equal(response.r.status, 302); assert.equal(response.r.headers.get('location'), '/login');
     await student.get('/register');
     assert.equal((await student.post('/register', {}, 'bad')).status, 403);
-    const signup = { name: 'Student One', email: 'one@example.com', student_id: '2026-001', section: '4-1', password: 'password12345', confirm_password: 'password12345', role: 'admin' };
+    const signup = { name: 'Student One', email: 'one@example.com', student_id: '2026-001', section: 'BSTM 4-1', gender: 'Male', password: 'password12345', confirm_password: 'password12345', role: 'admin' };
     response = await student.post('/register', signup);
     assert.equal(response.headers.get('location'), '/student/profile');
     const user = await User.findOne({ where: { email: 'one@example.com' } });
-    assert.equal(user.role, 'student'); assert.equal(user.studentId, '2026-001'); assert.equal(user.section, '4-1');
+    assert.equal(user.role, 'student'); assert.equal(user.studentId, '2026-001'); assert.equal(user.section, 'BSTM 4-1');
     await student.get('/student/profile');
     response = await student.post('/student/courses/1/enroll');
     assert.equal(response.headers.get('location'), '/student/profile');
-    const profile = { name: 'Student One', studentId: '2026-001', section: '4-1', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '300', careerInterest: 'Travel and tour operations', preferredLocation: 'Philippines' };
+    const profile = { name: 'Student One', studentId: '2026-001', section: 'BSTM 4-1', gender: 'Male', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '300', careerInterest: 'Travel and tour operations', preferredLocation: 'Philippines' };
     await student.post('/student/profile', profile);
     assert.equal((await StudentProfile.findOne({ where: { userId: user.id } })).complete, true);
     for (const route of ['/student', '/student/profile', '/student/courses', '/student/courses/1', '/student/learning', '/student/assessment', '/student/results', '/student/careers', '/student/achievements', '/student/notifications']) {
@@ -103,7 +105,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     await student.post('/student/assessment', { challenge: issueChallenge(user.id, 'baseline'), ...Object.fromEntries(baseline.map(q => [`answers[${q.id}]`, String(q.answer)])) });
     assert.equal(await Assessment.count(), 1);
     response = await student.get('/student/results'); assert.equal(response.r.status, 200);
-    response = await student.get('/auth/google'); assert.equal(response.r.status, 302); assert.equal(response.r.headers.get('location'), '/login');
+    response = await student.get('/auth/google'); assert.equal(response.r.status, 302); assert.equal(response.r.headers.get('location'), '/?auth=login');
     await student.get('/student/profile'); await student.post('/logout');
     response = await student.get('/student'); assert.equal(response.r.headers.get('location'), '/login');
   } finally { await new Promise(resolve => server.close(resolve)); await closeResources(); }
