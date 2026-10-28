@@ -50,7 +50,7 @@ export function checkChallenge(token, userId, scope) {
   if (data.userId !== userId || data.scope !== scope || data.exp < Date.now()) throw Object.assign(new Error('Assessment expired.'), { status: 400 });
   return data.nonce;
 }
-export function careerMatches(attempts, baseline, interest = '') {
+export function careerMatches(attempts, baseline, interest = '', tracks = defaultCareerTracks) {
   const latest = new Map();
   for (const attempt of [...attempts].sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt))) {
     if (attempt.status === 'completed') latest.set(attempt.courseId, attempt);
@@ -65,12 +65,6 @@ export function careerMatches(attempts, baseline, interest = '') {
     const courseScores = evidence[domain];
     scores[domain] = courseScores.length ? Math.round(courseScores.reduce((a, b) => a + b, 0) / courseScores.length) : baseline?.scores?.[domain] ?? null;
   }
-  const tracks = [
-    { title: 'Travel Consultant / Tour Operations Assistant', focus: 'Travel and tour operations', required: [domains[0], domains[1], domains[3]] },
-    { title: 'Guest Services / Front Office Assistant', focus: 'Hospitality and guest services', required: [domains[1], domains[2], domains[3]] },
-    { title: 'Events Coordination Assistant', focus: 'Events and MICE', required: [domains[0], domains[1], domains[2]] },
-    { title: 'Tourism Information Assistant', focus: 'Destination and visitor services', required: [domains[0], domains[1]] }
-  ];
   return { scores, tracks: tracks.map(track => {
     const known = track.required.filter(d => scores[d] !== null);
     const sufficient = known.length === track.required.length;
@@ -81,3 +75,10 @@ export function careerMatches(attempts, baseline, interest = '') {
       gaps, strengths: track.required.filter(d => scores[d] >= 75), preferred: interest.toLowerCase().includes(track.focus.split(' ')[0].toLowerCase()) };
   }).sort((a, b) => b.rank - a.rank) };
 }
+
+export const defaultCareerTracks = [
+    { title: 'Travel Consultant / Tour Operations Assistant', focus: 'Travel and tour operations', required: [domains[0], domains[1], domains[3]] },
+    { title: 'Guest Services / Front Office Assistant', focus: 'Hospitality and guest services', required: [domains[1], domains[2], domains[3]] },
+    { title: 'Events Coordination Assistant', focus: 'Events and MICE', required: [domains[0], domains[1], domains[2]] },
+    { title: 'Tourism Information Assistant', focus: 'Destination and visitor services', required: [domains[0], domains[1]] }
+  ];

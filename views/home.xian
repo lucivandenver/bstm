@@ -1,6 +1,6 @@
 {{> head }}
 <body class="bg-[#FAFAFA] text-slate-800 antialiased selection:bg-rose-500 selection:text-white">
-<div class="auth-status">{{> messages}}</div>
+{{#unless openLoginModal}}<div class="auth-status">{{> messages}}</div>{{/unless}}
 
   <!-- TOP NAVIGATION BAR (Logos pushed far left, Buttons pushed far right) -->
   <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 transition-all">
@@ -743,7 +743,8 @@
         </svg>
       </button>
 
-      <!-- Modal Card Header -->
+      {{#if openLoginModal}}<div class="auth-status">{{> messages}}</div>{{/if}}
+<!-- Modal Card Header -->
       <div class="mb-6">
         <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign In</h2>
       </div>
@@ -806,7 +807,7 @@
 
       <!-- Google Sign In -->
       <a 
-        href="/auth/google" 
+        href="/auth/google?intent=login"
         class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24">
@@ -852,122 +853,7 @@
       </div>
 
       <!-- Form -->
-      <form action="/register" method="POST" class="space-y-3.5"><input type="hidden" name="_csrf" value="{{csrf}}">
-        
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_name">Full name</label>
-          <input 
-            type="text" 
-            id="modal_reg_name" 
-            name="name" 
-            placeholder="Juan Dela Cruz" 
-            required 
-            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_student_id">Student ID</label>
-          <input 
-            type="text" 
-            id="modal_reg_student_id" 
-            name="student_id" 
-            placeholder="e.g. 2021-0001" 
-            required 
-            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_section">Section</label>
-          <div class="relative">
-            <select 
-              id="modal_reg_section" 
-              name="section" 
-              required 
-              class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm bg-white appearance-none focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-            >
-              <option value="" disabled selected>Select Section</option>
-              <option value="BSTM 4-1">BSTM 4-1</option>
-              <option value="BSTM 4-2">BSTM 4-2</option>
-              <option value="BSTM 4-3">BSTM 4-3</option>
-              <option value="BSTM 4-4">BSTM 4-4</option>
-            </select>
-            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-500">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_email">Email address</label>
-          <input 
-            type="email" 
-            id="modal_reg_email" 
-            name="email" 
-            placeholder="you@example.com" 
-            required 
-            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_password">Password</label>
-          <div class="relative">
-            <input 
-              type="password" 
-              id="modal_reg_password" 
-              name="password" 
-              placeholder="Create a strong password" 
-              required 
-              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-            />
-            <button 
-              type="button" 
-              onclick="toggleModalPassword('modal_reg_password', this)" 
-              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_reg_confirm_password">Confirm password</label>
-          <div class="relative">
-            <input 
-              type="password" 
-              id="modal_reg_confirm_password" 
-              name="confirm_password" 
-              placeholder="Re-enter your password" 
-              required 
-              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
-            />
-            <button 
-              type="button" 
-              onclick="toggleModalPassword('modal_reg_confirm_password', this)" 
-              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <button 
-          type="submit" 
-          class="w-full py-3 px-4 bg-[#007042] hover:bg-[#005a35] text-white font-bold rounded-none shadow-sm hover:shadow transition-all duration-200 mt-2 text-sm tracking-wide"
-        >
-          Create account
-        </button>
-      </form>
+      {{> registrationForm prefix="modal_"}}
 
       <!-- OR Divider -->
       <div class="relative flex py-4 items-center">
@@ -978,7 +864,7 @@
 
       <!-- Google Sign In -->
       <a 
-        href="/auth/google" 
+        href="/auth/google?intent=register&amp;role={{registrationRole}}" data-google-register
         class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24">
@@ -1106,6 +992,7 @@
       setTimeout(openLoginModal, 160);
     }
 
+    if (new URLSearchParams(window.location.search).get('auth') === 'login') openLoginModal();
     loginModal.addEventListener('click', (e) => {
       if (e.target === loginModal) closeLoginModal();
     });

@@ -1,4 +1,6 @@
-import { DataTypes, Op } from 'sequelize';
+import { DataTypes } from 'sequelize';
+import '../models/adminModels.js';
+import { bootstrapAdmin, seedAdministration } from '../services/accounts.js';
 import { sequelize, User } from '../models/learningModels.js';
 export async function migrateStudent() {
   await sequelize.authenticate();
@@ -10,6 +12,9 @@ export async function migrateStudent() {
     if (duplicates.length) throw new Error('Duplicate emails found. Resolve duplicate user emails before migrating. No users were deleted.');
     const columns = await qi.describeTable('Users');
     const additions = {
+      sessionVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      facultyId: { type: DataTypes.STRING(40), allowNull: true }, gender: { type: DataTypes.STRING(30), allowNull: true },
+      approvalStatus: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'approved' },
       studentId: { type: DataTypes.STRING(40), allowNull: true }, section: { type: DataTypes.STRING(60), allowNull: true },
       googleId: { type: DataTypes.STRING, allowNull: true }, emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
@@ -21,7 +26,7 @@ export async function migrateStudent() {
     await User.update({ role: 'student' }, { where: { role: 'visitors' } });
     await sequelize.query('UPDATE Users SET email = LOWER(TRIM(email))');
     const indexes = await qi.showIndex('Users');
-    for (const field of ['email', 'studentId', 'googleId']) {
+    for (const field of ['email', 'studentId', 'facultyId', 'googleId']) {
       if (!indexes.some(i => i.unique && i.fields.length === 1 && i.fields[0].attribute === field)) {
         await qi.addIndex('Users', [field], { unique: true, name: `users_${field}_unique` });
       }
@@ -29,4 +34,6 @@ export async function migrateStudent() {
   }
   // Creates missing tables only. Never force-sync or reset existing student data.
   await sequelize.sync();
+  await seedAdministration();
+  await bootstrapAdmin();
 }

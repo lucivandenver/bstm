@@ -91,4 +91,5 @@
     })();
   </script>
   {{/if}}
+  <script src="/js/auth.js" defer></script>
 </head>
