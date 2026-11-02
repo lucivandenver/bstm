@@ -2,7 +2,7 @@
 
 ## Scope
 
-This branch adds Admin dashboards, account management and faculty review, section/faculty assignments, course publication/settings oversight, certificate revocation, announcements, configurable career pathway rules, CSV learning reports, account security, settings and audit logs. It retains XianFire/Express, Sequelize/MySQL and `.xian` views. Approved faculty have a scoped monitoring page for assigned sections and a profile page. Full faculty course upload/AI authoring and practical assessment grading are separate work, not included here.
+This branch adds Admin dashboards, account management and faculty review, section/faculty assignments, course publication/settings oversight, certificate revocation, announcements, configurable career pathway rules, CSV learning reports, account security, settings and audit logs. It retains XianFire/Express, Sequelize/MySQL and `.xian` views. Approved faculty now have complete course authoring, source-based AI drafting, practical rubric grading and assigned-section monitoring. See [Learning portals](LEARNING_PORTALS.md) for the expanded release and migration.
 
 ## Deployment / migration
 

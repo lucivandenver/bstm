@@ -1,3 +1,4 @@
+import { Notification } from '../models/learningModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { User } from '../models/userModel.js';
@@ -44,7 +45,10 @@ export const registerUser = async (req, res) => {
   catch (err) { if (err.name !== 'SequelizeUniqueConstraintError') throw err; req.flash('error_msg', 'That email or ID is already registered.'); return res.redirect('/register?role=' + (req.body.account_type === 'faculty' ? 'faculty' : 'student')); }
   delete req.session.pendingRegistration;
   await audit(user.id, 'account.registered', 'user', user.id, { role: user.role, method: google ? 'google' : 'password' });
-  if (user.role === 'faculty') { req.flash('success_msg', 'Faculty registration submitted. An administrator must approve your account before sign-in.'); return res.redirect('/login'); }
+  if (user.role === 'faculty') {
+    const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] });
+    await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty approval requested', message: `${user.name} submitted a faculty registration.`, href: '/admin/users?role=faculty&approval=pending' })));
+    req.flash('success_msg', 'Faculty registration submitted. An administrator must approve your account before sign-in.'); return res.redirect('/login'); }
   await authenticate(req, user, google ? 'google' : 'password');
   res.redirect('/student/profile');
 };

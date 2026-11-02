@@ -6,8 +6,10 @@ export function progress(attempt) {
   const course = attempt.snapshot;
   const lessons = lessonList(course).length;
   const quizzes = course.modules.length;
-  const done = attempt.completedLessons.length + Object.values(attempt.quizScores).filter(s => s >= course.passingScore).length + (attempt.status === 'completed' ? 1 : 0);
-  return { done, total: lessons + quizzes + 1, percent: Math.round(done / (lessons + quizzes + 1) * 100) };
+  const tasks = (course.tasks || []).filter(t => t.required !== false);
+  const extras = (course.policy?.pretest ? 1 : 0) + (course.policy?.feedbackRequired ? 1 : 0) + tasks.length;
+  const done = attempt.completedLessons.length + course.modules.filter(m => attempt.quizScores[m.id] >= course.passingScore).length + (attempt.finalScore !== null && attempt.finalScore >= course.passingScore ? 1 : attempt.status === 'completed' ? 1 : 0) + tasks.filter(t => attempt.quizScores[`task:${t.id}`] >= course.passingScore).length + (course.policy?.pretest && attempt.quizAttempts.some(q => q.scope === 'pretest') ? 1 : 0) + (course.policy?.feedbackRequired && attempt.quizScores.feedback === 100 ? 1 : 0);
+  return { done, total: lessons + quizzes + 1 + extras, percent: Math.round(done / (lessons + quizzes + 1 + extras) * 100) };
 }
 export function moduleAvailable(attempt, index) {
   return index === 0 || attempt.quizScores[attempt.snapshot.modules[index - 1].id] >= attempt.snapshot.passingScore;
@@ -50,7 +52,7 @@ export function checkChallenge(token, userId, scope) {
   if (data.userId !== userId || data.scope !== scope || data.exp < Date.now()) throw Object.assign(new Error('Assessment expired.'), { status: 400 });
   return data.nonce;
 }
-export function careerMatches(attempts, baseline, interest = '', tracks = defaultCareerTracks) {
+export function careerMatches(attempts, baseline, interest = '', tracks = defaultCareerTracks, practicals = []) {
   const latest = new Map();
   for (const attempt of [...attempts].sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt))) {
     if (attempt.status === 'completed') latest.set(attempt.courseId, attempt);
@@ -65,7 +67,18 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
     const courseScores = evidence[domain];
     scores[domain] = courseScores.length ? Math.round(courseScores.reduce((a, b) => a + b, 0) / courseScores.length) : baseline?.scores?.[domain] ?? null;
   }
-  return { scores, tracks: tracks.map(track => {
+  const knowledgeScores = { ...scores }, practicalScores = {};
+  for (const domain of domains) {
+    const values = [];
+    for (const attempt of latest.values()) if (attempt.snapshot.domain === domain) {
+      const tasks = (attempt.snapshot.tasks || []).filter(t => t.required !== false);
+      const valid = tasks.map(t => practicals.find(p => p.attemptId === attempt.id && p.taskId === t.id)).filter(p => p && Number.isFinite(p.grade));
+      if (tasks.length && valid.length === tasks.length) values.push(valid.reduce((sum,p) => sum + p.grade,0) / valid.length);
+    }
+    practicalScores[domain] = values.length ? Math.round(values.reduce((a,b) => a+b,0) / values.length) : null;
+    if (scores[domain] !== null && practicalScores[domain] !== null) scores[domain] = Math.round(scores[domain] * 0.7 + practicalScores[domain] * 0.3);
+  }
+  return { scores, knowledgeScores, practicalScores, tracks: tracks.map(track => {
     const known = track.required.filter(d => scores[d] !== null);
     const sufficient = known.length === track.required.length;
     const average = known.length ? known.reduce((sum, d) => sum + scores[d], 0) / known.length : 0;

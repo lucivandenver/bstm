@@ -10,7 +10,7 @@ const { starterCourses } = await import('../data/starterCourses.js');
 const { startServer, closeResources } = await import('../index.js');
 await test('Admin management is protected and Faculty/Student registration remains scoped', async () => {
   await sequelize.sync({ force: true }); await seedAdministration(); await bootstrapAdmin(); await bootstrapAdmin();
-  for (const c of starterCourses) await Course.create({ ...c, published: true });
+  for (const c of starterCourses) await Course.create({ ...c, published: true, starter: true });
   assert.equal(await User.count({ where: { role: 'admin' } }), 1);
   const owner = await User.findOne({ where: { email: ownerEmail() } });
   const initialHash = owner.password;

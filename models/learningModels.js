@@ -8,9 +8,13 @@ export const StudentProfile = sequelize.define('StudentProfile', {
   ojtStatus: DataTypes.STRING(40), ojtCompany: DataTypes.STRING(160), ojtArea: DataTypes.STRING(100),
   ojtHours: DataTypes.INTEGER, careerInterest: DataTypes.STRING(80), preferredLocation: DataTypes.STRING(120),
   languages: DataTypes.STRING(200), skills: DataTypes.TEXT, qualifications: DataTypes.TEXT,
+  relocate: DataTypes.STRING(30), targetRoles: DataTypes.STRING(300), workPreferences: DataTypes.STRING(300), ojtTasks: DataTypes.TEXT,
   bio: DataTypes.TEXT, complete: { type: DataTypes.BOOLEAN, defaultValue: false }
 });
 export const Course = sequelize.define('Course', {
+  ownerId: DataTypes.INTEGER, outcomes: json([]), tasks: json([]), policy: json({}),
+  enrollFrom: DataTypes.DATE, enrollUntil: DataTypes.DATE, deadline: DataTypes.DATE,
+  certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true },
   slug: { type: DataTypes.STRING, unique: true, allowNull: false }, title: { type: DataTypes.STRING, allowNull: false },
   description: DataTypes.TEXT, domain: DataTypes.STRING(60), level: DataTypes.STRING(40),
   minutes: DataTypes.INTEGER, version: { type: DataTypes.INTEGER, defaultValue: 1 },

@@ -103,7 +103,7 @@ Starter pathway labels use these transparent rules:
 - All required areas known, average at least 85, and every required area at least 75: **Strong learning alignment**.
 - Otherwise: **Developing alignment**.
 
-These thresholds and pathway mappings need faculty validation before academic/research interpretation. A numeric domain average is not an employment probability. Practical communication/workplace readiness needs faculty rubrics and observed performance in a future faculty release.
+These thresholds and pathway mappings need faculty validation before academic/research interpretation. A numeric domain average is not an employment probability. Practical communication/workplace evidence uses faculty-defined rubrics in the learning portals release. Where completed practical evidence exists, pathway alignment blends 70% knowledge with 30% rubric evidence; qualifications and employment readiness still require separate review.
 
 Without an AI key the system uses labelled rule-based pathways. To enable the optional AI explanation, configure:
 

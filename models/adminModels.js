@@ -17,5 +17,5 @@ export const Announcement = sequelize.define('Announcement', {
 });
 export const CareerPath = sequelize.define('CareerPath', {
   title: { type: DataTypes.STRING(160), unique: true, allowNull: false }, focus: DataTypes.STRING(160),
-  required: { type: DataTypes.JSON, allowNull: false }, active: { type: DataTypes.BOOLEAN, defaultValue: true }
+  qualifications: DataTypes.TEXT, required: { type: DataTypes.JSON, allowNull: false }, active: { type: DataTypes.BOOLEAN, defaultValue: true }
 });

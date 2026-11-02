@@ -1,8 +1,12 @@
+import { summarizeLearning } from '../services/evidence.js';
+import { PracticalSubmission } from '../models/portalModels.js';
+import { CourseRevision } from '../models/portalModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { User, Course, CourseAttempt, StudentProfile, Credential, Assessment, Notification, sequelize } from '../models/learningModels.js';
 import { Section, AuditLog, Setting, Announcement, CareerPath } from '../models/adminModels.js';
-import { audit, ownerEmail, genders } from '../services/accounts.js';
+import { publishCheck } from '../services/courseAuthoring.js';
+import { audit, ownerEmail, genders, setting } from '../services/accounts.js';
 import { text, email } from '../services/validation.js';
 import { domains } from '../data/starterCourses.js';
 const plain = row => row?.get({ plain: true });
@@ -120,13 +124,16 @@ export const saveSection = async (req, res) => {
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('That section already exists.'); throw error; }
   req.flash('success_msg', 'Section saved.'); res.redirect('/admin/sections');
 };
-export const courses = async (req, res) => render(res, 'courses', { title: 'Course oversight', courses: (await Course.findAll({ order: [['title', 'ASC']] })).map(c => ({ ...plain(c), moduleCount: c.modules.length })), domains });
+export const courses = async (req, res) => render(res, 'courses', { title: 'Course oversight', faculty: (await User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id','name'] })).map(plain), courses: (await Course.findAll({ order: [['title', 'ASC']] })).map(c => ({ ...plain(c), moduleCount: c.modules.length })), domains });
 export const saveCourse = async (req, res) => {
   const title = text(req.body.title, 160), domain = text(req.body.domain, 60), score = Number(req.body.passingScore);
   if (!title || !domains.includes(domain) || !Number.isInteger(score) || score < 50 || score > 100) fail('Check course title, area and passing score (50–100).');
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!course) fail('Course not found.');
+    if (req.body.published === 'true') publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
+    await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-before-edit', snapshot: plain(course) }, { transaction });
     await course.update({ title, description: text(req.body.description, 2000), domain, passingScore: score, published: req.body.published === 'true', version: course.version + 1 }, { transaction });
+    await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: course.published ? 'admin-published' : 'admin-archived', snapshot: plain(course) }, { transaction });
     await audit(req.user.id, 'course.updated', 'course', course.id, { version: course.version, published: course.published }, transaction);
   });
   req.flash('success_msg', 'Course updated. Existing learning attempts retain their original requirements.'); res.redirect('/admin/courses');
@@ -163,7 +170,7 @@ export const saveCareer = async (req, res) => {
   if (!title || !required.length) fail('Enter a title and at least one competency area.');
   try {
     await sequelize.transaction(async transaction => {
-      const data = { title, focus: text(req.body.focus, 160), required, active: req.body.active === 'true' };
+      const data = { title, focus: text(req.body.focus, 160), qualifications: text(req.body.qualifications, 1500), required, active: req.body.active === 'true' };
       let row = req.params.id ? await CareerPath.findByPk(req.params.id, { transaction }) : null;
       if (req.params.id && !row) fail('Career path not found.');
       if (row) await row.update(data, { transaction }); else row = await CareerPath.create(data, { transaction });
@@ -174,7 +181,7 @@ export const saveCareer = async (req, res) => {
 };
 export const settings = async (req, res) => render(res, 'settings', { title: 'System settings', portalSettings: Object.fromEntries((await Setting.findAll()).map(s => [s.key, s.value])), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
 export const saveSettings = async (req, res) => {
-  const values = { institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
+  const values = { certificateTemplate: ['classic','modern'].includes(req.body.certificateTemplate) ? req.body.certificateTemplate : await setting('certificateTemplate','classic'), institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
   if (!values.institutionName || !/^\d{4}-\d{4}$/.test(values.academicYear)) fail('Enter an institution and academic year.');
   await sequelize.transaction(async transaction => {
     for (const [key, value] of Object.entries(values)) await Setting.upsert({ key, value }, { transaction });
@@ -185,8 +192,15 @@ export const saveSettings = async (req, res) => {
 export const auditLogs = async (req, res) => render(res, 'audit', { title: 'Activity & audit logs', logs: (await AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 200 })).map(l => ({ ...plain(l), date: date(l.createdAt), detail: JSON.stringify(l.details) })) });
 export const reports = async (req, res) => {
   const attempts = await CourseAttempt.findAll({ include: [{ model: User, attributes: ['id', 'name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });
-  const diagnostics = await Assessment.findAll({ order: [['createdAt', 'DESC']], limit: 500 });
-  render(res, 'reports', { title: 'Learning & readiness reports', attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, date: date(a.createdAt) })), diagnostics: diagnostics.map(d => ({ ...plain(d), date: date(d.createdAt) })) });
+  const diagnostics = await Assessment.findAll({ include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });
+  const [students, allAttempts, allDiagnostics, practicals] = await Promise.all([
+    User.findAll({ where: { role: 'student' }, attributes: ['id','section'] }),
+    CourseAttempt.findAll({ attributes: ['id','userId','courseId','snapshot','status','completedAt','finalScore'] }),
+    Assessment.findAll({ attributes: ['userId','scores','createdAt'], order: [['createdAt','DESC']] }),
+    PracticalSubmission.findAll({ where: { status: 'graded' }, attributes: ['attemptId','taskId','grade'] })
+  ]);
+  const summary = summarizeLearning(students, allAttempts, allDiagnostics, practicals);
+  render(res, 'reports', { ...summary, title: 'Learning & readiness reports', attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, date: date(a.createdAt) })), diagnostics: diagnostics.map(d => ({ ...plain(d), date: date(d.createdAt) })) });
 };
 export const exportReport = async (req, res) => {
   const rows = await CourseAttempt.findAll({ include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']] });

@@ -1,3 +1,4 @@
+import * as portal from '../controllers/portalController.js';
 
   /*
     MIT License
@@ -26,7 +27,7 @@
     
 import express from "express";
 import { rateLimit } from 'express-rate-limit';
-import { homePage } from "../controllers/homeController.js";
+import { homePage, aboutPage } from "../controllers/homeController.js";
 import { loginPage, registerPage, forgotPasswordPage, dashboardPage, loginUser, registerUser, logoutUser, cancelGoogleRegistration } from "../controllers/authController.js";
 import { googleStart, googleCallback } from '../controllers/googleController.js';
 import { verify } from '../controllers/studentController.js';
@@ -36,8 +37,10 @@ import facultyRoutes from './faculty.js';
 import studentRoutes from './student.js';
 const router = express.Router();
 const authLimit = rateLimit({ windowMs: 15 * 60000, limit: 30, message: 'Too many sign-in attempts. Try again in 15 minutes.' });
-router.get("/", homePage);
-router.get("/about", (req, res) => res.render("about", { title: "About CareerBridge" }));
+router.get("/", asyncRoute(homePage));
+router.get('/privacy', (req,res) => res.render('accountInformation', { title: 'How your information is used', privacy: true }));
+router.get('/terms', (req,res) => res.render('accountInformation', { title: 'Using CareerBridge', privacy: false }));
+router.get("/about", asyncRoute(aboutPage));
 router.get("/login", loginPage);
 router.post("/login", authLimit, asyncRoute(loginUser));
 router.get("/register", asyncRoute(registerPage));
@@ -52,4 +55,9 @@ router.use('/student', studentRoutes);
 router.use('/admin', adminRoutes);
 router.use('/faculty', facultyRoutes);
 router.get('/verify/:id', asyncRoute(verify));
+router.get('/notifications', requireUser, asyncRoute(portal.notifications));
+router.get('/notifications/count', requireUser, asyncRoute(portal.notificationCount));
+router.post('/notifications/read', requireUser, asyncRoute(portal.readAll));
+router.post('/notifications/:id/open', requireUser, asyncRoute(portal.openNotification));
+router.get('/files/:id', requireUser, asyncRoute(portal.file));
 export default router;

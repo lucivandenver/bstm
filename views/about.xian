@@ -207,7 +207,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-16 pt-8 border-t border-gray-200">
         
         <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">148+</div>
+          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">{{stats.students}}</div>
           <p class="text-xs text-slate-600 mt-2 leading-relaxed">
             Graduating BSTM Students at MinSU Bongabong Campus
           </p>
@@ -221,7 +221,7 @@
         </div>
 
         <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">7+</div>
+          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">{{stats.pathways}}</div>
           <p class="text-xs text-slate-600 mt-2 leading-relaxed">
             Tourism & Hospitality Career Pathways in Database
           </p>
