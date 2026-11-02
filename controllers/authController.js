@@ -1,3 +1,4 @@
+import { homePage } from './homeController.js';
 import { Notification } from '../models/learningModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
@@ -6,15 +7,16 @@ import { Section } from '../models/adminModels.js';
 import { authenticate } from '../middleware/security.js';
 import { email, registrationInput } from '../services/validation.js';
 import { ownerEmail, usable, accessMessage, destination, setting, audit } from '../services/accounts.js';
-export const loginPage = (req, res) => res.render('login', { title: 'Login' });
+export const loginPage = async (req, res) => { res.locals.openLoginModal = true; res.locals.openRegisterModal = false; return homePage(req,res); };
 export const registerPage = async (req, res) => {
   const pending = req.session.pendingRegistration;
   if (pending && pending.expires < Date.now()) delete req.session.pendingRegistration;
   const google = req.session.pendingRegistration;
   const role = google?.role || (req.query.role === 'faculty' ? 'faculty' : 'student');
-  res.render('register', { title: 'Register', isFaculty: role === 'faculty', registrationRole: role,
+  Object.assign(res.locals, { openRegisterModal: true, openLoginModal: false, isFaculty: role === 'faculty', registrationRole: role,
     pendingGoogle: Boolean(google), registrationName: google?.name || '', registrationEmail: google?.email || '',
-    sections: (await Section.findAll({ where: { active: true }, order: [['name', 'ASC']] })).map(s => s.get({ plain: true })) });
+    sections: res.locals.sections || (await Section.findAll({ where: { active: true }, order: [['name', 'ASC']] })).map(s => s.get({ plain: true })) });
+  return homePage(req,res);
 };
 export const forgotPasswordPage = (req, res) => res.render('forgotpassword', { title: 'Account help' });
 export const dashboardPage = (req, res) => res.redirect(destination(req.user));
@@ -52,7 +54,7 @@ export const registerUser = async (req, res) => {
   await authenticate(req, user, google ? 'google' : 'password');
   res.redirect('/student/profile');
 };
-export const cancelGoogleRegistration = (req, res) => { delete req.session.pendingRegistration; res.redirect('/register'); };
+export const cancelGoogleRegistration = (req, res) => { delete req.session.pendingRegistration; res.redirect(req.body.exit === 'yes' ? '/' : '/register'); };
 export const logoutUser = (req, res, next) => req.session.destroy(err => {
   if (err) return next(err); res.clearCookie('careerbridge.sid'); res.redirect('/login');
 });

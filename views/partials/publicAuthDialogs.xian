@@ -1,0 +1,156 @@
+<!-- ================= POPUP MODALS (BOXY DESIGN WITH SHARP CORNERS) ================= -->
+
+  <!-- 1. LOGIN POPUP MODAL (BOXY) -->
+  <div id="loginModal" data-auth-dialog="login" data-pending-google="{{#if pendingGoogle}}true{{else}}false{{/if}}" role="dialog" aria-modal="true" aria-label="Sign in" class="auth-overlay {{#if openLoginModal}}flex{{else}}hidden{{/if}} bg-black/60 backdrop-blur-sm">
+    <div class="relative w-full max-w-[440px] bg-white rounded-none shadow-2xl p-8 sm:p-10 border border-gray-300 transition-all duration-200" id="loginModalCard" tabindex="-1">
+
+      <!-- Close Button -->
+      <a href="/" class="auth-dialog-close" data-close-auth aria-label="Close Sign in dialog">×</a>
+
+      {{#if openLoginModal}}<div class="auth-status">{{> messages}}</div>{{/if}}
+<!-- Modal Card Header -->
+      <div class="mb-6">
+        <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign In</h2>
+      </div>
+
+      <!-- Form -->
+      <form action="/login" method="POST" class="space-y-4"><input type="hidden" name="_csrf" value="{{csrf}}">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1" for="modal_login_email">Email address</label>
+          <input
+            type="email"
+            id="modal_login_email"
+            name="email"
+            placeholder="you@example.com"
+            required
+            class="w-full px-4 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-sm font-semibold text-slate-700" for="modal_login_password">Password</label>
+            <a href="/forgot-password" class="text-xs font-semibold text-[#007042] hover:text-[#005230] transition-colors">Forgot?</a>
+          </div>
+          <div class="relative">
+            <input
+              type="password"
+              id="modal_login_password"
+              name="password"
+              placeholder="Enter your password"
+              required
+              class="w-full pl-4 pr-11 py-2.5 rounded-none border border-gray-300 text-slate-800 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#007042] focus:border-[#007042] transition-all"
+            />
+            <button
+              type="button"
+              onclick="toggleModalPassword('modal_login_password', this)"
+              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-slate-600 focus:outline-none"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="w-full py-3 px-4 bg-[#007042] hover:bg-[#005a35] text-white font-bold rounded-none shadow-sm hover:shadow transition-all duration-200 mt-2 text-sm tracking-wide"
+        >
+          Log in
+        </button>
+      </form>
+
+      <!-- OR Divider -->
+      <div class="relative flex py-5 items-center">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="flex-shrink mx-4 text-xs font-medium text-gray-400 uppercase">or</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+      </div>
+
+      <!-- Google Sign In -->
+      <a
+        href="/auth/google?intent=login"
+        class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        Sign in with Google
+      </a>
+
+      <!-- Switch to Register -->
+      <p class="text-center text-xs text-slate-600 mt-5">
+        New to CareerBridge?
+        <button onclick="switchToRegisterModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create an account</button>
+      </p>
+
+      <!-- Terms -->
+      <p class="text-center text-[11px] text-gray-400 mt-4 leading-relaxed">
+        By logging in, you agree to CareerBridge's
+        <a href="/terms" class="underline text-gray-500 hover:text-gray-700">Terms</a> &
+        <a href="/privacy" class="underline text-gray-500 hover:text-gray-700">Data use</a>
+      </p>
+
+    </div>
+  </div>
+
+
+  <!-- 2. REGISTER POPUP MODAL (BOXY) -->
+  <div id="registerModal" data-auth-dialog="register" data-pending-google="{{#if pendingGoogle}}true{{else}}false{{/if}}" role="dialog" aria-modal="true" aria-label="Create account" class="auth-overlay {{#if openRegisterModal}}flex{{else}}hidden{{/if}} bg-black/60 backdrop-blur-sm">
+    <div class="relative w-full max-w-[460px] bg-white rounded-none shadow-2xl p-8 sm:p-10 border border-gray-300 transition-all duration-200" id="registerModalCard" tabindex="-1">
+
+      <!-- Close Button -->
+      <a href="/" class="auth-dialog-close" data-close-auth aria-label="Close Create account dialog">×</a>
+
+      <!-- Modal Card Header -->
+      <div class="mb-5">
+        <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Sign Up</h2>
+      </div>
+
+      {{#if openRegisterModal}}<div class="auth-status">{{> messages}}</div>{{/if}}
+      <!-- Form -->
+      {{> registrationForm prefix="modal_"}}
+
+      {{#if pendingGoogle}}<form action="/register/cancel-google" method="post" class="mt-4"><input type="hidden" name="_csrf" value="{{csrf}}"><button type="submit" class="text-sm text-gray-600 underline">Use a different Google account</button></form>{{else}}
+      <!-- OR Divider -->
+      <div class="relative flex py-4 items-center">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="flex-shrink mx-4 text-xs font-medium text-gray-400 uppercase">or</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+      </div>
+
+      <!-- Google Sign In -->
+      <a
+        href="/auth/google?intent=register&amp;role={{registrationRole}}" data-google-register
+        class="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-gray-300 rounded-none text-sm font-semibold text-slate-700 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        Sign up with Google
+      </a>
+
+      {{/if}}
+      <!-- Switch to Login -->
+      <p class="text-center text-xs text-slate-600 mt-4">
+        Already have an account?
+        <button onclick="switchToLoginModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Log in</button>
+      </p>
+
+      <!-- Terms -->
+      <p class="text-center text-[11px] text-gray-400 mt-3 leading-relaxed">
+        By creating an account, you agree to CareerBridge's
+        <a href="/terms" class="underline text-gray-500 hover:text-gray-700">Terms</a> &
+        <a href="/privacy" class="underline text-gray-500 hover:text-gray-700">Data use</a>
+      </p>
+
+    </div>
+  </div>

@@ -41,7 +41,7 @@ router.get("/", asyncRoute(homePage));
 router.get('/privacy', (req,res) => res.render('accountInformation', { title: 'How your information is used', privacy: true }));
 router.get('/terms', (req,res) => res.render('accountInformation', { title: 'Using CareerBridge', privacy: false }));
 router.get("/about", asyncRoute(aboutPage));
-router.get("/login", loginPage);
+router.get("/login", asyncRoute(loginPage));
 router.post("/login", authLimit, asyncRoute(loginUser));
 router.get("/register", asyncRoute(registerPage));
 router.post("/register", authLimit, asyncRoute(registerUser));
