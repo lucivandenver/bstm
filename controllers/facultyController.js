@@ -8,7 +8,8 @@ import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
 import { domains } from '../data/starterCourses.js';
 import { blankCourse, courseInput, publishCheck, questionInput, fail } from '../services/courseAuthoring.js';
-import { generateCourse } from '../services/courseAi.js';
+import { generateCourse, manualSourceDraft, aiConfiguration, sourceSections } from '../services/courseAi.js';
+import { generationError, safeGenerationError } from '../services/courseGenerationErrors.js';
 import { extractSource } from '../services/sourceExtraction.js';
 import { progress, careerMatches, publicQuestions } from '../services/learning.js';
 import { finalizeAttempt } from '../services/portalLearning.js';
@@ -34,7 +35,7 @@ export const courses = async (req, res) => {
   render(res, 'courses', { title: 'My courses', courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); return { ...plain(c), moduleCount: c.modules.length, questionCount: c.questions.length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length }; }) });
 };
 export const editor = async (req, res) => {
-  const course = req.params.id ? plain(await ownedCourse(req)) : blankCourse(domains[0]);
+  const course = req.params.id ? plain(await ownedCourse(req)) : blankCourse('');
   const [bank, otherCourses, revisions] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] }), course.id ? CourseRevision.findAll({ where: { courseId: course.id }, order: [['createdAt', 'DESC']], limit: 20 }) : []]);
   render(res, 'editor', { title: course.id ? 'Edit course' : 'Create a course', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
@@ -64,20 +65,43 @@ export const saveCourse = async (req, res) => {
 };
 export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
 export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', course: plain(c), questions: publicQuestions(c.questions) }); };
-export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL), sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+const sourceValues = body => ({ domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
+const sourceView = (res, source, body, error) => render(res, 'source', { title: 'Review source material', source: { ...plain(source), sections: sourceSections(source) }, domains, aiReady: aiConfiguration().ready, values: sourceValues(body), error });
+export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: aiConfiguration().ready, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
-  let sections; try { sections = await extractSource(req.file); } catch (e) { if (e.status) throw e; fail('The document could not be read. Try a text-based PDF, DOCX or PPTX.'); }
-  const source = await SourceDocument.create({ ownerId: req.user.id, filename: text(req.file.originalname, 200), sections });
-  await audit(req.user.id, 'source.uploaded', 'source', source.id, { sections: sections.length }); req.flash('success_msg', 'Source text extracted. Review it before requesting an AI draft.'); res.redirect(`/faculty/sources/${source.id}`);
+  let sections;
+  try { sections = await extractSource(req.file); } catch (e) { if (e.status) throw e; fail('The document could not be read. Try a text-based PDF, DOCX or PPTX.'); }
+  let source;
+  try {
+    source = await sequelize.transaction(async transaction => {
+      const row = await SourceDocument.create({ ownerId: req.user.id, filename: text(req.file.originalname, 200), sections }, { transaction });
+      await audit(req.user.id, 'source.uploaded', 'source', row.id, { sections: sections.length }, transaction);
+      return row;
+    });
+  } catch (e) {
+    const error = safeGenerationError(e, 'upload-save');
+    if (req.get('accept')?.includes('application/json')) return res.status(error.status).json({ ok: false, message: error.message, code: error.code, reference: error.reference });
+    req.flash('error_msg', `${error.message} Reference: ${error.reference}`); return res.redirect('/faculty/upload');
+  }
+  req.flash('success_msg', 'Source text extracted. Review it before creating a draft.'); res.redirect(`/faculty/sources/${source.id}`);
 };
-export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); render(res, 'source', { title: 'Review source material', source: plain(s), domains }); };
+export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); sourceView(res, s); };
 export const generate = async (req, res) => {
   const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404);
-  if (req.body.consent !== 'yes' || !domains.includes(req.body.domain) || !text(req.body.outcomes, 1500)) fail('Confirm source sharing, select a domain and enter target learning outcomes.');
-  const { draft, job } = await generateCourse(req.user.id, source, { ...req.body, outcomes: text(req.body.outcomes, 1500) });
-  const c = await Course.create({ ...draft, ownerId: req.user.id, slug: `ai-${randomUUID()}`, published: false }); await job.update({ courseId: c.id });
-  await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: 1, action: 'ai-draft', snapshot: plain(c) });
-  req.flash('success_msg', 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.'); res.redirect(`/faculty/courses/${c.id}/edit`);
+  try {
+    const manual = req.body.mode === 'manual', values = sourceValues(req.body);
+    if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
+    if (!manual && (req.body.consent !== 'yes' || !values.outcomes)) throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with Gemini.');
+    const { course } = await (manual ? manualSourceDraft : generateCourse)(req.user.id, source, { ...req.body, outcomes: values.outcomes });
+    req.flash('success_msg', manual ? 'Source imported into an unpublished draft. Add assessments and review all content before publishing.' : 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.');
+    const redirect = `/faculty/courses/${course.id}/edit`;
+    if (req.get('accept')?.includes('application/json')) return res.json({ ok: true, redirect });
+    res.redirect(redirect);
+  } catch (e) {
+    const error = e.reference ? e : safeGenerationError(e, 'generate-form');
+    if (req.get('accept')?.includes('application/json')) return res.status(error.status).json({ ok: false, message: error.message, code: error.code, reference: error.reference });
+    res.status(error.status); sourceView(res, source, req.body, { message: error.message, code: error.code, reference: error.reference });
+  }
 };
 export const bank = async (req, res) => render(res, 'bank', { title: 'Question bank', domains, questions: (await QuestionBank.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']], limit: 300 })).map(plain) });
 export const saveQuestion = async (req, res) => {

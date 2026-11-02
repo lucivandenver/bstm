@@ -94,4 +94,5 @@
   <script src="/js/auth.js" defer></script>
 <link rel="stylesheet" href="/css/public-ui.css">
 <script src="/js/public-ui.js" defer></script>
+<link rel="stylesheet" href="/css/public-content.css">
 </head>

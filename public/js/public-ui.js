@@ -1,4 +1,12 @@
 (() => {
+  const header = document.querySelector('.public-site-header');
+  const updateHeader = () => header?.classList.toggle('is-scrolled', scrollY > 12);
+  updateHeader(); window.addEventListener('scroll', updateHeader, { passive: true });
+  for (const dropdown of document.querySelectorAll('.public-nav-dropdown')) {
+    dropdown.addEventListener('toggle', () => { if (dropdown.open) for (const other of document.querySelectorAll('.public-nav-dropdown')) if (other !== dropdown) other.open = false; });
+    dropdown.addEventListener('keydown', event => { if (event.key === 'Escape') { dropdown.open = false; dropdown.querySelector('summary').focus(); event.stopPropagation(); } });
+    dropdown.querySelectorAll('a').forEach(link => link.addEventListener('click', () => dropdown.open = false));
+  }
   const menu = document.getElementById('mobileNavMenu'), menuButton = document.getElementById('mobileMenuBtn');
   const closeMenu = () => { if(menu)menu.hidden=true; menuButton?.setAttribute('aria-expanded','false'); };
   menuButton?.addEventListener('click', () => {menu.hidden=!menu.hidden;menuButton.setAttribute('aria-expanded',String(!menu.hidden));});

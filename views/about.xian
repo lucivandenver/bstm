@@ -18,41 +18,7 @@
       
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
         
-        <!-- Left Side: Boxy Corner Badges with subtle border -->
-        <div class="lg:col-span-5 relative flex flex-col gap-4 pt-4">
-
-          <!-- Badge 1: BSTM MinSU (Boxy) -->
-          <div class="bg-white/95 backdrop-blur-md rounded-none p-5 shadow-md border border-gray-200 flex items-center justify-between">
-            <span class="text-2xl font-black text-[#E11D48] tracking-tight">BSTM</span>
-            <div class="text-right">
-              <p class="text-xs font-semibold text-slate-700">Bachelor of Science in</p>
-              <p class="text-xs font-medium text-slate-500">Tourism Management •</p>
-              <p class="text-xs text-gray-400">MinSU Bongabong Campus</p>
-            </div>
-          </div>
-
-          <!-- Badge 2: Academic Period (Boxy with Green Highlight) -->
-          <div class="bg-white/95 backdrop-blur-md rounded-none p-5 shadow-md border border-gray-200 border-l-4 border-l-[#16a34a] flex items-center justify-between">
-            <div class="flex flex-col">
-              <span class="text-lg font-black text-[#16a34a] leading-tight">Oct–</span>
-              <span class="text-lg font-black text-[#16a34a] leading-tight">Dec</span>
-            </div>
-            <div class="text-right">
-              <p class="text-xs font-semibold text-slate-700">Graduating Academic Year</p>
-              <p class="text-xs text-gray-500">Assessment Period 2026</p>
-            </div>
-          </div>
-
-          <!-- Badge 3: AI Matching (Boxy) -->
-          <div class="bg-white/95 backdrop-blur-md rounded-none p-5 shadow-md border border-gray-200 flex items-center justify-between">
-            <span class="text-2xl font-black text-[#E11D48] tracking-tight">AI</span>
-            <div class="text-right">
-              <p class="text-xs font-semibold text-slate-700">Rule-based and algorithmic</p>
-              <p class="text-xs text-gray-500">career-matching logic</p>
-            </div>
-          </div>
-
-        </div>
+        <div class="lg:col-span-5"><figure class="cb-student-portrait"><div class="cb-portrait-label">BSTM · MINSU BONGABONG</div><img src="/images/bstm-student-models.png" width="350" height="707" alt="Two students wearing MinSU uniforms" loading="eager"><figcaption><span>Learning today.</span><strong>Ready for what comes next.</strong><p>Supporting BSTM students and the faculty who guide their progress.</p></figcaption></figure></div>
 
         <!-- Right Side: Content Boxy Card with Corner Design -->
         <div class="lg:col-span-7 bg-white/95 backdrop-blur-md rounded-none p-8 sm:p-10 border border-gray-200 shadow-md space-y-6">
@@ -100,7 +66,7 @@
               </div>
               <div class="text-xs sm:text-sm">
                 <span class="font-bold text-slate-900 mr-2">Intelligent Career Matching:</span>
-                <span class="text-slate-600">Matches qualifications, OJT experience, and preferences with 7+ tourism career pathways.</span>
+                <span class="text-slate-600">Matches qualifications, OJT experience, and preferences with the active tourism career pathways in the system.</span>
               </div>
             </div>
 
@@ -134,38 +100,7 @@
 
       </div>
 
-      <!-- 4 Stat Highlight Cards Below (Boxy) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-16 pt-8 border-t border-gray-200">
-        
-        <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">{{stats.students}}</div>
-          <p class="text-xs text-slate-600 mt-2 leading-relaxed">
-            Graduating BSTM Students at MinSU Bongabong Campus
-          </p>
-        </div>
-
-        <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#16a34a] tracking-tight">4</div>
-          <p class="text-xs text-slate-600 mt-2 leading-relaxed">
-            Skill Domains Assessed: Industry, Communication, Workplace & Digital
-          </p>
-        </div>
-
-        <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#E11D48] tracking-tight">{{stats.pathways}}</div>
-          <p class="text-xs text-slate-600 mt-2 leading-relaxed">
-            Tourism & Hospitality Career Pathways in Database
-          </p>
-        </div>
-
-        <div class="bg-white/95 rounded-none p-6 border border-gray-200 shadow-sm">
-          <div class="text-3xl lg:text-4xl font-extrabold text-[#16a34a] tracking-tight">10</div>
-          <p class="text-xs text-slate-600 mt-2 leading-relaxed">
-            Assessment Sections for a Complete Student Readiness Profile
-          </p>
-        </div>
-
-      </div>
+      <div class="cb-about-stats">{{> publicStats}}</div>
 
     </div>
   </section>
@@ -228,7 +163,7 @@
             </svg>
           </button>
           <div id="faq-content-3" class="px-6 pb-4 pt-2 text-xs sm:text-sm text-slate-600 text-center hidden border-t border-gray-100 leading-relaxed">
-            The algorithmic engine evaluates student responses across 10 structured sections covering tourism domains, workplace skills, communication, and digital PMS tools. It matches these competency ratings against job profiles in 7+ key tourism sectors.
+            The system uses your profile, diagnostic and completed course evidence across Tourism knowledge, Communication, Workplace and Digital skills to rank active career pathways. Results explain your assessed strengths and gaps; optional AI adds guidance.
           </div>
         </div>
 
@@ -256,7 +191,7 @@
             </svg>
           </button>
           <div id="faq-content-5" class="px-6 pb-4 pt-2 text-xs sm:text-sm text-slate-600 text-center hidden border-t border-gray-100 leading-relaxed">
-            Yes. All individual scores and responses are treated with strict confidentiality in accordance with Republic Act 10173 (Data Privacy Act of 2012) and university research ethics standards.
+            Your results are available to your account, authorized faculty for assigned sections, and Admin for system administration. Course source material is sent to the AI provider only when faculty confirm sharing.
           </div>
         </div>
 
@@ -270,7 +205,7 @@
             </svg>
           </button>
           <div id="faq-content-6" class="px-6 pb-4 pt-2 text-xs sm:text-sm text-slate-600 text-center hidden border-t border-gray-100 leading-relaxed">
-            Depending on campus coordinator policy, students may request an assessment reset or update their profile after completing supplemental skills training or OJT experiences.
+            You can update your profile and start a new course attempt. Previous attempts and earned achievements remain in your learning history. Assessment and course retry rules are shown inside your account.
           </div>
         </div>
 

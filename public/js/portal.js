@@ -3,7 +3,7 @@
   for (const form of document.querySelectorAll('[data-confirm]')) form.addEventListener('submit', e => {if(!confirm(form.dataset.confirm))e.preventDefault();});
   for (const form of document.querySelectorAll('[data-upload]')) form.addEventListener('submit', async e => {
     e.preventDefault();const b=form.querySelector('button'),status=form.querySelector('.upload-status');b.disabled=true;status.textContent='Uploading and processing…';
-    try {const r=await fetch(form.action,{method:'POST',headers:{'X-CSRF-Token':csrf()},body:new FormData(form)});if(!r.ok){const html=await r.text();const parsed=new DOMParser().parseFromString(html,'text/html');throw new Error(parsed.querySelector('main p, .notice, .message')?.textContent||'Upload failed. Check the file type and size, then retry.');}window.location.assign(r.url);}
+    try {const r=await fetch(form.action,{method:'POST',headers:{'X-CSRF-Token':csrf(),Accept:'application/json'},body:new FormData(form)});if(!r.ok){const body=await r.text();let data;try{data=JSON.parse(body);}catch{}const parsed=new DOMParser().parseFromString(body,'text/html');throw new Error(data?.message ? data.message+(data.reference?' · Reference '+data.reference:'') : parsed.querySelector('.notice, .message, main p')?.textContent||'Upload failed. Check the file type and size, then retry.');}window.location.assign(r.url);}
     catch(err){status.textContent=err.message;b.disabled=false;}
   });
   for(const f of document.querySelectorAll('[data-question-form]')){

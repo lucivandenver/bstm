@@ -64,50 +64,19 @@
           <!-- Highlights Pills -->
           <div class="flex flex-wrap items-center gap-2.5 pt-4">
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>🎓</span> Graduating BSTM Students
+              <span>{{> publicIcon name="students"}}</span> Graduating BSTM Students
             </div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>🌴</span> Tourism & Hospitality Focus
+              <span>{{> publicIcon name="match"}}</span> Tourism & Hospitality Focus
             </div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>📊</span> Research-Backed System
+              <span>{{> publicIcon name="chart"}}</span> Research-Backed System
             </div>
           </div>
 
         </div>
 
-        <!-- Right Floating Dashboard Visual Cards: TOP & BOTTOM GREEN OUTLINE, MIDDLE PINK OUTLINE -->
-        <div class="lg:col-span-5 relative py-6 flex flex-col items-center lg:items-end">
-
-          <div class="relative w-full max-w-[370px]"><p class="text-xs text-gray-600 mb-3">Illustrative dashboard preview</p>
-
-            <!-- Card 1: Knowledge Readiness (Top Card: GREEN OUTLINE) -->
-            <div class="animate-float-1 relative z-10 bg-[#F8F9FA] rounded-[24px] p-6 shadow-xl card-outline-green mb-[-32px] w-[95%]">
-              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">KNOWLEDGE READINESS</span>
-              <div class="flex items-baseline gap-1.5 my-1">
-                <span class="text-3xl font-black text-slate-900">78%</span>
-                <span class="text-emerald-600 font-bold text-sm">↑</span>
-              </div>
-              <p class="text-xs text-gray-500 font-medium">Core BSTM Domains Verified</p>
-            </div>
-
-            <!-- Card 2: Top Recommended Match (Middle Protruding Card: PINK OUTLINE) -->
-            <div class="animate-float-2 relative z-20 bg-[#F8F9FA] rounded-[24px] p-6 shadow-2xl card-outline-pink mb-[-32px] w-full ml-[-12px] sm:ml-[-20px] transition-transform duration-300 hover:scale-105">
-              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">TOP RECOMMENDED MATCH</span>
-              <h4 class="text-[17px] font-extrabold text-slate-900 my-1">Tour Operations Manager</h4>
-              <p class="text-xs text-gray-500 font-medium">94% compatibility • Algorithmic Fit</p>
-            </div>
-
-            <!-- Card 3: Target Improvement (Bottom Card: GREEN OUTLINE) -->
-            <div class="animate-float-3 relative z-10 bg-[#F8F9FA] rounded-[24px] p-6 shadow-xl card-outline-green w-[95%]">
-              <span class="text-[11px] font-bold tracking-wider uppercase text-gray-400 block mb-1">TARGET IMPROVEMENT</span>
-              <h4 class="text-[15px] font-extrabold text-slate-900 my-1">Digital Skills • PMS Tools</h4>
-              <p class="text-xs text-gray-500 font-medium">Smart Development Plan active</p>
-            </div>
-
-          </div>
-
-        </div>
+        <div class="lg:col-span-5">{{> learningJourneyPreview}}</div>
 
       </div>
 
@@ -121,39 +90,7 @@
     </div>
   </section>
 
-  <!-- 2. STATS BAR -->
-  <section class="relative z-20 py-8 bg-gradient-to-r from-[#DF707E] via-[#5FB875] to-[#4EA965] text-white shadow-inner">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-6 text-center divide-y md:divide-y-0 md:divide-x divide-white/20">
-
-        <div class="pt-3 md:pt-0">
-          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">{{stats.students}}</div>
-          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Graduating BSTM Students</div>
-        </div>
-
-        <div class="pt-3 md:pt-0">
-          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">4</div>
-          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Skill Areas Assessed</div>
-        </div>
-
-        <div class="pt-3 md:pt-0">
-          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">{{stats.pathways}}</div>
-          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Career Pathways Matched</div>
-        </div>
-
-        <div class="pt-3 md:pt-0">
-          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">{{stats.courses}}</div>
-          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Published Learning Courses</div>
-        </div>
-
-        <div class="pt-3 md:pt-0 col-span-2 md:col-span-1">
-          <div class="text-3xl lg:text-4xl font-extrabold tracking-tight">6</div>
-          <div class="text-xs sm:text-sm font-medium text-white/90 mt-1">Research Objectives</div>
-        </div>
-
-      </div>
-    </div>
-  </section>
+  <section class="cb-stats-band"><div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{{> publicStats}}</div></section>
 
   <!-- 3. SYSTEM FEATURES SECTION (BOXY TYPE DESIGN) -->
   <section id="features" class="py-20 bg-slate-50">
@@ -172,118 +109,7 @@
         </p>
       </div>
 
-      <!-- Feature Cards Grid: Fully Adaptive across all screensizes (xs, sm, md, lg, xl, 2xl) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 lg:gap-8 mt-10 sm:mt-14">
-
-        <!-- Feature 1 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-emerald-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-orange-50 border border-orange-100 group-hover:scale-110 transition-transform">📋</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-orange-600 bg-orange-50 px-2 py-0.5 border border-orange-200">Assessment</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-emerald-700 transition-colors">Knowledge-Readiness Assessment</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Structured 10-section comprehensive survey evaluating Tourism Core, Communication, Workplace, and Digital PMS skills.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-emerald-700">
-            <span>10 Structured Modules</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-        <!-- Feature 2 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-rose-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-rose-50 border border-rose-100 group-hover:scale-110 transition-transform">🎯</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 px-2 py-0.5 border border-rose-200">Matching</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-rose-600 transition-colors">Smart Career Matching</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Algorithmic engine cross-analyzes student scores, interests, OJT, and qualifications against 7+ tourism career tracks.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-rose-600">
-            <span>7+ Career Pathways</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-        <!-- Feature 3 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-blue-50 border border-blue-100 group-hover:scale-110 transition-transform">📈</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 border border-blue-200">Diagnostic</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">Skills Gap Analysis</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Instantly detects specific competencies needing improvement with priority levels and targeted action guidelines.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-blue-600">
-            <span>Targeted Skill Action</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-        <!-- Feature 4 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-purple-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-purple-50 border border-purple-100 group-hover:scale-110 transition-transform">📊</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-2 py-0.5 border border-purple-200">Admin</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-purple-600 transition-colors">Analytics Dashboard</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Equips faculty advisors with real-time class readiness distributions, completion tracking, and cohort evaluations.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-purple-600">
-            <span>Realtime Cohort Data</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-        <!-- Feature 5 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-pink-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-pink-50 border border-pink-100 group-hover:scale-110 transition-transform">🤖</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-pink-600 bg-pink-50 px-2 py-0.5 border border-pink-200">AI Logic</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-pink-600 transition-colors">AI-Powered Suggestions</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Personalized algorithmic recommendations based on individual assessment trends and career development priorities.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-pink-600">
-            <span>Automated Guidance</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-        <!-- Feature 6 -->
-        <div class="group bg-white rounded-none p-6 sm:p-7 lg:p-8 border border-gray-200 shadow-sm hover:shadow-xl hover:border-teal-500/50 transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-3xl p-3 bg-teal-50 border border-teal-100 group-hover:scale-110 transition-transform">⬇️</span>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-teal-600 bg-teal-50 px-2 py-0.5 border border-teal-200">Export</span>
-            </div>
-            <h3 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 group-hover:text-teal-600 transition-colors">Downloadable Reports</h3>
-            <p class="text-slate-600 text-xs sm:text-sm leading-relaxed">
-              Graduating students can generate and export their comprehensive verified readiness profile and matching certificate.
-            </p>
-          </div>
-          <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-semibold text-teal-600">
-            <span>Instant PDF Export</span>
-            <span class="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
-
-      </div>
+      {{> systemFeatures}}
 
     </div>
   </section>
@@ -326,7 +152,7 @@
             </div>
             <div>
               <h4 class="text-lg font-bold text-slate-900">Take the Assessment</h4>
-              <p class="text-slate-600 text-sm mt-0.5">Complete the 10-section knowledge-readiness survey at your own pace.</p>
+              <p class="text-slate-600 text-sm mt-0.5">Complete your readiness diagnostic, then choose published courses to develop your skills.</p>
             </div>
           </div>
 
@@ -367,7 +193,7 @@
           <div class="bg-[#F6FAF6] border border-emerald-100 rounded-none p-6 shadow-md space-y-3.5">
 
             <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">🪪</span>
+              <span class="text-2xl">{{> publicIcon name="students"}}</span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Profile Created</h5>
                 <p class="text-xs text-gray-500">Student ID & academic background captured</p>
@@ -375,34 +201,34 @@
             </div>
 
             <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">📋</span>
+              <span class="text-2xl">{{> publicIcon name="check"}}</span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Assessment Done</h5>
-                <p class="text-xs text-gray-500">78% overall readiness score recorded</p>
+                <p class="text-xs text-gray-500">Readiness results are shown after submission</p>
               </div>
             </div>
 
             <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">🎯</span>
+              <span class="text-2xl">{{> publicIcon name="match"}}</span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Top Match Found</h5>
-                <p class="text-xs text-gray-500">Hotel & Resort Operations – 94% match</p>
+                <p class="text-xs text-gray-500">Ranked career options from your assessed evidence</p>
               </div>
             </div>
 
             <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">📈</span>
+              <span class="text-2xl">{{> publicIcon name="chart"}}</span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Gap Report Ready</h5>
-                <p class="text-xs text-gray-500">2 high-priority skill areas identified</p>
+                <p class="text-xs text-gray-500">Review assessed areas needing more practice</p>
               </div>
             </div>
 
             <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">🤖</span>
+              <span class="text-2xl">{{> publicIcon name="spark"}}</span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">AI Suggestions Sent</h5>
-                <p class="text-xs text-gray-500">5 personalized career tips generated</p>
+                <p class="text-xs text-gray-500">Optional AI guidance builds on your learning evidence</p>
               </div>
             </div>
 
@@ -424,7 +250,7 @@
           WHO IT'S FOR
         </span>
         <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-          Designed for Two Types of Users
+          Learning with Guidance & Support
         </h2>
         <p class="text-slate-600 text-base sm:text-lg">
           CareerBridge serves both graduating students exploring their career path and teachers or administrators overseeing the assessment process.
@@ -436,7 +262,7 @@
 
         <!-- Graduating BSTM Students Card (Boxy) -->
         <div class="bg-[#FFF5F6] rounded-none p-8 sm:p-10 border border-rose-200/80 shadow-sm hover:shadow-lg transition-all">
-          <div class="text-4xl mb-4">🎓</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="students"}}</div>
           <h3 class="text-2xl font-black text-slate-900 mb-3">Graduating BSTM Students</h3>
           <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
             You're about to enter the tourism and hospitality industry. CareerBridge helps you understand where you stand, what careers suit you best, and what you need to work on.
@@ -460,7 +286,7 @@
 
         <!-- Teachers & Administrators Card (Boxy) -->
         <div class="bg-[#F0FDF4] rounded-none p-8 sm:p-10 border border-emerald-200/80 shadow-sm hover:shadow-lg transition-all">
-          <div class="text-4xl mb-4">👨‍🏫</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="faculty"}}</div>
           <h3 class="text-2xl font-black text-slate-900 mb-3">Teachers & Administrators</h3>
           <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
             Monitor student progress, analyze class-wide readiness scores, and use the data to improve career guidance, training, and curriculum support.
@@ -469,7 +295,7 @@
           <ul class="space-y-3 text-sm font-semibold text-slate-700">
             <li class="flex items-center gap-3">
               <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
-              View all student assessment records
+              Faculty view assigned students; Admin manages system access
             </li>
             <li class="flex items-center gap-3">
               <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
@@ -512,7 +338,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-14">
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">🎓</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="students"}}</div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Graduating BSTM Students</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Understand knowledge readiness, identify areas for improvement, and explore aligned career options before entering the industry.
@@ -520,7 +346,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">📚</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="book"}}</div>
           <h4 class="text-base font-bold text-slate-900 mb-2">BSTM Program & Faculty</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Gain insights into student preparation and skill gaps to enhance career guidance, training, and curriculum support.
@@ -528,7 +354,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">🏫</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="faculty"}}</div>
           <h4 class="text-base font-bold text-slate-900 mb-2">MinSU Bongabong Campus</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             A technology-based approach for supporting graduating students as they transition from academics to the workforce.
@@ -536,7 +362,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">🌴</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="match"}}</div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Tourism & Hospitality Industry</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Understand the knowledge, skills, and interests that graduating BSTM students associate with available career opportunities.
@@ -548,7 +374,7 @@
       <!-- Bottom Centered 5th Beneficiary: Future Researchers (Boxy) -->
       <div class="max-w-md mx-auto mt-6">
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">🔬</div>
+          <div class="text-4xl mb-4">{{> publicIcon name="spark"}}</div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Future Researchers</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Serves as a reference and foundation for future studies on career readiness, tourism education, and technology-based assessment systems.
