@@ -104,9 +104,14 @@ if (!production && process.env.NODE_ENV !== 'test') {
 }
 app.use(asyncRoute(async (req, res, next) => {
   res.locals.openLoginModal = req.query.auth === 'login';
-  if (req.method === 'GET' && ['/', '/about', '/register'].includes(req.path)) {
+  if (req.method === 'GET' && ['/', '/about', '/login', '/register'].includes(req.path)) {
+    res.set('Cache-Control','no-store');
     res.locals.sections = (await Section.findAll({ where: { active: true }, order: [['name', 'ASC']] })).map(s => s.get({ plain: true }));
-    res.locals.registrationRole = 'student';
+    const pending = req.session.pendingRegistration;
+    if (pending && pending.expires < Date.now()) delete req.session.pendingRegistration;
+    const google = req.session.pendingRegistration;
+    const role = google?.role || (req.query.role === 'faculty' ? 'faculty' : 'student');
+    Object.assign(res.locals, { openRegisterModal: req.path === '/register' || req.query.auth === 'register', registrationRole: role, isFaculty: role === 'faculty', pendingGoogle: Boolean(google), registrationName: google?.name || '', registrationEmail: google?.email || '' });
   }
   next();
 }));

@@ -32,6 +32,10 @@ await test('Google login never registers users; registration completion and owne
     assert.equal(await User.count({ where: { email: 'new@gmail.com' } }), 0);
     flow = await start('register'); r = await callback(flow); assert.equal(r.location, '/register?role=student');
     assert.equal(await User.count({ where: { email: 'new@gmail.com' } }), 0, 'Google callback alone must not create a user');
+    r = await b.get('/?auth=register&role=faculty'); assert.ok(r.html.includes('value="Google Student"')); assert.ok(r.html.includes('name="account_type" value="student"'), 'verified Google role remains pinned on landing');
+    r = await b.post('/register/cancel-google', { exit: 'yes' }); assert.equal(r.location, '/');
+    r = await b.get('/'); assert.ok(!r.html.includes('value="Google Student"'));
+    flow = await start('register'); await callback(flow);
     r = await b.get('/register'); assert.ok(r.html.includes('value="Google Student"')); assert.ok(r.html.includes('name="identityId"'));
     r = await b.post('/register', { account_type: 'student', name: 'Google Student' }); assert.equal(r.location, '/register?role=student');
     r = await b.post('/register', { account_type: 'admin', name: 'Google Student', identityId: '2026-G01', section: 'BSTM 4-1', gender: 'Female' }); assert.equal(r.status, 302);
