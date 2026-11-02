@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import bcrypt from 'bcryptjs';
+import JSZip from 'jszip';
+import PDFDocument from 'pdfkit';
+import { browser } from './httpHelpers.js';
+process.env.NODE_ENV = 'test'; process.env.TEST_DB_STORAGE = ':memory:';
+const { sequelize, User, Course, CourseAttempt, StudentProfile, Credential, Notification } = await import('../models/learningModels.js');
+const { Section, Setting } = await import('../models/adminModels.js');
+const { CourseRevision, PracticalSubmission, SourceDocument, AiJob, QuizDraft, ProfileCorrection } = await import('../models/portalModels.js');
+const { seedAdministration } = await import('../services/accounts.js');
+const { domains } = await import('../data/starterCourses.js');
+const { courseInput, publishCheck } = await import('../services/courseAuthoring.js');
+const { extractSource } = await import('../services/sourceExtraction.js');
+const { generateCourse } = await import('../services/courseAi.js');
+const { startServer, closeResources } = await import('../index.js');
+const { checkQuizLimits } = await import('../services/portalLearning.js');
+const { issueChallenge } = await import('../services/learning.js');
+const content = () => ({ title: 'Tourism service practice', description: 'Build evidence through structured learning and a practical service response.', domain: domains[0], level: 'Foundation', minutes: 60, passingScore: 75, outcomes: ['Apply a safe tourism service workflow.'], modules: [{ id:'m1', title:'Service fundamentals', lessons:[{ id:'l1', title:'A professional service workflow', body:'Confirm the guest requirements before making a recommendation. Check the information carefully and communicate the next steps clearly.', takeaways:['Confirm the request first.'] }] }], questions: [{id:'q1',moduleId:'m1',domain:domains[0],prompt:'What should you do before recommending a service?',options:['Confirm the requirements','Ignore the request','Skip the checks'],answer:0,explanation:'Confirm requirements before recommending.',reviewed:true,sourceReference:'Paragraph 1',sourceQuote:'Confirm the guest requirements before making a recommendation.'}], tasks:[{ id:'t1', title:'Guest response', instructions:'Write a professional response confirming guest requirements and the proposed next step.', rubric:[{id:'accuracy',label:'Accuracy and application',max:10},{id:'communication',label:'Clear communication',max:10}] }], policy:{pretest:true,feedbackRequired:true,quizMinutes:0,attemptLimit:3,quizWeight:30,finalWeight:40,practicalWeight:30}, prerequisites:[], certificateEnabled:true });
+await test('course validation blocks incomplete, unreviewed, invalid and cyclic requirements at their boundary',()=>{
+  const draft=content();publishCheck(courseInput(draft));
+  assert.throws(()=>courseInput({...draft,passingScore:101}));
+  assert.throws(()=>courseInput({...draft,questions:[{...draft.questions[0],options:['same','same']}]}));
+  assert.throws(()=>courseInput({...draft,policy:{...draft.policy,finalWeight:80}}));
+  assert.throws(()=>publishCheck({...draft,questions:[{...draft.questions[0],reviewed:false}]}));
+  assert.throws(()=>publishCheck({...draft,modules:[{id:'m1',title:'Empty',lessons:[]}]}));
+});
+await test('time and submission limits are enforced server-side',()=>{
+  const attempt={snapshot:{policy:{quizMinutes:1,attemptLimit:2}},quizAttempts:[{scope:'m1'},{scope:'m1'}]};
+  assert.throws(()=>checkQuizLimits(attempt,'m1',{startedAt:new Date()}),/limit/);
+  assert.throws(()=>checkQuizLimits({...attempt,quizAttempts:[]},'m1',{startedAt:new Date(Date.now()-61000)}),/expired/);
+  assert.doesNotThrow(()=>checkQuizLimits({...attempt,quizAttempts:[]},'m1',{startedAt:new Date()}));
+});
+await test('completed practical evidence blends once with the matching latest completed attempt',async()=>{
+  const {careerMatches}=await import('../services/learning.js');const a={id:1,courseId:9,status:'completed',completedAt:'2026-10-01',snapshot:{domain:domains[0],tasks:[{id:'t1'}]},finalScore:80};
+  let result=careerMatches([a],null,'',undefined,[{attemptId:1,taskId:'t1',grade:100}]);assert.equal(result.scores[domains[0]],86);assert.equal(result.knowledgeScores[domains[0]],80);assert.equal(result.practicalScores[domains[0]],100);
+  const retake={...a,id:2,completedAt:'2026-10-02',finalScore:90};result=careerMatches([a,retake],null,'',undefined,[{attemptId:1,taskId:'t1',grade:100}]);assert.equal(result.scores[domains[0]],90,'old rubric must not stack into latest retake');
+  result=careerMatches([{...a,status:'ongoing'}],null,'',undefined,[{attemptId:1,taskId:'t1',grade:100}]);assert.equal(result.scores[domains[0]],null);
+});
+await test('PDF, DOCX and PPTX extraction preserves source references and rejects unsupported or scanned sources',async()=>{
+  const sentence='Confirm the guest requirements before making a recommendation. Check safety, accessibility, reservation details and communicate clearly. '.repeat(4);
+  const zip=new JSZip();zip.file('[Content_Types].xml','<Types/>');zip.file('word/document.xml',`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${sentence}</w:t></w:r></w:p></w:body></w:document>`);
+  const docx=await zip.generateAsync({type:'nodebuffer'});let result=await extractSource({originalname:'source.docx',buffer:docx});assert.equal(result[0].reference,'Paragraph 1');assert.ok(result[0].text.includes('accessibility'));
+  const ppt=new JSZip();ppt.file('ppt/slides/slide1.xml',`<p:sld><a:t>${sentence}</a:t></p:sld>`);result=await extractSource({originalname:'source.pptx',buffer:await ppt.generateAsync({type:'nodebuffer'})});assert.equal(result[0].reference,'Slide 1');
+  const pdf=new PDFDocument();const chunks=[];const ready=new Promise(resolve=>{pdf.on('data',c=>chunks.push(c));pdf.on('end',()=>resolve(Buffer.concat(chunks)));});pdf.text(sentence);pdf.end();result=await extractSource({originalname:'source.pdf',buffer:await ready});assert.equal(result[0].reference,'Page 1');
+  await assert.rejects(()=>extractSource({originalname:'fake.pdf',buffer:Buffer.from('not a pdf')}));
+  const blank=new JSZip();blank.file('ppt/slides/slide1.xml','<a:t>Hi</a:t>');await assert.rejects(()=>extractSource({originalname:'scan.pptx',buffer:Buffer.from('PK')}));
+  const blankBytes=await blank.generateAsync({type:'nodebuffer'});await assert.rejects(()=>extractSource({originalname:'short.pptx',buffer:blankBytes}),/Not enough/);
+});
+await test('complete Faculty→Student→rubric→award workflow, scopes, versioning, drafts, assignments and academic corrections',async()=>{
+  await sequelize.sync({force:true});await seedAdministration();const hash=await bcrypt.hash('TestingPassword-2026!',4);
+  const faculty=await User.create({name:'Faculty Author',email:'faculty@example.test',facultyId:'FAC-01',role:'faculty',approvalStatus:'approved',password:hash});
+  const otherFaculty=await User.create({name:'Other Faculty',email:'other@example.test',facultyId:'FAC-02',role:'faculty',approvalStatus:'approved',password:hash});
+  const student=await User.create({name:'Learning Student',email:'student@example.test',studentId:'STU-01',section:'BSTM 4-1',gender:'Female',role:'student',password:hash});
+  const outsider=await User.create({name:'Outside Student',email:'outside@example.test',studentId:'STU-02',section:'BSTM 4-2',gender:'Male',role:'student',password:hash});
+  const admin=await User.create({name:'Portal Admin',email:'admin@example.test',role:'admin',password:hash});
+  await StudentProfile.create({userId:student.id,yearLevel:'Graduating',academicYear:'2026-2027',graduationYear:'2027',ojtStatus:'Not yet started',careerInterest:'Travel',preferredLocation:'Philippines',complete:true});
+  await Section.update({facultyId:faculty.id},{where:{name:'BSTM 4-1'}});
+  const server=await startServer(0),base=`http://127.0.0.1:${server.address().port}`;
+  const f=browser(base),s=browser(base),o=browser(base),a=browser(base),f2=browser(base);
+  try{
+    for(const [client,user] of [[f,faculty],[s,student],[o,outsider],[a,admin],[f2,otherFaculty]]){await client.login(user.email,'TestingPassword-2026!');await client.get('/'+user.role);}
+    for(const path of ['/faculty','/faculty/courses','/faculty/courses/new','/faculty/upload','/faculty/questions','/faculty/students','/faculty/students/'+student.id,'/faculty/monitoring','/faculty/reports','/faculty/assignments','/faculty/evaluations','/faculty/announcements','/faculty/profile','/notifications'])assert.equal((await f.get(path)).status,200,path);
+    for(const path of ['/admin/academic','/admin/ai','/admin/competencies','/admin/maintenance','/notifications'])assert.equal((await a.get(path)).status,200,path);
+    assert.equal((await f.get('/faculty/students/'+outsider.id)).status,404);
+    assert.equal((await f2.get('/faculty/students/'+student.id)).status,404);
+    let draft=content();let r=await f.post('/faculty/courses',{courseData:JSON.stringify({...draft,questions:[{...draft.questions[0],reviewed:false}]}),action:'publish'});assert.equal(r.status,400);assert.equal(await Course.count(),0);
+    r=await f.post('/faculty/courses',{courseData:JSON.stringify(draft),action:'publish'});assert.equal(r.status,302,r.html);const c=await Course.findOne();assert.equal(c.ownerId,faculty.id);assert.equal(c.published,true);
+    assert.equal((await f2.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify(draft),action:'publish'})).status,404);
+    assert.equal((await s.get(`/faculty/courses/${c.id}/edit`)).status,403);
+    const section=await Section.findOne({where:{name:'BSTM 4-1'}});await f.get('/faculty/assignments');r=await f.post('/faculty/assignments',{courseId:c.id,sectionId:section.id,required:'true',dueAt:'2027-01-10T12:00'});assert.equal(r.status,302);
+    r=await s.get('/student/courses');assert.match(r.html,/Required learning/);r=await s.post(`/student/courses/${c.id}/enroll`);assert.equal(r.status,302);const attempt=await CourseAttempt.findOne({where:{userId:student.id}}),id=attempt.id;
+    r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
+    const token=scope=>issueChallenge(student.id,`${id}:${scope}`);
+    const answer=scope=>s.post(`/student/learn/${id}/${scope==='final'?'final':'quiz/'+scope}`,{challenge:token(scope),'answers[q1]':'0'});
+    assert.equal((await answer('pretest')).status,302);await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});
+    await s.get(`/student/learn/${id}/quiz/m1`);
+    r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
+    r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'1'}})});assert.equal(r.status,409,'stale tab cannot overwrite');
+    r=await s.get(`/student/learn/${id}/quiz/m1`);assert.match(r.html,/value="0"\s+checked/,'saved answer restored');
+    assert.equal((await o.get(`/student/learn/${id}/quiz/m1`)).status,404);
+    assert.equal((await answer('m1')).status,302);assert.equal((await answer('final')).status,302);
+    assert.equal((await CourseAttempt.findByPk(id)).status,'ongoing');assert.equal(await Credential.count(),0,'practical and feedback gate awards');
+    await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,title:'Updated course version'}),action:'publish'});assert.equal(r.status,302);assert.equal((await Course.findByPk(c.id)).version,2);assert.equal((await CourseAttempt.findByPk(id)).snapshot.title,draft.title);assert.ok(await CourseRevision.count()>=3);
+    r=await s.post(`/student/learn/${id}/activities/t1`,{response:'Thank you for your request. Could you confirm the travel dates, number of guests and accessibility requirements?',link:'https://example.test/evidence'});assert.equal(r.status,302);const sub=await PracticalSubmission.findOne();
+    await f2.get('/faculty/evaluations');assert.equal((await f2.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'10','scores[communication]':'10',feedback:'Good evidence.'})).status,404);
+    await f.get('/faculty/evaluations');r=await f.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'11','scores[communication]':'10',feedback:'Good evidence.'});assert.equal(r.status,400);
+    r=await f.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'10','scores[communication]':'10',feedback:'Clear and accurate response.'});assert.equal(r.status,302);assert.equal(await Credential.count(),0,'feedback still required');
+    r=await s.get(`/student/learn/${id}/activities`);assert.match(r.html,/Clear and accurate/);r=await s.post(`/student/learn/${id}/feedback`,{rating:'5',comment:'Useful practice.'});assert.equal(r.status,302);assert.equal((await CourseAttempt.findByPk(id)).status,'completed');assert.equal(await Credential.count(),1);
+    const award=await Credential.findOne();r=await s.get(`/student/credentials/${award.id}/certificate`);assert.equal(r.status,200);assert.equal(r.response.headers.get('content-type'),'application/pdf');
+    assert.equal((await o.get(`/student/credentials/${award.id}/certificate`)).status,404);
+    const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');
+    await award.update({courseTitle:'Tourism operations and professional communication '.repeat(3).slice(0,160),recipientName:'Student With An Extended Full Name '.repeat(3).slice(0,100)});
+    for(const template of ['classic','modern']) { await Setting.upsert({key:'certificateTemplate',value:template}); const pdfResponse=await fetch(base+`/student/credentials/${award.id}/certificate`,{headers:{cookie:s.cookie}});const bytes=new Uint8Array(await pdfResponse.arrayBuffer());const loading=getDocument({data:bytes,isEvalSupported:false});try{const pdf=await loading.promise;assert.equal(pdf.numPages,1,template+' certificate must stay on one page');const text=(await (await pdf.getPage(1)).getTextContent()).items.map(i=>i.str||'').join(' ');assert.ok(text.includes('Certificate of Completion'));assert.ok(text.includes('Credential ID'));}finally{await loading.destroy();}}
+
+    r=await f.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'5','scores[communication]':'5',feedback:'Changed.'});assert.equal(r.status,400,'completed records immutable');
+    await f.get('/faculty/students/'+student.id);await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Keep practicing itinerary explanations.',remediation:'Review digital tools.',visibility:'student'});r=await s.get('/student/results');assert.match(r.html,/Keep practicing/);
+    await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Private intervention note.',visibility:'internal'});r=await s.get('/student/results');assert.ok(!r.html.includes('Private intervention note'));
+    await f.get('/faculty/announcements');await f.post('/faculty/announcements',{title:'Assigned update',body:'Your next learning task is ready.'});assert.ok(await Notification.count({where:{userId:student.id,title:'Assigned update'}}));assert.equal(await Notification.count({where:{userId:outsider.id,title:'Assigned update'}}),0);
+    r=await s.get('/notifications/count');assert.ok(JSON.parse(r.html).unread>0);const notification=await Notification.findOne({where:{userId:student.id}});assert.equal((await o.post(`/notifications/${notification.id}/open`)).status,404);assert.equal((await s.post(`/notifications/${notification.id}/open`)).status,302);
+    await f.get('/faculty/upload');const zip=new JSZip();zip.file('word/document.xml',`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${draft.questions[0].sourceQuote.repeat(8)}</w:t></w:r></w:p></w:body></w:document>`);const form=new FormData();form.append('source',new Blob([await zip.generateAsync({type:'nodebuffer'})]),'teaching.docx');r=await f.request('/faculty/upload',{method:'POST',headers:{'X-CSRF-Token':f.csrf},body:form});assert.equal(r.status,302);const uploaded=await SourceDocument.findOne({where:{filename:'teaching.docx'}});assert.ok(uploaded.sections[0].text);assert.equal((await f2.get(`/faculty/sources/${uploaded.id}`)).status,404);
+    await s.get('/student/profile');const photo=new FormData();photo.append('kind','photo');photo.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7S8AAAAASUVORK5CYII=','base64')]),'profile.png');r=await s.request('/student/profile/files',{method:'POST',headers:{'X-CSRF-Token':s.csrf},body:photo});assert.equal(r.status,302);const {StudentFile}=await import('../models/portalModels.js');const file=await StudentFile.findOne();assert.equal((await o.get('/files/'+file.id)).status,404);assert.equal((await f.get('/files/'+file.id)).status,200);assert.equal((await s.get('/files/'+file.id)).status,200);
+    await f.get('/faculty/questions');r=await f.post('/faculty/questions',{prompt:'What must you confirm before recommending?',options:JSON.stringify(['Guest requirements','Nothing']),answer:'0',explanation:'Confirm the guest requirements.',domain:domains[0],reviewed:'true'});assert.equal(r.status,302);r=await f.get('/faculty/questions');assert.match(r.html,/What must you confirm/);
+    await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,prerequisites:[c.id]}),action:'publish'});assert.equal(r.status,400,'self-prerequisite rejected');
+    await s.get('/student/profile');r=await s.post('/student/profile/correction',{studentId:'STU-CORRECTED',section:'BSTM 4-2',reason:'Correcting the registered academic section.'});assert.equal(r.status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-1');const correction=await ProfileCorrection.findOne();await a.get('/admin/academic');assert.equal((await a.post(`/admin/academic/${correction.id}`,{status:'approved'})).status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-2');assert.equal((await f.get('/faculty/students/'+student.id)).status,404,'scope reflects section correction');
+    r=await a.post(`/admin/courses/${c.id}/ownership`,{ownerId:otherFaculty.id});assert.equal(r.status,302);assert.equal((await f.get(`/faculty/courses/${c.id}/edit`)).status,404);assert.equal((await f2.get(`/faculty/courses/${c.id}/edit`)).status,200);
+    const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
+    process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
+    try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');
+      globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n,sourceQuote:'An invented quote that is not in the material.'})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1);await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3}),/limit/);
+    }finally{globalThis.fetch=original;delete process.env.GEMINI_API_KEY;delete process.env.GEMINI_MODEL;}
+  }finally{await new Promise(resolve=>server.close(resolve));await closeResources();}
+});

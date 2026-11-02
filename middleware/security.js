@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Op } from 'sequelize';
 import { Announcement } from '../models/adminModels.js';
 import { usable, setting } from '../services/accounts.js';
+import { Notification } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
 export const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 export function csrf(req, res, next) {
@@ -23,6 +24,7 @@ export const requireUser = asyncRoute(async (req, res, next) => {
   req.user = user;
   const { password, googleId, ...safeUser } = user.get({ plain: true });
   res.locals.currentUser = safeUser;
+  res.locals.unreadCount = await Notification.count({ where: { userId: user.id, readAt: null } });
   res.locals.institutionName = await setting('institutionName', 'MinSU Bongabong Campus');
   res.locals.portalAnnouncements = (await Announcement.findAll({ where: { published: true, audience: { [Op.in]: ['all', user.role] } }, order: [['createdAt', 'DESC']], limit: 3 })).map(a => ({ title: a.title, body: a.body }));
   res.set('Cache-Control', 'no-store');

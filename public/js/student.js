@@ -5,7 +5,7 @@
   open?.addEventListener('click', () => { side.classList.add('open'); open.setAttribute('aria-expanded', 'true'); close.focus(); });
   const closeMenu = () => { side?.classList.remove('open'); open?.setAttribute('aria-expanded', 'false'); open?.focus(); };
   close?.addEventListener('click', closeMenu);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && side?.classList.contains('open')) closeMenu(); });
   // Count only estimated active browser time. Hidden or idle tabs stop sending activity.
   const learning = document.querySelector('[data-attempt]');
   if (learning) {
@@ -28,7 +28,7 @@
     };
     tick(); setInterval(tick, 20000);
   }
-  for (const form of document.querySelectorAll('form[data-quiz]')) {
+  for (const form of document.querySelectorAll('form[data-quiz]:not([data-draft-url])')) {
     const label = form.querySelector('.quiz-draft');
     form.addEventListener('change', () => {
       const answered = new Set([...form.querySelectorAll('input[type=radio]:checked')].map(input => input.name)).size;

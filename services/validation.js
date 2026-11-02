@@ -22,7 +22,7 @@ export function registrationInput(body, google = null) {
 }
 export function profileInput(body) {
   const data = {};
-  const limits = { yearLevel: 30, academicYear: 30, graduationYear: 4, ojtStatus: 40, ojtCompany: 160, ojtArea: 100, careerInterest: 80, preferredLocation: 120, languages: 200, skills: 1500, qualifications: 1500, bio: 600 };
+  const limits = { relocate: 30, targetRoles: 300, workPreferences: 300, ojtTasks: 1500, yearLevel: 30, academicYear: 30, graduationYear: 4, ojtStatus: 40, ojtCompany: 160, ojtArea: 100, careerInterest: 80, preferredLocation: 120, languages: 200, skills: 1500, qualifications: 1500, bio: 600 };
   for (const [key, max] of Object.entries(limits)) data[key] = text(body[key], max);
   if (!['4th year', 'Graduating'].includes(data.yearLevel)) throw new Error('Select your year level.');
   if (!/^\d{4}-\d{4}$/.test(data.academicYear)) throw new Error('Use the academic year format 2026-2027.');

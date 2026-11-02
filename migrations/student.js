@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import '../models/adminModels.js';
+import '../models/portalModels.js';
 import { bootstrapAdmin, seedAdministration } from '../services/accounts.js';
 import { sequelize, User } from '../models/learningModels.js';
 export async function migrateStudent() {
@@ -20,9 +21,12 @@ export async function migrateStudent() {
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
     };
     for (const [name, spec] of Object.entries(additions)) if (!columns[name]) await qi.addColumn('Users', name, spec);
-    await qi.changeColumn('Users', 'password', { type: DataTypes.STRING, allowNull: true });
+    if (!columns.password.allowNull) await qi.changeColumn('Users', 'password', { type: DataTypes.STRING, allowNull: true });
     // Keep legacy staff accounts as staff until an administrator assigns academic permissions.
-    await qi.changeColumn('Users', 'role', { type: DataTypes.ENUM('admin', 'faculty', 'student', 'staff', 'visitors'), allowNull: false, defaultValue: 'student' });
+    const expectedRoles = ['admin', 'faculty', 'student', 'staff', 'visitors'];
+    if (sequelize.getDialect() === 'mysql' && (columns.role.defaultValue !== 'student' || !expectedRoles.every(role => columns.role.type.includes(`'${role}'`)))) {
+      await qi.changeColumn('Users', 'role', { type: DataTypes.ENUM(...expectedRoles), allowNull: false, defaultValue: 'student' });
+    }
     await User.update({ role: 'student' }, { where: { role: 'visitors' } });
     await sequelize.query('UPDATE Users SET email = LOWER(TRIM(email))');
     const indexes = await qi.showIndex('Users');
@@ -32,6 +36,14 @@ export async function migrateStudent() {
       }
     }
   }
+  const extend = async (table, fields) => {
+    if (!tables.includes(table)) return;
+    const columns = await qi.describeTable(table);
+    for (const [name, spec] of Object.entries(fields)) if (!columns[name]) await qi.addColumn(table, name, spec);
+  };
+  await extend('Courses', { ownerId: { type: DataTypes.INTEGER, allowNull: true }, outcomes: { type: DataTypes.JSON, allowNull: true }, tasks: { type: DataTypes.JSON, allowNull: true }, policy: { type: DataTypes.JSON, allowNull: true }, enrollFrom: { type: DataTypes.DATE }, enrollUntil: { type: DataTypes.DATE }, deadline: { type: DataTypes.DATE }, certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true } });
+  await extend('CareerPaths', { qualifications: { type: DataTypes.TEXT } });
+  await extend('StudentProfiles', Object.fromEntries(['relocate', 'targetRoles', 'workPreferences', 'ojtTasks'].map(name => [name, { type: DataTypes.TEXT }])));
   // Creates missing tables only. Never force-sync or reset existing student data.
   await sequelize.sync();
   await seedAdministration();

@@ -1,3 +1,4 @@
+import * as extra from '../controllers/adminExtensions.js';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { requireUser, requireAdmin, asyncRoute } from '../middleware/security.js';
@@ -19,4 +20,9 @@ r.get('/audit', asyncRoute(c.auditLogs)); r.get('/reports', asyncRoute(c.reports
 r.get('/account', c.account); r.get('/profile', (req, res) => res.redirect('/admin/account'));
 r.post('/account/password', rateLimit({ windowMs: 60000, limit: 5 }), asyncRoute(c.changePassword));
 r.post('/connect-google', googleStart);
+r.get('/academic', asyncRoute(extra.academic)); r.post('/academic/:id', asyncRoute(extra.correct));
+r.post('/courses/:id/ownership', asyncRoute(extra.ownership)); r.get('/courses/:id/history', asyncRoute(extra.history));
+r.get('/ai', asyncRoute(extra.ai)); r.post('/ai', asyncRoute(extra.aiSettings));
+r.get('/competencies', asyncRoute(extra.competencies)); r.post('/competencies', asyncRoute(extra.saveCompetencies));
+r.get('/maintenance', asyncRoute(extra.maintenance));
 export default r;

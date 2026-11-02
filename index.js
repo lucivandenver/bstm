@@ -24,6 +24,7 @@
     */
     
 import './config/env.js';
+import './models/portalModels.js';
 import { Section, Announcement } from './models/adminModels.js';
 import { Op } from 'sequelize';
 import express from 'express';
@@ -43,8 +44,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.disable('x-powered-by');
 if (production) app.set('trust proxy', 1);
-app.use(express.json({ limit: '100kb' }));
-app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+app.use(express.json({ limit: '500kb' }));
+app.use(express.urlencoded({ extended: true, limit: '500kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
@@ -79,6 +80,7 @@ app.set('view engine', 'xian');
 for (const file of fs.readdirSync(path.join(__dirname, 'views/partials'))) {
   if (file.endsWith('.xian')) hbs.registerPartial(file.replace('.xian', ''), fs.readFileSync(path.join(__dirname, 'views/partials', file), 'utf8'));
 }
+hbs.registerHelper('json', value => JSON.stringify(value, null, 2));
 hbs.registerHelper('eq', (a, b) => a === b);
 hbs.registerHelper('selected', (a, b) => a === b ? 'selected' : '');
 // Developer-only file reload. Student progress updates use persisted application endpoints.
@@ -112,6 +114,7 @@ app.use('/', router);
 app.use((req, res) => res.status(404).render('student/message', { title: 'Page not found', message: 'This page does not exist.', currentUser: null }));
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
+  if (error.name === 'MulterError') { error.status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400; error.message = error.code === 'LIMIT_FILE_SIZE' ? 'File exceeds the size limit shown on the upload form.' : 'Invalid upload. Use one supported file and retry.'; }
   const expected = error.status && error.status < 500;
   if (!expected) console.error('Request failed:', error.name); // Do not log tokens, personal data or DB SQL.
   res.status(expected ? error.status : 500).render('student/message', { title: 'Unable to continue',
