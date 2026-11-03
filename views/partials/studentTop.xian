@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{csrf}}"><title>{{title}} · CareerBridge</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="/css/student.css"><link rel="stylesheet" href="/css/portal.css"><script src="/js/student.js" defer></script><script src="/js/portal.js" defer></script></head>
 <body>
 <a class="sr-only" href="#main">Skip to content</a>
-<aside class="app-sidebar" id="sidebar" aria-label="Student navigation"><button class="mobile-close" id="close-menu" aria-label="Close navigation">×</button><a class="brand" href="/student"><span class="brand-mark">↗</span>CareerBridge</a><p class="portal-label">STUDENT LEARNING PORTAL</p>
+<aside class="app-sidebar" id="sidebar" aria-label="Student navigation"><button class="mobile-close" id="close-menu" aria-label="Close navigation">×</button><a class="brand" href="/student"><img class="sidebar-brand-logo" src="/images/careerbridge_brand_logo.png" alt="CareerBridge" width="196" height="92"></a><p class="portal-label">STUDENT LEARNING PORTAL</p>
 <nav class="side-nav"><div class="nav-label">MY WORKSPACE</div>
 <a href="/student" class="{{#if (eq nav 'dashboard')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">▦</span>Dashboard</a>
 <a href="/student/profile" class="{{#if (eq nav 'profile')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">◎</span>My profile</a>
@@ -15,6 +15,6 @@
 <a href="/student/careers" class="{{#if (eq nav 'careers')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">↗</span>Career pathways</a>
 <a href="/student/achievements" class="{{#if (eq nav 'achievements')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">☆</span>Achievements</a>
 <a href="/notifications" class="{{#if (eq nav 'notifications')}}active{{/if}}"><span class="nav-icon" aria-hidden="true">♧</span>Notifications</a>
-</nav><div class="sidebar-bottom"><strong class="small">Your future starts here.</strong><small>BSTM · MinSU Bongabong Campus</small><a class="small" href="/">Visit CareerBridge home →</a></div></aside>
+</nav></aside>
 <div class="workspace"><header class="app-header"><div class="row"><button class="mobile-menu" id="open-menu" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button><div class="breadcrumb">STUDENT / WORKSPACE<strong>{{title}}</strong></div></div><div class="user-menu">{{> notificationBell}}<span class="avatar" aria-hidden="true">S</span><div class="user-copy"><strong>{{currentUser.name}}</strong><small>Student account</small></div><form action="/logout" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="logout" type="submit">Log out</button></form></div></header>
 <main id="main" class="page">{{> messages}}{{> announcements}}

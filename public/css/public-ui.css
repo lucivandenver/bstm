@@ -2,3 +2,14 @@
 #loginModalCard:focus,#registerModalCard:focus{outline:none}
 /* Header interaction refinements; existing mobile logo/auth rules remain authoritative. */
 .public-site-header{transition:box-shadow .2s,background .2s}.public-site-header.is-scrolled{background:#fffffff8;box-shadow:0 5px 24px #123d2810}.public-desktop-nav>a{position:relative;padding:18px 0}.public-desktop-nav>a:after{content:"";position:absolute;left:0;right:0;bottom:8px;height:2px;background:#007042;transform:scaleX(0);transform-origin:left;transition:transform .2s}.public-desktop-nav>a:hover:after,.public-desktop-nav>a:focus-visible:after{transform:scaleX(1)}.public-nav-dropdown summary{border-radius:9px;padding:12px 9px;transition:background .15s,color .15s}.public-nav-dropdown[open] summary{background:#edf6f0;color:#007042}.public-nav-dropdown summary span{display:inline-block;transition:transform .2s}.public-nav-dropdown[open] summary span{transform:rotate(180deg)}.public-nav-dropdown>div{min-width:245px;border-radius:14px;top:calc(100% + 8px);padding:8px;box-shadow:0 18px 40px #16372a1a;border-color:#dce8e0}.public-nav-dropdown>div a{padding:13px 14px;border-radius:8px;font-weight:600}.public-nav-dropdown[open]>div{animation:cb-menu-in .16s ease-out}.public-menu-toggle{border-radius:9px}.public-menu-toggle[aria-expanded=true]{background:#edf6f0;color:#007042;border-color:#d9e8dd}.public-mobile-nav>a{border-radius:8px}.public-site-header .public-signup-button{border-radius:7px;box-shadow:0 3px 8px #00704216}.public-site-header .public-login-button{border-radius:7px}@keyframes cb-menu-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.public-site-header,.public-desktop-nav>a:after,.public-nav-dropdown summary,.public-nav-dropdown summary span{transition:none}.public-nav-dropdown[open]>div{animation:none}}
+/* Pink hover states for public navigation on desktop and mobile. */
+.public-site-header .public-desktop-nav a:hover,
+.public-site-header .public-nav-dropdown summary:hover,
+.public-site-header .public-mobile-nav>a:hover{color:#c72e61;background:#fff0f5}
+.public-site-header .public-desktop-nav>a:after{background:#df4678}
+.public-site-header .public-nav-dropdown[open] summary{color:#c72e61;background:#fff0f5}
+.public-site-header .public-nav-dropdown>div a:hover{color:#c72e61;background:#fff0f5}
+.public-site-header .public-login-button:hover{color:#c72e61;background:#fff0f5}
+.public-site-header .public-signup-button:hover{color:#fff;background:#ca3766}
+.public-site-header .public-menu-toggle:hover{color:#c72e61;background:#fff0f5}
+.public-desktop-nav>a{border-radius:9px}

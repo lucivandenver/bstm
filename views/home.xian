@@ -134,10 +134,10 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center mt-14">
 
         <!-- Left: Steps 1-5 -->
-        <div class="lg:col-span-7 space-y-6">
+        <div class="lg:col-span-7 space-y-6 cb-process-steps">
 
-          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
-            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+          <div class="cb-process-step flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="cb-step-node w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
               1
             </div>
             <div>
@@ -146,8 +146,8 @@
             </div>
           </div>
 
-          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
-            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+          <div class="cb-process-step flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="cb-step-node w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
               2
             </div>
             <div>
@@ -156,8 +156,8 @@
             </div>
           </div>
 
-          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
-            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+          <div class="cb-process-step flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="cb-step-node w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
               3
             </div>
             <div>
@@ -166,8 +166,8 @@
             </div>
           </div>
 
-          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
-            <div class="w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+          <div class="cb-process-step flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="cb-step-node w-10 h-10 rounded-none bg-[#5FB875] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
               4
             </div>
             <div>
@@ -176,8 +176,8 @@
             </div>
           </div>
 
-          <div class="flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
-            <div class="w-10 h-10 rounded-none bg-[#839788] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
+          <div class="cb-process-step flex items-start gap-4 p-3 rounded-none hover:bg-slate-50 transition-colors">
+            <div class="cb-step-node w-10 h-10 rounded-none bg-[#839788] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-sm">
               5
             </div>
             <div>
@@ -190,42 +190,42 @@
 
         <!-- Right: Process Status Card Preview (Boxy) -->
         <div class="lg:col-span-5">
-          <div class="bg-[#F6FAF6] border border-emerald-100 rounded-none p-6 shadow-md space-y-3.5">
+          <div class="cb-process-preview bg-[#F6FAF6] border border-emerald-100 rounded-none p-6 shadow-md space-y-3.5">
 
-            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">{{> publicIcon name="students"}}</span>
+            <div class="cb-process-card bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl"><img class="cb-fluent-emoji" src="/images/fluent-emoji/identification-card.png" alt="" width="30" height="30" loading="lazy"></span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Profile Created</h5>
                 <p class="text-xs text-gray-500">Student ID & academic background captured</p>
               </div>
             </div>
 
-            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">{{> publicIcon name="check"}}</span>
+            <div class="cb-process-card bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl"><img class="cb-fluent-emoji" src="/images/fluent-emoji/clipboard.png" alt="" width="30" height="30" loading="lazy"></span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Assessment Done</h5>
                 <p class="text-xs text-gray-500">Readiness results are shown after submission</p>
               </div>
             </div>
 
-            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">{{> publicIcon name="match"}}</span>
+            <div class="cb-process-card bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl"><img class="cb-fluent-emoji" src="/images/fluent-emoji/bullseye.png" alt="" width="30" height="30" loading="lazy"></span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Top Match Found</h5>
                 <p class="text-xs text-gray-500">Ranked career options from your assessed evidence</p>
               </div>
             </div>
 
-            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">{{> publicIcon name="chart"}}</span>
+            <div class="cb-process-card bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl"><img class="cb-fluent-emoji" src="/images/fluent-emoji/chart-increasing.png" alt="" width="30" height="30" loading="lazy"></span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">Gap Report Ready</h5>
                 <p class="text-xs text-gray-500">Review assessed areas needing more practice</p>
               </div>
             </div>
 
-            <div class="bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
-              <span class="text-2xl">{{> publicIcon name="spark"}}</span>
+            <div class="cb-process-card bg-white p-4 rounded-none border border-gray-200 flex items-center gap-3.5 shadow-sm">
+              <span class="text-2xl"><img class="cb-fluent-emoji" src="/images/fluent-emoji/robot.png" alt="" width="30" height="30" loading="lazy"></span>
               <div>
                 <h5 class="text-sm font-bold text-slate-900">AI Suggestions Sent</h5>
                 <p class="text-xs text-gray-500">Optional AI guidance builds on your learning evidence</p>
@@ -433,7 +433,7 @@
             <li><a href="#home" class="hover:text-white transition-colors">Home</a></li>
             <li><a href="#features" class="hover:text-white transition-colors">Platform Features</a></li>
             <li><a href="#how-it-works" class="hover:text-white transition-colors">How It Works</a></li>
-            <li><a href="#who-its-for" class="hover:text-white transition-colors">Who It's For</a></li>
+            <li><a href="#about-significance" class="hover:text-white transition-colors">Who It's For</a></li>
           </ul>
         </div>
 
