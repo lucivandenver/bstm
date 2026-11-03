@@ -355,3 +355,56 @@
     transform: none;
   }
 }
+
+/* Restore the referenced styling while retaining the current text and live totals. */
+.cb-stats-band,
+.cb-about-stats {
+  background: linear-gradient(110deg, #df707e 0%, #5fb875 58%, #4ea965 100%);
+  border-color: transparent;
+  color: #fff;
+}
+.cb-stats-band .cb-stat-icon,
+.cb-stats-band .cb-stat strong,
+.cb-stats-band .cb-stat span:not(.cb-stat-icon),
+.cb-stats-band .cb-data-note,
+.cb-about-stats .cb-stat-icon,
+.cb-about-stats .cb-stat strong,
+.cb-about-stats .cb-stat span:not(.cb-stat-icon),
+.cb-about-stats .cb-data-note {
+  color: #fff;
+}
+.cb-stats-band .cb-stat,
+.cb-about-stats .cb-stat {
+  background: transparent;
+  border-color: #ffffff38;
+}
+.cb-fluent-emoji { display: block; object-fit: contain; flex-shrink: 0; }
+.cb-feature-card .cb-fluent-emoji { width: 42px; height: 42px; }
+.cb-feature-card .cb-icon-tile { width: 66px; height: 66px; }
+.cb-process-step { position: relative; }
+.cb-process-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 31px;
+  top: 65px;
+  bottom: -18px;
+  width: 1px;
+  background: #e5e7eb;
+}
+#how-it-works .cb-step-node {
+  position: relative;
+  z-index: 1;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d77d8a, #4eaa60);
+}
+#how-it-works .cb-process-preview {
+  border-color: #f0edef;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #fff0f5, #effaef);
+  box-shadow: none;
+}
+#how-it-works .cb-process-card { border-radius: 13px; box-shadow: none; }
+.cb-process-card .cb-fluent-emoji { width: 30px; height: 30px; }
+/* Public box-shaped components now share soft corners, including auth cards. */
+body .rounded-none { border-radius: 14px; }
+#about-significance { scroll-margin-top: 104px; }
