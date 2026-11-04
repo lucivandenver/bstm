@@ -408,3 +408,4 @@
 /* Public box-shaped components now share soft corners, including auth cards. */
 body .rounded-none { border-radius: 14px; }
 #about-significance { scroll-margin-top: 104px; }
+.hero-highlight-icon{display:inline-block;object-fit:contain;flex-shrink:0;width:25px;height:25px}

@@ -1,9 +1,12 @@
+import {signatureFixture} from './signatureFixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 process.env.NODE_ENV = 'test';
 process.env.TEST_DB_STORAGE = ':memory:';
 const { sequelize, User, Course, CourseAttempt, StudentProfile, Credential, Assessment } = await import('../models/learningModels.js');
 const { starterCourses } = await import('../data/starterCourses.js');
+const {CredentialRequest}=await import('../models/portalModels.js');
+const {Setting}=await import('../models/adminModels.js');
 const { default: app, startServer, closeResources } = await import('../index.js');
 const { seedAdministration } = await import('../services/accounts.js');
 const { issueChallenge } = await import('../services/learning.js');
@@ -29,6 +32,9 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
   await seedAdministration(); // Isolated in-memory test database only.
   const faculty = await User.create({ name: 'Test Faculty', email: 'course-author@example.test', facultyId: 'FAC-TEST-01', role: 'faculty', approvalStatus: 'approved' });
   for (let i = 0; i < starterCourses.length; i++) await Course.create({ ...starterCourses[i], ownerId: faculty.id, published: true, starter: true, awardsApproved: true, slug: `test-course-${i + 1}` });
+  const signature='data:image/png;base64,'+(await signatureFixture()).toString('base64');
+  await Setting.upsert({key:'adminSignature',value:signature});
+  for(const course of await Course.findAll())await CredentialRequest.create({courseId:course.id,facultyId:faculty.id,status:'approved',facultySignature:signature});
   server = await startServer(0); base = `http://127.0.0.1:${server.address().port}`;
   try {
     const health = await fetch(base + '/healthz');

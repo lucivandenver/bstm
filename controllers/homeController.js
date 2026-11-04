@@ -7,5 +7,5 @@ export async function publicOverview() {
   ]);
   return {students, faculty, courses, completions, pathways};
 }
-export const homePage = async (req,res) => res.render('home', {title:'CareerBridge · Your next chapter',stats:await publicOverview()});
+export const homePage = async (req,res) => res.render('home', {title:'CareerBridge · Your next chapter',isLandingPage:true,stats:await publicOverview()});
 export const aboutPage = async (req,res) => res.render('about', {title:'About CareerBridge',stats:await publicOverview()});

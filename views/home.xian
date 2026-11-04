@@ -64,13 +64,13 @@
           <!-- Highlights Pills -->
           <div class="flex flex-wrap items-center gap-2.5 pt-4">
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>{{> publicIcon name="students"}}</span> Graduating BSTM Students
+              <span><img class="hero-highlight-icon" src="/images/fluent-emoji/graduation-cap.png" width="25" height="25" alt=""></span> Graduating BSTM Students
             </div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>{{> publicIcon name="match"}}</span> Tourism & Hospitality Focus
+              <span><img class="hero-highlight-icon" src="/images/fluent-emoji/palm-tree.png" width="25" height="25" alt=""></span> Tourism & Hospitality Focus
             </div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none bg-white/95 border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">
-              <span>{{> publicIcon name="chart"}}</span> Research-Backed System
+              <span><img class="hero-highlight-icon" src="/images/fluent-emoji/bar-chart.png" width="25" height="25" alt=""></span> Research-Backed System
             </div>
           </div>
 

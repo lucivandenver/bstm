@@ -86,7 +86,7 @@
       <!-- Switch to Register -->
       <p class="text-center text-xs text-slate-600 mt-5">
         New to CareerBridge?
-        <button onclick="switchToRegisterModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create an account</button>
+        <button onclick="switchToRegisterModal()" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create account</button>
       </p>
 
       <!-- Terms -->

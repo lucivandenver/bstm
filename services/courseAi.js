@@ -1,3 +1,5 @@
+import { aiConfiguration } from './gemini.js';
+export { aiConfiguration } from './gemini.js';
 import { Op } from "sequelize";
 import { randomUUID } from "node:crypto";
 import { AiJob, CourseRevision } from "../models/portalModels.js";
@@ -10,14 +12,6 @@ import {
 } from "./courseGenerationErrors.js";
 import { domains } from "../data/starterCourses.js";
 import { text } from "./validation.js";
-export function aiConfiguration() {
-  return {
-    ready: Boolean(
-      process.env.GEMINI_API_KEY?.trim() && process.env.GEMINI_MODEL?.trim(),
-    ),
-    model: (process.env.GEMINI_MODEL || "").trim().replace(/^models\//, ""),
-  };
-}
 export function sourceSections(source) {
   let sections = source?.sections;
   if (typeof sections === "string") {

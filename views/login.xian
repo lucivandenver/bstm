@@ -108,7 +108,7 @@
       <!-- Bottom Prompt: Create account -->
       <p class="text-center text-xs text-slate-600 mt-6">
         New to CareerBridge? 
-        <a href="/register" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create an account</a>
+        <a href="/register" class="font-bold text-[#007042] hover:text-[#005a35] underline underline-offset-2">Create account</a>
       </p>
 
       <!-- Terms & Privacy -->
