@@ -19,7 +19,7 @@ export async function migrateStudent() {
       facultyReviewedBy: { type: DataTypes.INTEGER, allowNull: true }, facultyReviewedAt: { type: DataTypes.DATE, allowNull: true }, facultyReviewRemarks: { type: DataTypes.TEXT, allowNull: true },
       approvalStatus: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'approved' },
       studentId: { type: DataTypes.STRING(40), allowNull: true }, section: { type: DataTypes.STRING(60), allowNull: true },
-      googleId: { type: DataTypes.STRING, allowNull: true }, emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      googleId: { type: DataTypes.STRING, allowNull: true }, googlePicture: { type: DataTypes.STRING(1000), allowNull: true }, emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
     };
     for (const [name, spec] of Object.entries(additions)) if (!columns[name]) await qi.addColumn('Users', name, spec);

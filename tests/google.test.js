@@ -49,7 +49,7 @@ await test('Google login never registers users; registration completion and owne
     await b.get('/student/profile'); await b.post('/logout');
     flow = await start('register', 'faculty'); await callback(flow, { sub: 'google-faculty', email: 'faculty@gmail.com', name: 'Google Faculty' });
     r = await b.get('/register'); assert.ok(r.html.includes('Faculty ID'));
-    await b.post('/register', { account_type: 'faculty', name: 'Google Faculty', identityId: 'FAC-001', section: 'injected', gender: 'Male' });
+    await b.post('/register', { account_type: 'faculty', name: 'Google Faculty', identityId: 'FAC-001', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', section: 'injected', gender: 'Male' });
     const faculty = await User.findOne({ where: { email: 'faculty@gmail.com' } }); assert.equal(faculty.facultyId, 'FAC-001'); assert.equal(faculty.section, null); assert.equal(faculty.approvalStatus, 'pending');
     flow = await start(); r = await callback(flow, { sub: 'google-faculty', email: 'faculty@gmail.com' }); assert.equal(r.location, '/?auth=login');
     r = await b.get('/faculty'); assert.equal(r.location, '/login');

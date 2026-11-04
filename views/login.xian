@@ -50,7 +50,7 @@
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-sm font-semibold text-slate-700" for="password">Password</label>
-            <a href="/forgot-password" class="text-xs font-semibold text-[#007042] hover:text-[#005230] transition-colors">Forgot?</a>
+            <a href="/forgot-password" class="forgot-password-link text-xs font-semibold text-[#007042]">Forgot Password?</a>
           </div>
           <div class="relative">
             <input 

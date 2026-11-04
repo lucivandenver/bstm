@@ -39,22 +39,23 @@ export const googleCallback = async (req, res) => {
       if (req.session.userId !== flow.linkUserId) throw new Error('Account changed');
       const existing = await User.findByPk(flow.linkUserId);
       if (!usable(existing) || existing.email !== address || (existing.googleId && existing.googleId !== p.sub) || (user && user.id !== existing.id)) return loginError(req, res, 'Choose the Google account with the same email as your existing account.');
-      await existing.update({ googleId: p.sub, emailVerified: true });
+      await existing.update({ googleId: p.sub, googlePicture: typeof p.picture === 'string' && p.picture.startsWith('https://') ? p.picture.slice(0, 1000) : null, emailVerified: true });
       await audit(existing.id, 'account.google_connected', 'user', existing.id);
       req.flash('success_msg', 'Google account connected.'); return res.redirect(`${destination(existing)}/profile`);
     }
     if (flow.intent === 'register') {
       if (user || emailUser || address === ownerEmail()) return loginError(req, res, 'This account is already registered or reserved. Please sign in.');
-      req.session.pendingRegistration = { sub: p.sub, email: address, name: p.name || '', role: flow.role, expires: Date.now() + 10 * 60 * 1000 };
+      req.session.pendingRegistration = { sub: p.sub, email: address, name: p.name || '', picture: typeof p.picture === 'string' && p.picture.startsWith('https://') ? p.picture.slice(0, 1000) : null, role: flow.role, expires: Date.now() + 10 * 60 * 1000 };
       return res.redirect(`/register?role=${flow.role}`);
     }
     // The pre-provisioned owner is the only account that can bind Google by email
     // without first signing in with a password. Its Gmail identity is verified above.
     if (!user && emailUser?.role === 'admin' && address === ownerEmail() && address.endsWith('@gmail.com') && !emailUser.googleId) {
-      await emailUser.update({ googleId: p.sub, emailVerified: true }); user = emailUser;
+      await emailUser.update({ googleId: p.sub, googlePicture: typeof p.picture === 'string' && p.picture.startsWith('https://') ? p.picture.slice(0, 1000) : null, emailVerified: true }); user = emailUser;
     }
     if (!user) return loginError(req, res, emailUser ? 'This account uses a password. Sign in with it first, then connect Google from your profile.' : 'This account is not yet registered. Please register first.');
     if (!usable(user)) return loginError(req, res, accessMessage(user));
+    if (typeof p.picture === 'string' && p.picture.startsWith('https://') && user.googlePicture !== p.picture) await user.update({ googlePicture: p.picture.slice(0, 1000) });
     stage = 'session';
     await authenticate(req, user, 'google'); await audit(user.id, 'account.login', 'user', user.id, { method: 'google' });
     res.redirect('/dashboard');

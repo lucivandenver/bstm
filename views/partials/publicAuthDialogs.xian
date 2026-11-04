@@ -30,7 +30,7 @@
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="block text-sm font-semibold text-slate-700" for="modal_login_password">Password</label>
-            <a href="/forgot-password" class="text-xs font-semibold text-[#007042] hover:text-[#005230] transition-colors">Forgot?</a>
+            <a href="/forgot-password" class="forgot-password-link text-xs font-semibold text-[#007042] transition-colors">Forgot Password?</a>
           </div>
           <div class="relative">
             <input
@@ -101,11 +101,11 @@
 
 
   <!-- 2. REGISTER POPUP MODAL (BOXY) -->
-  <div id="registerModal" data-auth-dialog="register" data-pending-google="{{#if pendingGoogle}}true{{else}}false{{/if}}" role="dialog" aria-modal="true" aria-label="Create account" class="auth-overlay {{#if openRegisterModal}}flex{{else}}hidden{{/if}} bg-black/60 backdrop-blur-sm">
+  <div id="registerModal" data-auth-dialog="register" data-pending-google="{{#if pendingGoogle}}true{{else}}false{{/if}}" role="dialog" aria-modal="true" aria-label="Create Account" class="auth-overlay {{#if openRegisterModal}}flex{{else}}hidden{{/if}} bg-black/60 backdrop-blur-sm">
     <div class="relative w-full max-w-[460px] bg-white rounded-none shadow-2xl p-8 sm:p-10 border border-gray-300 transition-all duration-200" id="registerModalCard" tabindex="-1">
 
       <!-- Close Button -->
-      <a href="/" class="auth-dialog-close" data-close-auth aria-label="Close Create account dialog">×</a>
+      <a href="/" class="auth-dialog-close" data-close-auth aria-label="Close Create Account dialog">×</a>
 
       <!-- Modal Card Header -->
       <div class="mb-5">

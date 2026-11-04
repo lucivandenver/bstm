@@ -39,6 +39,7 @@ export const User = sequelize.define("User", {
   studentId: { type: DataTypes.STRING(40), unique: true, allowNull: true },
   section: { type: DataTypes.STRING(60), allowNull: true },
   googleId: { type: DataTypes.STRING, unique: true, allowNull: true },
+  googlePicture: { type: DataTypes.STRING(1000), allowNull: true },
   emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
 });

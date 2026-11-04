@@ -23,6 +23,7 @@ export const requireUser = asyncRoute(async (req, res, next) => {
   if (!usable(user) || (req.session.sessionVersion || 0) !== user.sessionVersion) return req.session.destroy(() => res.redirect('/login'));
   req.user = user;
   const { password, googleId, ...safeUser } = user.get({ plain: true });
+  safeUser.avatarInitials = String(safeUser.name || '?').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   res.locals.currentUser = safeUser;
   res.locals.unreadCount = await Notification.count({ where: { userId: user.id, readAt: null } });
   res.locals.institutionName = await setting('institutionName', 'MinSU Bongabong Campus');

@@ -5,10 +5,10 @@ import { requireUser, requireFaculty, asyncRoute } from '../middleware/security.
 import { googleStart } from '../controllers/googleController.js';
 import * as c from '../controllers/facultyController.js';
 const r = Router(); r.use(requireUser, requireFaculty);
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 8 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 8, fields: 8 } });
 r.get('/', asyncRoute(c.dashboard)); r.get('/profile', c.profile); r.post('/profile', asyncRoute(c.saveProfile)); r.post('/connect-google', googleStart);
 r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', asyncRoute(c.editor)); r.post('/courses', asyncRoute(c.saveCourse));
-r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.get('/courses/:id/preview', asyncRoute(c.preview));
+r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.post('/courses/:id/delete', asyncRoute(c.deleteDraft)); r.get('/courses/:id/preview', asyncRoute(c.preview));
 r.get('/credentials', asyncRoute(c.credentials)); r.post('/courses/:id/credentials', asyncRoute(c.submitCredential));
 const draftLimit = (limit, manual) => rateLimit({
   windowMs: 60000, limit, keyGenerator: req => String(req.user.id),
@@ -16,8 +16,8 @@ const draftLimit = (limit, manual) => rateLimit({
   handler: (req, res) => res.status(429).json({ ok: false, code: 'COURSE_REQUEST_LIMIT', message: 'Too many draft requests. Wait one minute before retrying. Your saved source remains available.' })
 });
 r.get('/upload', asyncRoute(c.uploadPage));
-r.post('/upload', rateLimit({ windowMs: 60000, limit: 5 }), upload.single('source'), asyncRoute(c.upload));
-r.get('/sources/:id', asyncRoute(c.source));
+r.post('/upload', rateLimit({ windowMs: 60000, limit: 5 }), upload.array('sources', 8), asyncRoute(c.upload));
+r.get('/sources/:id', asyncRoute(c.source)); r.post('/sources/:id/delete', asyncRoute(c.deleteSource));
 r.post('/sources/:id/generate', draftLimit(2, false), draftLimit(5, true), asyncRoute(c.generate));
 r.get('/questions', asyncRoute(c.bank)); r.post('/questions', asyncRoute(c.saveQuestion)); r.post('/questions/:id', asyncRoute(c.saveQuestion));
 r.get('/students', asyncRoute(c.students)); r.get('/students/:id', asyncRoute(c.student)); r.post('/students/:id/notes', asyncRoute(c.note));
