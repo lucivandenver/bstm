@@ -15,7 +15,7 @@ export async function finalizeAttempt(attempt, user, transaction) {
   const weighted = Math.round(quizAverage * (p.quizWeight ?? 0) / 100 + attempt.finalScore * (p.finalWeight ?? 100) / 100 + practical * (p.practicalWeight ?? 0) / 100);
   if (weighted < attempt.snapshot.passingScore) return false;
   await attempt.update({ status: 'completed', completedAt: new Date() }, { transaction });
-  if (attempt.snapshot.certificateEnabled !== false) await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date() }, transaction });
+  if (attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved === true) await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date() }, transaction });
   await Notification.create({ userId: user.id, title: 'Course completed', message: `You completed ${attempt.snapshot.title}. View your completion history and eligible awards.`, href: '/student/achievements' }, { transaction });
   return true;
 }
