@@ -14,7 +14,8 @@ import { User } from '../models/userModel.js';
 import { text, profileInput } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, careerMatches } from '../services/learning.js';
-import { explainCareer } from '../services/careerAi.js';
+import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
+import { aiConfiguration } from '../services/gemini.js';
 import { googleReady, appUrl } from '../config/env.js';
 const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -336,27 +337,32 @@ export const careers = async (req, res) => {
   const visibleIds = new Set(approvedFaculty.map(user => user.id));
   const eligibleCourses = courses.filter(course => visibleIds.has(course.ownerId));
   const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
-  const fingerprint = JSON.stringify({ scores: evidence.scores, tracks: evidence.tracks.map(t => [t.title, t.required]) });
+  const learningContext = careerLearningContext(attempts, (await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+  const fingerprint = careerFingerprint(evidence, learningContext);
   if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
   const recommendations = eligibleCourses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(c => ({ ...plain(c), locked: c.prerequisites.some(id => !completedIds.has(Number(id))) }));
   const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => track.required.includes(course.domain)).map(course => ({ ...plain(course), learningStatus: completedIds.has(course.id) ? 'Completed' : attempts.some(a => a.courseId === course.id && a.status === 'ongoing') ? 'In progress' : 'Available', done: completedIds.has(course.id), active: attempts.some(a => a.courseId === course.id && a.status === 'ongoing') })) }));
   render(res, 'careers', { evidenceDate: date(new Date()), evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore })), hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
-    aiReady: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL), ai: req.session.careerAi || null });
+    developingCourses:learningContext.developing, aiReady: aiConfiguration().ready, ai: req.session.careerAi || null });
 };
 export const generateGuidance = async (req, res) => {
-  if (req.body.consent !== 'yes') return fail(res, 'Confirm that anonymised scores may be sent to Gemini.');
-  const attempts = await attemptsFor(req.user.id);
-  const baseline = await Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] });
-  if (!baseline && !attempts.some(a => a.status === 'completed')) return fail(res, 'Complete a diagnostic or a course first.');
-  try {
-    const evidence = await buildEvidence(attempts, plain(baseline), '', (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
-    const ai = await explainCareer(evidence);
-    if (!ai) throw new Error('Gemini is not configured yet.');
-    req.session.careerAi = { ...ai, generatedAt: date(new Date()), fingerprint: JSON.stringify({ scores: evidence.scores, tracks: evidence.tracks.map(t => [t.title, t.required]) }) };
-    req.flash('success_msg', 'AI learning guidance generated. Review it alongside your assessed results.');
-  } catch (err) { req.flash('error_msg', err.message === 'Gemini is not configured yet.' ? err.message : 'AI guidance is temporarily unavailable. Your evidence-based pathways remain available.'); }
-  res.redirect('/student/careers');
+  const json=req.get('accept')?.includes('application/json');
+  const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
+  if(req.body.consent!=='yes')return reject('Confirm permission to send your anonymised learning evidence to Gemini.');
+  const attempts=await attemptsFor(req.user.id),baseline=await Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]});
+  if(!baseline&&!attempts.some(a=>a.status==='completed'||a.completedLessons?.length||Object.keys(a.quizScores||{}).length))return reject('Start learning and save some course progress, or complete an assessment, before finding career directions.');
+  try{
+    const evidence=await buildEvidence(attempts,plain(baseline),'',(await CareerPath.findAll({where:{active:true}})).map(plain));
+    if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
+    const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+    const ai=await explainCareer(evidence,learning);
+    if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
+    req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
+    req.flash('success_msg','Career recommendations generated from your learning evidence.');
+    if(json)return res.json({ok:true,redirect:'/student/careers#ai-results'});
+    res.redirect('/student/careers#ai-results');
+  }catch(error){return reject(error.code?error.message:'AI guidance is temporarily unavailable. Your previous results and rule-based pathways remain available.',error.status||503);}
 };
 export const achievements = async (req, res) => {
   const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });

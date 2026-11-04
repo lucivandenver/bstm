@@ -11,3 +11,7 @@ Source commit: `1ffb34c752ecf5d402f04cfb4b392c77f57c54bc`. These locally served 
 - `robot.png`: `assets/Robot/3D/robot_3d.png`
 - `down-arrow.png`: `assets/Down arrow/3D/down_arrow_3d.png`
 - `identification-card.png`: `assets/Identification card/3D/identification_card_3d.png`
+
+- `graduation-cap.png`: `assets/Graduation cap/3D/graduation_cap_3d.png`
+- `palm-tree.png`: `assets/Palm tree/3D/palm_tree_3d.png`
+- `magnifying-glass.png`: `assets/Magnifying glass tilted left/3D/magnifying_glass_tilted_left_3d.png`

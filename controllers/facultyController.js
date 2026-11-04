@@ -1,3 +1,4 @@
+import { validatedSignature } from '../services/signatureProcessing.js';
 import { buildEvidence, summarizeLearning } from '../services/evidence.js';
 import { Op } from 'sequelize';
 import { randomUUID } from 'node:crypto';
@@ -36,13 +37,17 @@ export const credentials = async (req, res) => {
   render(res, 'credentials', { title: 'Certificates & badges', ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
 };
 export const submitCredential = async (req, res) => {
-  const course = await Course.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!course || !course.published) fail('Publish your course before requesting a certificate and badge approval.');
-  const signature = text(req.body.signature, 1200000); if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(signature)) fail('Upload a valid PNG, JPEG or WebP signature image.');
-  const label = text(req.body.badgeLabel, 60) || 'Course completion';
-  const [request, created] = await CredentialRequest.findOrCreate({ where: { courseId: course.id }, defaults: { facultyId: req.user.id, facultySignature: signature, badge: { enabled: true, label }, status: 'pending' } });
-  if (!created) await request.update({ facultyId: req.user.id, facultySignature: signature, badge: { enabled: true, label }, status: 'pending', remarks: null, reviewedBy: null, reviewedAt: null });
-  await audit(req.user.id, 'credential.requested', 'course', course.id, { requestId: request.id });
-  req.flash('success_msg', 'Credential configuration sent to Admin for review.'); res.redirect('/faculty/credentials');
+  const signature=await validatedSignature(req.body.signature),label=text(req.body.badgeLabel,60)||'Course completion';
+  await sequelize.transaction(async transaction=>{
+    const course=await ownedCourse(req,transaction);if(!course.published)fail('Publish your course before requesting a certificate and badge approval.');
+    const [request,created]=await CredentialRequest.findOrCreate({where:{courseId:course.id},defaults:{facultyId:req.user.id,facultySignature:signature,badge:{enabled:true,label},status:'pending'},transaction});
+    if(!created)await request.update({facultyId:req.user.id,facultySignature:signature,badge:{enabled:true,label},status:'pending',remarks:null,reviewedBy:null,reviewedAt:null},{transaction});
+    await course.update({awardsApproved:false},{transaction});
+    const attempts=await CourseAttempt.findAll({where:{courseId:course.id},transaction});
+    for(const attempt of attempts)await attempt.update({snapshot:{...attempt.snapshot,awardsApproved:false}},{transaction});
+    await audit(req.user.id,'credential.requested','course',course.id,{requestId:request.id},transaction);
+  });
+  req.flash('success_msg','Transparent signature and credential configuration sent to Admin for review. Existing issued awards retain their original signatures.');res.redirect('/faculty/credentials');
 };
 export const courses = async (req, res) => {
   const courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] });

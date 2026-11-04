@@ -30,7 +30,8 @@
     "test:student": "node --test tests/*.test.js",
     "build:css": "tailwindcss -i ./assets/tailwind.css -o ./public/tailwind.css --minify",
     "setup:google": "node scripts/setupGoogle.js",
-    "admin:password": "node scripts/adminPassword.js"
+    "admin:password": "node scripts/adminPassword.js",
+    "ai:check": "node scripts/checkAi.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -48,7 +49,8 @@
     "pdfjs-dist": "^6.5.438",
     "pdfkit": "^0.20.2",
     "qrcode": "^1.5.4",
-    "sequelize": "^6.37.3"
+    "sequelize": "^6.37.3",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "concurrently": "^10.0.0",

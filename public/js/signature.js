@@ -1,19 +1,98 @@
 (() => {
-  for (const form of document.querySelectorAll('[data-signature-form]')) {
-    const file = form.querySelector('[data-signature-file]'), hidden = form.querySelector('[data-signature-value]'), previews = form.querySelectorAll('[data-course-signature-preview]');
-    let ready = Boolean(hidden.value);
-    file.addEventListener('change', () => {
-      file.setCustomValidity('');
-      ready = false; hidden.value = '';
-      const selected = file.files?.[0]; if (!selected) return;
-      if (!/^image\/(png|jpeg|webp)$/.test(selected.type) || selected.size > 4 * 1024 * 1024) { file.setCustomValidity('Choose a PNG, JPEG or WebP image up to 4 MB.'); file.reportValidity(); return; }
-      file.setCustomValidity(''); const image = new Image(); image.onload = () => {
-        const scale = Math.min(1, 600 / image.width, 300 / image.height), canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(image.width * scale)); canvas.height = Math.max(1, Math.round(image.height * scale));
-        const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, 0, 0, canvas.width, canvas.height); const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        for (let i = 0; i < pixels.data.length; i += 4) { const light = Math.min(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]); if (light > 232) pixels.data[i + 3] = 0; else if (light > 205) pixels.data[i + 3] = Math.round(pixels.data[i + 3] * (232 - light) / 27); }
-        ctx.putImageData(pixels, 0, 0); hidden.value = canvas.toDataURL('image/png'); previews.forEach(preview => { preview.src = hidden.value; preview.hidden = false; }); ready = true; URL.revokeObjectURL(image.src);
-      }; image.src = URL.createObjectURL(selected);
+  for (const form of document.querySelectorAll("[data-signature-form]")) {
+    const file = form.querySelector("[data-signature-file]"),
+      hidden = form.querySelector("[data-signature-value]"),
+      status = form.querySelector("[data-signature-status]");
+    const previews = (form.closest("section") || form).querySelectorAll(
+      "[data-course-signature-preview],[data-signature-preview]",
+    );
+    const initial = hidden.value;
+    const initialPreviews = [...previews].map((preview) => ({
+      preview,
+      src: preview.getAttribute("src"),
+      hidden: preview.hidden,
+    }));
+    let ready = !file.required || Boolean(initial),
+      sequence = 0,
+      busy = false;
+    file.addEventListener("change", async () => {
+      const token = ++sequence,
+        selected = file.files?.[0];
+      file.setCustomValidity("");
+      busy = false;
+      form.removeAttribute("aria-busy");
+      ready = false;
+      hidden.value = "";
+      if (!selected) {
+        for (const saved of initialPreviews) {
+          if (saved.src) saved.preview.src = saved.src;
+          else saved.preview.removeAttribute("src");
+          saved.preview.hidden = saved.hidden;
+        }
+        hidden.value = initial;
+        ready = !file.required || Boolean(initial);
+        if (status) status.textContent = "";
+        return;
+      }
+      if (
+        !/^image\/(png|jpeg|webp)$/.test(selected.type) ||
+        selected.size > 4 * 1024 * 1024
+      ) {
+        file.setCustomValidity(
+          "Choose a PNG, JPEG or WebP signature up to 4 MB.",
+        );
+        file.reportValidity();
+        return;
+      }
+      busy = true;
+      form.setAttribute("aria-busy", "true");
+      if (status) status.textContent = "Removing the paper background…";
+      try {
+        const body = new FormData();
+        body.set("signature", selected);
+        const csrf = form.querySelector("[name=_csrf]").value;
+        const response = await fetch("/signatures/process", {
+          method: "POST",
+          headers: { Accept: "application/json", "X-CSRF-Token": csrf },
+          body,
+        });
+        const data = await response.json().catch(() => null);
+        if (token !== sequence) return;
+        if (!response.ok || !data?.ok)
+          throw new Error(
+            data?.message ||
+              "Signature processing failed. Sign in again or try a clearer image.",
+          );
+        hidden.value = data.signature;
+        for (const preview of previews) {
+          preview.src = data.signature;
+          preview.hidden = false;
+        }
+        ready = true;
+        if (status)
+          status.textContent =
+            "Transparent PNG ready. Check the preview before submitting.";
+      } catch (error) {
+        if (token !== sequence) return;
+        file.setCustomValidity(error.message);
+        if (status) status.textContent = error.message;
+      } finally {
+        if (token === sequence) {
+          busy = false;
+          form.removeAttribute("aria-busy");
+        }
+      }
     });
-    form.addEventListener('submit', event => { if (!ready) { event.preventDefault(); file.setCustomValidity('Choose a signature image and wait for its preview before submitting.'); file.reportValidity(); } });
+    form.addEventListener("submit", (event) => {
+      if (busy || !ready) {
+        event.preventDefault();
+        file.setCustomValidity(
+          busy
+            ? "Wait for the signature preview before saving."
+            : "Choose a clear signature image and wait for its preview.",
+        );
+        file.reportValidity();
+      }
+    });
   }
 })();

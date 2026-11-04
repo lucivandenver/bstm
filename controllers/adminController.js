@@ -1,3 +1,4 @@
+import { validatedSignature } from '../services/signatureProcessing.js';
 import { summarizeLearning } from '../services/evidence.js';
 import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
 import { CourseRevision, CourseAssignment } from '../models/portalModels.js';
@@ -258,8 +259,8 @@ export const saveCareer = async (req, res) => {
 };
 export const settings = async (req, res) => render(res, 'settings', { title: 'System settings', portalSettings: Object.fromEntries((await Setting.findAll()).map(s => [s.key, s.value])), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
 export const saveSettings = async (req, res) => {
-  const signature = text(req.body.adminSignature, 1200000), previousSignature = await setting('adminSignature', '');
-  if (signature && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature)) fail('Admin signature must be a processed PNG image.');
+  const previousSignature = await setting('adminSignature', '');
+  const signature = req.body.adminSignature && req.body.adminSignature !== previousSignature ? await validatedSignature(req.body.adminSignature) : previousSignature;
   const values = { certificateTemplate: 'classic', institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), adminSignature: signature || previousSignature, registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
   if (!values.institutionName || !/^\d{4}-\d{4}$/.test(values.academicYear)) fail('Enter an institution and academic year.');
   await sequelize.transaction(async transaction => {

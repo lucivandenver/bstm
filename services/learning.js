@@ -85,7 +85,7 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
     const gaps = track.required.filter(d => scores[d] === null || scores[d] < 75);
     return { ...track, rank: sufficient ? average : -1, label: !sufficient ? 'More evidence needed' : average >= 85 && !gaps.length ? 'Strong learning alignment' : 'Developing alignment',
       explanation: !sufficient ? 'Complete assessments in each required area to develop this recommendation.' : `Your available knowledge evidence averages ${Math.round(average)}% across this pathway’s learning areas. This is not a probability of employment.`,
-      gaps, strengths: track.required.filter(d => scores[d] >= 75), preferred: interest.toLowerCase().includes(track.focus.split(' ')[0].toLowerCase()) };
+      gaps, strengths: track.required.filter(d => scores[d] >= 75), preferred: Boolean(interest && String(interest).toLowerCase().includes(String(track.focus || track.title || '').split(' ')[0].toLowerCase())) };
   }).sort((a, b) => b.rank - a.rank) };
 }
 

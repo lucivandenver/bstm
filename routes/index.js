@@ -1,3 +1,5 @@
+import multer from 'multer';
+import { processUpload } from '../controllers/signatureController.js';
 import * as portal from '../controllers/portalController.js';
 
   /*
@@ -61,5 +63,6 @@ router.get('/notifications/feed', requireUser, asyncRoute(portal.notificationFee
 router.get('/notifications/stream', requireUser, asyncRoute(portal.notificationStream));
 router.post('/notifications/read', requireUser, asyncRoute(portal.readAll));
 router.post('/notifications/:id/open', requireUser, asyncRoute(portal.openNotification));
+router.post('/signatures/process', requireUser, rateLimit({windowMs:60000,limit:10,keyGenerator:req=>String(req.user.id)}), multer({storage:multer.memoryStorage(),limits:{fileSize:4*1024*1024,files:1,fields:1}}).single('signature'), asyncRoute(processUpload));
 router.get('/files/:id', requireUser, asyncRoute(portal.file));
 export default router;
