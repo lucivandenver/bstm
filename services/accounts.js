@@ -4,7 +4,7 @@ import { Section, Setting, CareerPath, AuditLog } from '../models/adminModels.js
 import { defaultCareerTracks } from './learning.js';
 export const ownerEmail = () => (process.env.ADMIN_EMAIL || 'bstm4thyear.mbc@gmail.com').trim().toLowerCase();
 export const genders = ['Female', 'Male', 'Other', 'Prefer not to say'];
-export function usable(user) { return user?.active && (user.role !== 'faculty' || user.approvalStatus === 'approved'); }
+  export function usable(user) { return user?.active && (user.role !== 'faculty' || ['approved', 'returned'].includes(user.approvalStatus)); }
 export function accessMessage(user) {
   return user?.role === 'faculty' && user.approvalStatus !== 'approved' ? 'Your faculty account is awaiting admin approval or has not been approved yet.' : 'This account is inactive. Contact the administrator.';
 }

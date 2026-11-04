@@ -9,6 +9,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 *
 r.get('/', asyncRoute(c.dashboard)); r.get('/profile', c.profile); r.post('/profile', asyncRoute(c.saveProfile)); r.post('/connect-google', googleStart);
 r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', asyncRoute(c.editor)); r.post('/courses', asyncRoute(c.saveCourse));
 r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.get('/courses/:id/preview', asyncRoute(c.preview));
+r.get('/credentials', asyncRoute(c.credentials)); r.post('/courses/:id/credentials', asyncRoute(c.submitCredential));
 const draftLimit = (limit, manual) => rateLimit({
   windowMs: 60000, limit, keyGenerator: req => String(req.user.id),
   skip: req => (req.body.mode === 'manual') !== manual,

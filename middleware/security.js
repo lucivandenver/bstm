@@ -31,7 +31,11 @@ export const requireUser = asyncRoute(async (req, res, next) => {
   next();
 });
 export const requireAdmin = (req, res, next) => req.user.role === 'admin' ? next() : res.status(403).send('Administrator access required.');
-export const requireFaculty = (req, res, next) => req.user.role === 'faculty' ? next() : res.status(403).send('Faculty access required.');
+export const requireFaculty = (req, res, next) => {
+  if (req.user.role !== 'faculty') return res.status(403).send('Faculty access required.');
+  if (req.user.approvalStatus !== 'approved' && !['/profile', '/profile/'].includes(req.path)) return res.redirect('/faculty/profile');
+  next();
+};
 export const requireStudent = (req, res, next) => {
   if (req.user.role !== 'student') return res.status(403).send('This area is available to student accounts.');
   next();

@@ -9,6 +9,10 @@
         for (const input of element.querySelectorAll('input,select')) { input.disabled = faculty; input.required = !faculty; }
       }
       form.querySelector('[data-faculty-note]').hidden = !faculty;
+      for (const element of form.querySelectorAll('[data-faculty-only]')) {
+        element.hidden = !faculty;
+        for (const input of element.querySelectorAll('input,textarea')) { input.disabled = !faculty; input.required = faculty; }
+      }
       const container = form.closest('[data-registration-container]') || form.parentElement;
       const google = container.querySelector('[data-google-register]');
       if (google) google.href = '/auth/google?intent=register&role=' + select.value;

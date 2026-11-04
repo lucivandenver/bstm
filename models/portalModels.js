@@ -13,6 +13,12 @@ export const CourseFeedback = sequelize.define('CourseFeedback', { userId: DataT
 export const FacultyNote = sequelize.define('FacultyNote', { studentId: DataTypes.INTEGER, facultyId: DataTypes.INTEGER, feedback: DataTypes.TEXT, remediation: DataTypes.TEXT, visibility: DataTypes.STRING(20) });
 export const ProfileCorrection = sequelize.define('ProfileCorrection', { userId: DataTypes.INTEGER, studentId: DataTypes.STRING(40), section: DataTypes.STRING(60), reason: DataTypes.TEXT, status: { type: DataTypes.STRING(20), defaultValue: 'pending' }, reviewedBy: DataTypes.INTEGER });
 export const StudentFile = sequelize.define('StudentFile', { userId: DataTypes.INTEGER, kind: DataTypes.STRING(20), filename: DataTypes.STRING, mime: DataTypes.STRING(100), data: DataTypes.BLOB('long') });
+export const CredentialRequest = sequelize.define('CredentialRequest', {
+  courseId: { type: DataTypes.INTEGER, allowNull: false }, facultyId: { type: DataTypes.INTEGER, allowNull: false },
+  facultySignature: { type: DataTypes.TEXT('long'), allowNull: false }, badge: json({ enabled: true, label: 'Course completion' }),
+  status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'pending' }, remarks: DataTypes.TEXT,
+  reviewedBy: DataTypes.INTEGER, reviewedAt: DataTypes.DATE
+}, { indexes: [{ unique: true, fields: ['courseId'] }] });
 for (const m of [CourseRevision, CourseAssignment]) m.belongsTo(Course, { foreignKey: 'courseId', onDelete: 'RESTRICT' });
 for (const m of [QuizDraft, PracticalSubmission, CourseFeedback]) m.belongsTo(CourseAttempt, { foreignKey: 'attemptId', onDelete: 'RESTRICT' });
 for (const m of [QuizDraft, PracticalSubmission, CourseFeedback, StudentFile, ProfileCorrection]) m.belongsTo(User, { foreignKey: 'userId', onDelete: 'RESTRICT' });
