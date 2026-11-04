@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { buildEvidence } from '../services/evidence.js';
 import QRCode from 'qrcode';
 import { Op } from 'sequelize';
-import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile } from '../models/portalModels.js';
+import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
 import { finalizeAttempt, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
@@ -374,7 +374,8 @@ export const certificate = async (req, res) => {
   res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `attachment; filename="CareerBridge-${c.id}.pdf"`);
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 55 });
   doc.on('error', () => res.end()); doc.pipe(res);
-  const modern = await setting('certificateTemplate','classic') === 'modern';
+    const request = await CredentialRequest.findOne({ where: { courseId: (await CourseAttempt.findByPk(c.attemptId))?.courseId, status: 'approved' } });
+    const modern = false;
   doc.rect(25, 25, 792, 545).lineWidth(2).stroke(modern ? '#182c3d' : '#007042');
   if (modern) doc.rect(25,25,792,68).fill('#182c3d');
   doc.fillColor(modern ? '#ffffff' : '#007042').fontSize(17).text('BSTM CAREERBRIDGE',55,43,{width:730,align:'center'});
@@ -390,15 +391,19 @@ export const certificate = async (req, res) => {
   const url = `${appUrl}/verify/${c.id}`;
   doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`,75,477,{width:610,align:'center',link:url});
   doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`,75,499,{width:610,align:'center'});
-  const signatory = await setting('certificateSignatory','');
-  if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,75,535,{width:610,height:22,align:'center'});
+    const signatory = c.adminName || await setting('certificateSignatory',''), adminSignature = c.adminSignature || await setting('adminSignature',''), facultySignature = c.facultySignature || request?.facultySignature || '', facultyName = c.facultyName || (request ? (await User.findByPk(request.facultyId))?.name : '');
+    if (facultySignature) { const raw = Buffer.from(facultySignature.split(',')[1], 'base64'); doc.image(raw,175,455,{fit:[150,54],align:'center'}); }
+    if (adminSignature) { const raw = Buffer.from(adminSignature.split(',')[1], 'base64'); doc.image(raw,535,455,{fit:[150,54],align:'center'}); }
+    if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,535,515,{width:150,height:22,align:'center'});
+    if (facultyName) doc.fillColor('#172533').fontSize(9).text(facultyName,175,515,{width:150,height:22,align:'center'});
+    doc.fillColor('#64748b').fontSize(8).text('Course Faculty',175,535,{width:150,align:'center'}); doc.text('Administrator',535,535,{width:150,align:'center'});
   const qr = await QRCode.toBuffer(url,{width:90,margin:1});doc.image(qr,728,478,{width:66});doc.end();
 };
 export const badge = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Badge not found.', 404);
-  // Fixed SVG contains no user input; course title stays in the achievement UI.
+  const label = String(c.badgeLabel || 'Course completion').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;' })[ch]);
   res.set('Content-Type', 'image/svg+xml'); res.set('Content-Disposition', `attachment; filename="CareerBridge-badge-${c.id}.svg"`);
-  res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="440" viewBox="0 0 400 440"><rect width="400" height="440" rx="24" fill="#f3faf6"/><path d="M200 35 345 105v140L200 365 55 245V105Z" fill="#007042"/><circle cx="200" cy="180" r="78" fill="#fff"/><path d="m152 180 32 32 65-65" fill="none" stroke="#007042" stroke-width="18"/><g fill="white" text-anchor="middle" font-family="Arial"><text x="200" y="290" font-size="19">COURSE COMPLETED</text><text x="200" y="322" font-size="20">${'★'.repeat(c.stars)}</text></g><text x="200" y="405" text-anchor="middle" font-family="Arial" fill="#007042" font-size="20">BSTM CAREERBRIDGE</text></svg>`);
+  res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="440" viewBox="0 0 400 440"><rect width="400" height="440" rx="24" fill="#f3faf6"/><path d="M200 35 345 105v140L200 365 55 245V105Z" fill="#007042"/><circle cx="200" cy="180" r="78" fill="#fff"/><path d="m152 180 32 32 65-65" fill="none" stroke="#007042" stroke-width="18"/><g fill="white" text-anchor="middle" font-family="Arial"><text x="200" y="290" font-size="19">${label}</text><text x="200" y="322" font-size="20">${'★'.repeat(c.stars)}</text></g><text x="200" y="405" text-anchor="middle" font-family="Arial" fill="#007042" font-size="20">BSTM CAREERBRIDGE</text></svg>`);
 };
 export const verify = async (req, res) => {
   const c = await Credential.findByPk(req.params.id);

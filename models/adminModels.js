@@ -10,7 +10,7 @@ export const AuditLog = sequelize.define('AuditLog', {
   actorId: DataTypes.INTEGER, action: { type: DataTypes.STRING(80), allowNull: false },
   targetType: DataTypes.STRING(40), targetId: DataTypes.STRING(60), details: DataTypes.JSON
 });
-export const Setting = sequelize.define('Setting', { key: { type: DataTypes.STRING(60), unique: true }, value: DataTypes.TEXT });
+export const Setting = sequelize.define('Setting', { key: { type: DataTypes.STRING(60), unique: true }, value: DataTypes.TEXT('long') });
 export const Announcement = sequelize.define('Announcement', {
   title: { type: DataTypes.STRING(160), allowNull: false }, body: { type: DataTypes.TEXT, allowNull: false },
   audience: { type: DataTypes.STRING(20), defaultValue: 'all' }, published: { type: DataTypes.BOOLEAN, defaultValue: true }, authorId: DataTypes.INTEGER

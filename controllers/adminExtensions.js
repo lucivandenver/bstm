@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { User, Course, CourseAttempt, Assessment, Credential, sequelize, Notification } from '../models/learningModels.js';
-import { ProfileCorrection, CourseRevision, AiJob, SourceDocument, PracticalSubmission } from '../models/portalModels.js';
+import { ProfileCorrection, CourseRevision, AiJob, SourceDocument, PracticalSubmission, CredentialRequest } from '../models/portalModels.js';
 import { Section, Setting } from '../models/adminModels.js';
 import { audit, setting } from '../services/accounts.js';
 import { fail } from '../services/courseAuthoring.js';
@@ -26,7 +26,7 @@ export const correct = async (req, res) => {
 export const ownership = async (req, res) => {
   const course = await Course.findByPk(req.params.id); if (!course) fail('Course not found.',404);
   const owner = Number(req.body.ownerId); if (!await User.findOne({ where: { id: owner, role: 'faculty', approvalStatus: 'approved', active: true } })) fail('Select an active approved faculty member.');
-  await course.update({ ownerId: owner }); await audit(req.user.id, 'course.owner_assigned', 'course', course.id, { ownerId: owner }); req.flash('success_msg','Course ownership assigned.'); res.redirect('/admin/courses');
+  await sequelize.transaction(async transaction => { await course.update({ ownerId: owner, awardsApproved: false }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course ownership changed. The new faculty owner must submit credentials for review.' }, { where: { courseId: course.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: course.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); await audit(req.user.id, 'course.owner_assigned', 'course', course.id, { ownerId: owner }, transaction); }); req.flash('success_msg','Course ownership assigned. Credential approval must be requested by the new faculty owner.'); res.redirect('/admin/courses');
 };
 export const history = async (req, res) => { const course = await Course.findByPk(req.params.id); if (!course) fail('Course not found.',404); render(res,'history',{ title: 'Course publication history', course: plain(course), revisions: (await CourseRevision.findAll({ where: { courseId: course.id }, order: [['createdAt','DESC']], limit: 100 })).map(r => ({...plain(r), date: new Date(r.createdAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})})) }); };
 export const ai = async (req, res) => render(res,'ai',{ title: 'AI operations', configured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL), model: process.env.GEMINI_MODEL || 'Not configured', limit: await setting('aiDailyLimit','5'), jobs: (await AiJob.findAll({ order: [['createdAt','DESC']], limit: 100 })).map(j => ({...plain(j), date: new Date(j.createdAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})})), sources: await SourceDocument.count() });

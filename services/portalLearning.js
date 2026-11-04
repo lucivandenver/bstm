@@ -1,5 +1,6 @@
-import { CourseAttempt, Credential, Notification } from '../models/learningModels.js';
-import { PracticalSubmission, CourseFeedback, QuizDraft } from '../models/portalModels.js';
+import { CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
+import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
+import { Setting } from '../models/adminModels.js';
 import { starsFor, canTakeFinal, grade } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
@@ -15,7 +16,12 @@ export async function finalizeAttempt(attempt, user, transaction) {
   const weighted = Math.round(quizAverage * (p.quizWeight ?? 0) / 100 + attempt.finalScore * (p.finalWeight ?? 100) / 100 + practical * (p.practicalWeight ?? 0) / 100);
   if (weighted < attempt.snapshot.passingScore) return false;
   await attempt.update({ status: 'completed', completedAt: new Date() }, { transaction });
-  if (attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved === true) await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date() }, transaction });
+  if (attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved === true) {
+    const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
+    const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : null;
+    const settings = await Setting.findAll({ where: { key: ['adminSignature', 'certificateSignatory'] }, transaction }); const values = Object.fromEntries(settings.map(s => [s.key, s.value]));
+    await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request?.facultySignature || null, facultyName: faculty?.name || null, adminSignature: values.adminSignature || null, adminName: values.certificateSignatory || null, badgeLabel: request?.badge?.label || 'Course completion' }, transaction });
+  }
   await Notification.create({ userId: user.id, title: 'Course completed', message: `You completed ${attempt.snapshot.title}. View your completion history and eligible awards.`, href: '/student/achievements' }, { transaction });
   return true;
 }

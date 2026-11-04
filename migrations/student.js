@@ -15,6 +15,8 @@ export async function migrateStudent() {
     const additions = {
       sessionVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       facultyId: { type: DataTypes.STRING(40), allowNull: true }, gender: { type: DataTypes.STRING(30), allowNull: true },
+      facultyPosition: { type: DataTypes.STRING(120), allowNull: true }, facultyEducation: { type: DataTypes.STRING(200), allowNull: true }, facultyQualifications: { type: DataTypes.TEXT, allowNull: true },
+      facultyReviewedBy: { type: DataTypes.INTEGER, allowNull: true }, facultyReviewedAt: { type: DataTypes.DATE, allowNull: true }, facultyReviewRemarks: { type: DataTypes.TEXT, allowNull: true },
       approvalStatus: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'approved' },
       studentId: { type: DataTypes.STRING(40), allowNull: true }, section: { type: DataTypes.STRING(60), allowNull: true },
       googleId: { type: DataTypes.STRING, allowNull: true }, emailVerified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -43,6 +45,8 @@ export async function migrateStudent() {
   };
   await extend('Courses', { ownerId: { type: DataTypes.INTEGER, allowNull: true }, outcomes: { type: DataTypes.JSON, allowNull: true }, tasks: { type: DataTypes.JSON, allowNull: true }, policy: { type: DataTypes.JSON, allowNull: true }, enrollFrom: { type: DataTypes.DATE }, enrollUntil: { type: DataTypes.DATE }, deadline: { type: DataTypes.DATE }, certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true }, awardsApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false } });
   await extend('CourseAttempts', { lastLessonId: { type: DataTypes.STRING(100), allowNull: true } });
+  await extend('Credentials', { facultySignature: { type: DataTypes.TEXT('long') }, facultyName: { type: DataTypes.STRING(100) }, adminSignature: { type: DataTypes.TEXT('long') }, adminName: { type: DataTypes.STRING(160) }, badgeLabel: { type: DataTypes.STRING(60) } });
+  if (sequelize.getDialect() === 'mysql' && tables.includes('Settings')) { const settingsColumns = await qi.describeTable('Settings'); if (settingsColumns.value && !String(settingsColumns.value.type).toLowerCase().includes('longtext')) await qi.changeColumn('Settings', 'value', { type: DataTypes.TEXT('long'), allowNull: true }); }
   await extend('CareerPaths', { qualifications: { type: DataTypes.TEXT } });
   await extend('StudentProfiles', Object.fromEntries(['relocate', 'targetRoles', 'workPreferences', 'ojtTasks'].map(name => [name, { type: DataTypes.TEXT }])));
   // Creates missing tables only. Never force-sync or reset existing student data.

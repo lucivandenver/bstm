@@ -1,5 +1,5 @@
 import { summarizeLearning } from '../services/evidence.js';
-import { PracticalSubmission } from '../models/portalModels.js';
+import { PracticalSubmission, CredentialRequest } from '../models/portalModels.js';
 import { CourseRevision } from '../models/portalModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
@@ -9,18 +9,19 @@ import { publishCheck } from '../services/courseAuthoring.js';
 import { audit, ownerEmail, genders, setting } from '../services/accounts.js';
 import { text, email } from '../services/validation.js';
 import { domains } from '../data/starterCourses.js';
+import { starsFor } from '../services/learning.js';
 const plain = row => row?.get({ plain: true });
 const publicUser = row => { const { password, googleId, ...user } = plain(row); return { ...user, googleConnected: Boolean(googleId), owner: user.email === ownerEmail() }; };
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
 const render = (res, view, data = {}) => res.render(`admin/${view}`, { adminNav: view, ...data });
 const date = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
 export const dashboard = async (req, res) => {
-  const [students, faculty, pending, courses, enrollments, completed, credentials, recent] = await Promise.all([
+  const [students, faculty, pending, courses, enrollments, completed, credentials, pendingCredentials, recent] = await Promise.all([
     User.count({ where: { role: 'student' } }), User.count({ where: { role: 'faculty' } }), User.count({ where: { role: 'faculty', approvalStatus: 'pending' } }),
-    Course.count(), CourseAttempt.count(), CourseAttempt.count({ where: { status: 'completed' } }), Credential.count({ where: { revoked: false } }),
+    Course.count(), CourseAttempt.count(), CourseAttempt.count({ where: { status: 'completed' } }), Credential.count({ where: { revoked: false } }), CredentialRequest.count({ where: { status: 'pending' } }),
     AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 8 })
   ]);
-  render(res, 'dashboard', { title: 'Administration', students, faculty, pending, courses, enrollments, completed, credentials, completionRate: enrollments ? Math.round(completed / enrollments * 100) : 0, recent: recent.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
+  render(res, 'dashboard', { title: 'Administration', students, faculty, pending, pendingCredentials, courses, enrollments, completed, credentials, completionRate: enrollments ? Math.round(completed / enrollments * 100) : 0, recent: recent.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
 export const users = async (req, res) => {
   const where = {};
@@ -33,6 +34,15 @@ export const users = async (req, res) => {
   const query = new URLSearchParams({ q, role: text(req.query.role), approval: text(req.query.approval) });
   render(res, 'users', { title: 'Users & faculty approval', users: rows.map(publicUser), q, role: req.query.role, approval: req.query.approval, count, page,
     next: page * 30 < count ? `/admin/users?${query}&page=${page + 1}` : null, previous: page > 1 ? `/admin/users?${query}&page=${page - 1}` : null });
+};
+export const facultyManagement = async (req, res) => {
+  const where = { role: 'faculty' }; if (['pending','approved','returned','rejected'].includes(req.query.approval)) where.approvalStatus = req.query.approval;
+  const faculty = await User.findAll({ where, order: [['createdAt','DESC']] });
+  const courses = await Course.findAll({ where: { ownerId: { [Op.in]: faculty.map(f => f.id) } } });
+  const requests = await CredentialRequest.findAll({ where: { facultyId: { [Op.in]: faculty.map(f => f.id) } } });
+  const attempts = await CourseAttempt.findAll({ where: { courseId: { [Op.in]: courses.map(c => c.id) } }, attributes: ['id','courseId'] });
+  const credentials = await Credential.findAll({ where: { attemptId: { [Op.in]: attempts.map(a => a.id) }, revoked: false }, attributes: ['attemptId'] });
+  render(res, 'faculty', { title: 'Faculty management', approval: req.query.approval, faculty: faculty.map(f => ({ ...publicUser(f), courses: courses.filter(c => c.ownerId === f.id).map(c => ({ title: c.title, request: requests.find(r => r.courseId === c.id)?.status || 'Not requested', awardsIssued: credentials.filter(cr => attempts.find(a => a.id === cr.attemptId)?.courseId === c.id).length })) })) });
 };
 export const userDetail = async (req, res) => {
   const user = await User.findByPk(req.params.id); if (!user) return res.status(404).send('User not found.');
@@ -60,6 +70,7 @@ export const saveUser = async (req, res) => {
       // Serialize administrator changes so the last active admin cannot be removed concurrently.
       await Setting.findAll({ where: { key: 'institutionName' }, transaction, lock: transaction.LOCK.UPDATE });
       const user = await User.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!user) fail('User not found.');
+      if ((data.role === 'faculty' && user.role !== 'faculty') || (user.role === 'faculty' && data.approvalStatus !== user.approvalStatus)) fail('Faculty registrations and review decisions must be handled through Faculty Management.');
       if ((user.role === 'admin' || data.role === 'admin') && req.user.email !== ownerEmail()) fail('Only the owner can manage administrator roles.');
       if ((user.id === req.user.id || user.email === ownerEmail()) && (!data.active || data.role !== 'admin')) fail('You cannot disable or demote yourself or the system owner.');
       if (data.section && !await Section.findOne({ where: { name: data.section }, transaction })) fail('Section not found.');
@@ -71,7 +82,7 @@ export const saveUser = async (req, res) => {
   req.flash('success_msg', 'Account updated.'); res.redirect(`/admin/users/${req.params.id}`);
 };
 export const createUser = async (req, res) => {
-  if (!['student', 'faculty'].includes(req.body.role)) fail('Create a Student or Faculty account. Administrator promotion is handled on account details.');
+  if (req.body.role !== 'student') fail('Faculty accounts must register and be approved through Faculty Management. Create only student accounts here.');
   const data = accountValues({ ...req.body, active: 'true' });
   const address = email(req.body.email); const password = req.body.password;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) || address === ownerEmail()) fail('Use a valid unreserved email.');
@@ -83,17 +94,19 @@ export const createUser = async (req, res) => {
       await audit(req.user.id, 'user.created', 'user', user.id, { role: data.role }, transaction);
     });
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('Email or institutional ID already exists.'); throw error; }
-  req.flash('success_msg', 'Account created. Share the initial password through your approved private channel.'); res.redirect('/admin/users');
+  req.flash('success_msg', 'Student account created. Share the initial password through your approved private channel.'); res.redirect('/admin/users');
 };
 export const approveFaculty = async (req, res) => {
-  const status = text(req.body.status); if (!['approved', 'rejected'].includes(status)) fail('Invalid approval decision.');
+  const status = text(req.body.status), remarks = text(req.body.remarks, 1000); if (!['approved', 'rejected', 'returned'].includes(status)) fail('Invalid approval decision.');
+  if (status === 'approved' && ['verifyIdentity','verifyQualifications'].some(key => req.body[key] !== 'yes')) fail('Complete the faculty registration review checklist before approval.');
+  if (status !== 'approved' && remarks.length < 4) fail('Enter review feedback for returned or rejected registrations.');
   await sequelize.transaction(async transaction => {
     const user = await User.findOne({ where: { id: req.params.id, role: 'faculty' }, transaction, lock: transaction.LOCK.UPDATE }); if (!user) fail('Faculty account not found.');
-    await user.update({ approvalStatus: status }, { transaction });
-    await Notification.create({ userId: user.id, title: 'Faculty account review', message: `Your faculty registration was ${status}.`, href: '/faculty' }, { transaction });
-    await audit(req.user.id, `faculty.${status}`, 'user', user.id, {}, transaction);
+    await user.update({ approvalStatus: status, facultyReviewedBy: req.user.id, facultyReviewedAt: new Date(), facultyReviewRemarks: remarks || null }, { transaction });
+    await Notification.create({ userId: user.id, title: 'Faculty account review', message: `Your faculty registration was ${status}.${remarks ? ` Feedback: ${remarks}` : ''}`, href: '/faculty/profile' }, { transaction });
+    await audit(req.user.id, `faculty.${status}`, 'user', user.id, { remarks }, transaction);
   });
-  req.flash('success_msg', `Faculty account ${status}.`); res.redirect('/admin/users?role=faculty');
+  req.flash('success_msg', `Faculty account ${status}.`); res.redirect('/admin/faculty');
 };
 export const resetPassword = async (req, res) => {
   const password = req.body.newPassword;
@@ -142,6 +155,47 @@ export const credentials = async (req, res) => {
   const rows = await Credential.findAll({ order: [['issuedAt', 'DESC']], limit: 200 });
   render(res, 'credentials', { title: 'Certificates & badges', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt) })) });
 };
+export const credentialApprovals = async (req, res) => {
+  const status = ['pending','returned','approved','rejected'].includes(req.query.status) ? req.query.status : '';
+  const where = status ? { status } : {};
+  const requests = await CredentialRequest.findAll({ where, order: [['updatedAt','DESC']], limit: 300 });
+  const courses = await Course.findAll({ where: { id: { [Op.in]: requests.map(r => r.courseId) } } });
+  const faculty = await User.findAll({ where: { id: { [Op.in]: requests.map(r => r.facultyId) } } });
+  const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory'] } })).map(s => [s.key, s.value]));
+  render(res, 'credentialApprovals', { title: 'Credential approvals', status, ...settings, requests: requests.map(r => ({ ...plain(r), course: plain(courses.find(c => c.id === r.courseId)), faculty: publicUser(faculty.find(f => f.id === r.facultyId)) })) });
+};
+export const reviewCredential = async (req, res) => {
+  const status = text(req.body.status), remarks = text(req.body.remarks, 1000);
+  if (!['approved','returned','rejected'].includes(status)) fail('Choose approve, return or reject.');
+  if (status !== 'approved' && remarks.length < 4) fail('Enter feedback when returning or rejecting a request.');
+  if (status === 'approved' && ['verifyCourse','verifyFacultySignature','verifyTemplate'].some(key => req.body[key] !== 'yes')) fail('Complete each credential review checklist item before approving.');
+  await sequelize.transaction(async transaction => {
+    const request = await CredentialRequest.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!request) fail('Credential request not found.');
+    const course = await Course.findOne({ where: { id: request.courseId, ownerId: request.facultyId }, transaction, lock: transaction.LOCK.UPDATE }); if (!course) fail('The course is no longer owned by this faculty member.');
+    await request.update({ status, remarks: remarks || null, reviewedBy: req.user.id, reviewedAt: new Date() }, { transaction });
+    await course.update({ awardsApproved: status === 'approved' }, { transaction });
+    const facultyAccount = await User.findByPk(request.facultyId, { transaction });
+    const signatureSettings = await Setting.findAll({ where: { key: ['adminSignature','certificateSignatory'] }, transaction }); const signatures = Object.fromEntries(signatureSettings.map(s => [s.key, s.value]));
+    if (status === 'approved' && facultyAccount?.approvalStatus !== 'approved') fail('Approve the faculty registration before approving its credentials.');
+    if (status === 'approved' && !signatures.adminSignature) fail('Upload and save the administrator signature in System Settings before approving credentials.');
+    const attempts = await CourseAttempt.findAll({ where: { courseId: course.id }, transaction, lock: transaction.LOCK.UPDATE });
+    for (const attempt of attempts) {
+      const snapshot = { ...attempt.snapshot, awardsApproved: status === 'approved' && attempt.snapshot.certificateEnabled !== false };
+      await attempt.update({ snapshot }, { transaction });
+      if (status === 'approved' && snapshot.awardsApproved && attempt.status === 'completed' && attempt.finalScore >= snapshot.passingScore) {
+        const policy = attempt.snapshot.policy || {}, modules = attempt.snapshot.modules || [], tasks = (attempt.snapshot.tasks || []).filter(task => task.required !== false), practicals = tasks.length ? await PracticalSubmission.findAll({ where: { attemptId: attempt.id, status: 'graded' }, transaction }) : [];
+        const quizAverage = modules.length ? modules.reduce((sum, module) => sum + (attempt.quizScores?.[module.id] || 0), 0) / modules.length : attempt.finalScore;
+        const practicalAverage = tasks.length ? practicals.filter(submission => tasks.some(task => task.id === submission.taskId)).reduce((sum, submission) => sum + (submission.grade || 0), 0) / tasks.length : 0;
+        const weighted = Math.round(quizAverage * (policy.quizWeight ?? 0) / 100 + attempt.finalScore * (policy.finalWeight ?? 100) / 100 + practicalAverage * (policy.practicalWeight ?? 0) / 100);
+        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, adminSignature: signatures.adminSignature || null, adminName: signatures.certificateSignatory || null, badgeLabel: request.badge?.label || 'Course completion' }, transaction });
+        if (created) await Notification.create({ userId: attempt.userId, title: 'Certificate and badge approved', message: `Your completion of ${course.title} now qualifies for its approved certificate and badge.`, href: '/student/achievements' }, { transaction });
+      }
+    }
+    await Notification.create({ userId: request.facultyId, title: 'Credential configuration reviewed', message: `Your request for ${course.title} was ${status}.${remarks ? ` Feedback: ${remarks}` : ''}`, href: '/faculty/credentials' }, { transaction });
+    await audit(req.user.id, `credential.${status}`, 'course', course.id, { requestId: request.id, remarks }, transaction);
+  });
+  req.flash('success_msg', `Credential request ${status}.`); res.redirect('/admin/credential-approvals');
+};
 export const revokeCredential = async (req, res) => {
   const reason = text(req.body.reason, 300); if (reason.length < 5) fail('Enter a revocation reason.');
   await sequelize.transaction(async transaction => {
@@ -181,7 +235,9 @@ export const saveCareer = async (req, res) => {
 };
 export const settings = async (req, res) => render(res, 'settings', { title: 'System settings', portalSettings: Object.fromEntries((await Setting.findAll()).map(s => [s.key, s.value])), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
 export const saveSettings = async (req, res) => {
-  const values = { certificateTemplate: ['classic','modern'].includes(req.body.certificateTemplate) ? req.body.certificateTemplate : await setting('certificateTemplate','classic'), institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
+  const signature = text(req.body.adminSignature, 1200000), previousSignature = await setting('adminSignature', '');
+  if (signature && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature)) fail('Admin signature must be a processed PNG image.');
+  const values = { certificateTemplate: 'classic', institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), adminSignature: signature || previousSignature, registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
   if (!values.institutionName || !/^\d{4}-\d{4}$/.test(values.academicYear)) fail('Enter an institution and academic year.');
   await sequelize.transaction(async transaction => {
     for (const [key, value] of Object.entries(values)) await Setting.upsert({ key, value }, { transaction });
@@ -189,7 +245,14 @@ export const saveSettings = async (req, res) => {
   });
   req.flash('success_msg', 'Settings saved.'); res.redirect('/admin/settings');
 };
-export const auditLogs = async (req, res) => render(res, 'audit', { title: 'Activity & audit logs', logs: (await AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 200 })).map(l => ({ ...plain(l), date: date(l.createdAt), detail: JSON.stringify(l.details) })) });
+export const auditLogs = async (req, res) => {
+  const where = {}, q = text(req.query.q, 100), actor = text(req.query.actor, 20), from = text(req.query.from, 10), to = text(req.query.to, 10);
+  if (q) where.action = { [Op.like]: `%${q}%` };
+  if (/^\d+$/.test(actor)) where.actorId = Number(actor);
+  if (from || to) where.createdAt = { ...(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? { [Op.gte]: new Date(`${from}T00:00:00`) } : {}), ...(to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? { [Op.lt]: new Date(new Date(`${to}T00:00:00`).getTime() + 86400000) } : {}) };
+  const logs = await AuditLog.findAll({ where, order: [['createdAt', 'DESC']], limit: 300 });
+  render(res, 'audit', { title: 'Activity & audit logs', q, actor, from, to, logs: logs.map(l => ({ ...plain(l), date: date(l.createdAt), detail: JSON.stringify(l.details) })) });
+};
 export const reports = async (req, res) => {
   const attempts = await CourseAttempt.findAll({ include: [{ model: User, attributes: ['id', 'name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });
   const diagnostics = await Assessment.findAll({ include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });

@@ -6,6 +6,7 @@ import { googleStart } from '../controllers/googleController.js';
 import * as c from '../controllers/adminController.js';
 const r = Router(); r.use(requireUser, requireAdmin);
 r.get('/', asyncRoute(c.dashboard));
+r.get('/faculty', asyncRoute(c.facultyManagement)); r.get('/credential-approvals', asyncRoute(c.credentialApprovals)); r.post('/credential-approvals/:id', asyncRoute(c.reviewCredential));
 r.get('/users', asyncRoute(c.users)); r.post('/users', asyncRoute(c.createUser));
 r.get('/users/:id', asyncRoute(c.userDetail)); r.post('/users/:id', asyncRoute(c.saveUser));
 r.post('/users/:id/approval', asyncRoute(c.approveFaculty));

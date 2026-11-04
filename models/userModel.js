@@ -32,6 +32,8 @@ export const User = sequelize.define("User", {
   role: { type: DataTypes.ENUM("admin", "faculty", "student", "staff", "visitors"), allowNull: false, defaultValue: "student" },
   sessionVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   facultyId: { type: DataTypes.STRING(40), unique: true, allowNull: true },
+  facultyPosition: DataTypes.STRING(120), facultyEducation: DataTypes.STRING(200), facultyQualifications: DataTypes.TEXT,
+  facultyReviewedBy: DataTypes.INTEGER, facultyReviewedAt: DataTypes.DATE, facultyReviewRemarks: DataTypes.TEXT,
   gender: { type: DataTypes.STRING(30), allowNull: true },
   approvalStatus: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'approved' },
   studentId: { type: DataTypes.STRING(40), unique: true, allowNull: true },
