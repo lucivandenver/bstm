@@ -19,7 +19,7 @@ await test('Admin management is protected and Faculty/Student registration remai
   const server = await startServer(0); const base = `http://127.0.0.1:${server.address().port}`;
   const admin = browser(base), student = browser(base), faculty = browser(base), outsider = browser(base);
   const studentData = { account_type: 'student', name: 'Learner', email: 'learner@example.com', identityId: '2026-STA', section: 'BSTM 4-1', gender: 'Male', password: 'DummyStudentPass!', confirm_password: 'DummyStudentPass!' };
-  const facultyData = { account_type: 'faculty', name: 'Faculty Member', email: 'teacher@example.com', identityId: 'FAC-2026', password: 'DummyFacultyPass!', confirm_password: 'DummyFacultyPass!' };
+  const facultyData = { account_type: 'faculty', name: 'Faculty Member', email: 'teacher@example.com', identityId: 'FAC-2026', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', password: 'DummyFacultyPass!', confirm_password: 'DummyFacultyPass!' };
   try {
     await student.get('/register'); let r = await student.post('/register', { ...studentData, email: ownerEmail() }); assert.equal(r.location, '/register?role=student');
     r = await student.post('/register', studentData); assert.equal(r.location, '/student/profile');
@@ -33,13 +33,14 @@ await test('Admin management is protected and Faculty/Student registration remai
     for (const path of ['/admin','/admin/users','/admin/users/' + learner.id,'/admin/users/' + teacher.id,'/admin/sections','/admin/courses','/admin/careers','/admin/credentials','/admin/announcements','/admin/reports','/admin/audit','/admin/settings','/admin/account']) {
       r = await admin.get(path); assert.equal(r.status, 200, path); assert.ok(!r.html.includes(initialHash));
     }
-    await admin.get('/admin/users'); r = await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'approved' }); assert.equal(r.status, 302);
+    await admin.get('/admin/users'); r = await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'approved', verifyIdentity: 'yes', verifyQualifications: 'yes' }); assert.equal(r.status, 302);
     assert.equal((await User.findByPk(teacher.id)).approvalStatus, 'approved');
     await faculty.login(facultyData.email, facultyData.password); r = await faculty.get('/dashboard'); assert.equal(r.location, '/faculty');
     assert.equal((await faculty.get('/admin/users')).status, 403);
     const section = await Section.findOne({ where: { name: 'BSTM 4-1' } });
     await admin.post(`/admin/sections/${section.id}`, { name: section.name, academicYear: '2026-2027', facultyId: teacher.id, active: 'true' });
-    r = await faculty.get('/faculty'); assert.ok(r.html.includes('Learner')); assert.ok(r.html.includes('2026-STA'));
+    assert.equal((await Section.findByPk(section.id)).facultyId, null, 'section management ignores legacy faculty assignments');
+    r = await faculty.get('/faculty'); assert.ok(!r.html.includes('2026-STA'));
     await outsider.get('/register'); await outsider.post('/register', { ...studentData, name: 'Other Section Learner', email: 'outsider@example.com', identityId: '2026-OUT', section: 'BSTM 4-2' });
     r = await faculty.get('/faculty'); assert.ok(!r.html.includes('Other Section Learner'));
     await admin.get('/admin/users/' + owner.id);
@@ -73,7 +74,7 @@ await test('Admin management is protected and Faculty/Student registration remai
     assert.equal((await Setting.findOne({ where: { key: 'registrationEnabled' } })).value, 'false');
     const fresh = browser(base); await fresh.get('/register'); await fresh.post('/register', { ...studentData, email: 'blocked@example.com', identityId: '2026-NO' });
     assert.equal(await User.count({ where: { email: 'blocked@example.com' } }), 0);
-    await admin.get('/admin/users'); await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'rejected' });
+    await admin.get('/admin/users'); await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'rejected', remarks: 'Duplicate registration.' });
     assert.equal((await faculty.get('/faculty')).location, '/login');
     const secondAdmin = browser(base); await secondAdmin.login(ownerEmail(), 'DummyBootstrapPass-2026!');
     await admin.get('/admin/account');

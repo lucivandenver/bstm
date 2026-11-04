@@ -43,7 +43,7 @@ export const registerUser = async (req, res) => {
   const identities = [{ email: data.email }, ...(data.studentId ? [{ studentId: data.studentId }] : [{ facultyId: data.facultyId }]), ...(google ? [{ googleId: google.sub }] : [])];
   if (await User.findOne({ where: { [Op.or]: identities } })) { req.flash('error_msg', 'That email or institutional ID is already registered. Please sign in.'); return res.redirect('/register?role=' + (req.body.account_type === 'faculty' ? 'faculty' : 'student')); }
   let user;
-  try { user = await User.create({ ...data, password: google ? null : await bcrypt.hash(req.body.password, 12), googleId: google?.sub || null, emailVerified: Boolean(google), active: true }); }
+  try { user = await User.create({ ...data, password: google ? null : await bcrypt.hash(req.body.password, 12), googleId: google?.sub || null, googlePicture: google?.picture || null, emailVerified: Boolean(google), active: true }); }
   catch (err) { if (err.name !== 'SequelizeUniqueConstraintError') throw err; req.flash('error_msg', 'That email or ID is already registered.'); return res.redirect('/register?role=' + (req.body.account_type === 'faculty' ? 'faculty' : 'student')); }
   delete req.session.pendingRegistration;
   await audit(user.id, 'account.registered', 'user', user.id, { role: user.role, method: google ? 'google' : 'password' });

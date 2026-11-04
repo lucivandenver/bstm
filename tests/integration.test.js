@@ -27,7 +27,8 @@ class Browser {
 await test('student HTTP workflow, ownership, scoring, retakes and downloads', async t => {
   await sequelize.sync({ force: true });
   await seedAdministration(); // Isolated in-memory test database only.
-  for (const c of starterCourses) await Course.create({ ...c, published: true, starter: true });
+  const faculty = await User.create({ name: 'Test Faculty', email: 'course-author@example.test', facultyId: 'FAC-TEST-01', role: 'faculty', approvalStatus: 'approved' });
+  for (let i = 0; i < starterCourses.length; i++) await Course.create({ ...starterCourses[i], ownerId: faculty.id, published: true, starter: true, awardsApproved: true, slug: `test-course-${i + 1}` });
   server = await startServer(0); base = `http://127.0.0.1:${server.address().port}`;
   try {
     const health = await fetch(base + '/healthz');
@@ -60,6 +61,8 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     response = await student.get('/student/learn/1?lesson=cost'); assert.equal(response.r.status, 403);
     const other = new Browser(); await other.get('/register');
     await other.post('/register', { ...signup, name: 'Student Two', email: 'two@example.com', student_id: '2026-002' });
+    await other.get('/student/profile');
+    await other.post('/student/profile', { name: 'Student Two', studentId: '2026-002', section: 'BSTM 4-1', gender: 'Female', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '100', careerInterest: 'Travel', preferredLocation: 'Philippines' });
     response = await other.get('/student/learn/1'); assert.equal(response.r.status, 404);
     await other.get('/student/profile');
     response = await other.post('/student/learn/1/complete', { lessonId: 'traveller' }); assert.equal(response.status, 404);

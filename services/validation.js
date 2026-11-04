@@ -17,7 +17,7 @@ export function registrationInput(body, google = null) {
   if (!/^[\w-]{3,40}$/.test(id)) throw new Error('Enter a valid Student ID or Faculty ID.');
   if (role === 'student' && !data.section) throw new Error('Choose your section.');
   if (role === 'faculty' && (!data.facultyPosition || !data.facultyEducation || !data.facultyQualifications)) throw new Error('Enter your position, educational attainment and relevant qualifications.');
-  if (role === 'student' && !['Female', 'Male', 'Other', 'Prefer not to say'].includes(data.gender)) throw new Error('Select your gender.');
+  if (role === 'student' && !['Female', 'Male'].includes(data.gender)) throw new Error('Select your gender.');
   if (!google) {
     if (typeof body.password !== 'string' || body.password.length < 10 || Buffer.byteLength(body.password) > 72) throw new Error('Use a password with at least 10 characters and at most 72 bytes.');
     if (body.password !== body.confirm_password) throw new Error('Passwords do not match.');

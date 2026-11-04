@@ -10,8 +10,9 @@ r.get('/faculty', asyncRoute(c.facultyManagement)); r.get('/credential-approvals
 r.get('/users', asyncRoute(c.users)); r.post('/users', asyncRoute(c.createUser));
 r.get('/users/:id', asyncRoute(c.userDetail)); r.post('/users/:id', asyncRoute(c.saveUser));
 r.post('/users/:id/approval', asyncRoute(c.approveFaculty));
+r.post('/faculty/:id/status', asyncRoute(c.setFacultyActive));
 r.post('/users/:id/password', rateLimit({ windowMs: 60000, limit: 10 }), asyncRoute(c.resetPassword));
-r.get('/sections', asyncRoute(c.sections)); r.post('/sections', asyncRoute(c.saveSection)); r.post('/sections/:id', asyncRoute(c.saveSection));
+r.get('/sections', asyncRoute(c.sections)); r.post('/sections', asyncRoute(c.saveSection)); r.post('/sections/:id', asyncRoute(c.saveSection)); r.post('/sections/:id/delete', asyncRoute(c.deleteSection));
 r.get('/courses', asyncRoute(c.courses)); r.post('/courses/:id', asyncRoute(c.saveCourse));
 r.get('/credentials', asyncRoute(c.credentials)); r.post('/credentials/:id/revoke', asyncRoute(c.revokeCredential));
 r.get('/announcements', asyncRoute(c.announcements)); r.post('/announcements', asyncRoute(c.saveAnnouncement)); r.post('/announcements/:id', asyncRoute(c.saveAnnouncement));

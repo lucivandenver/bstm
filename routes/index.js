@@ -57,6 +57,8 @@ router.use('/faculty', facultyRoutes);
 router.get('/verify/:id', asyncRoute(verify));
 router.get('/notifications', requireUser, asyncRoute(portal.notifications));
 router.get('/notifications/count', requireUser, asyncRoute(portal.notificationCount));
+router.get('/notifications/feed', requireUser, asyncRoute(portal.notificationFeed));
+router.get('/notifications/stream', requireUser, asyncRoute(portal.notificationStream));
 router.post('/notifications/read', requireUser, asyncRoute(portal.readAll));
 router.post('/notifications/:id/open', requireUser, asyncRoute(portal.openNotification));
 router.get('/files/:id', requireUser, asyncRoute(portal.file));

@@ -122,7 +122,7 @@ export const catalog = async (req, res) => {
     return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done: completedIds.has(c.id), moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
   });
   const visibleCourseIds = new Set(courses.filter(course => facultyById.has(course.ownerId)).map(course => course.id));
-  render(res, 'catalog', { title: 'Explore courses', courses: cards, domains, query: text(req.query.q, 100), selectedDomain: domain, faculty: facultyRows.map(user => ({ ...plain(user), id: String(user.id) })), selectedAuthor: author, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
+  render(res, 'catalog', { title: 'Explore courses', courses: cards, hasRequired: cards.some(course => course.required), domains, query: text(req.query.q, 100), selectedDomain: domain, faculty: facultyRows.map(user => ({ ...plain(user), id: String(user.id) })), selectedAuthor: author, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
 };
 export const saveCourse = async (req, res) => {
   const course = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
@@ -156,7 +156,7 @@ export const enroll = async (req, res) => {
   const course = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
   if (!course) return fail(res, 'Course not found.', 404);
   if (!await User.findOne({ where: { id: course.ownerId, role: 'faculty', approvalStatus: 'approved', active: true } })) return fail(res, 'This faculty course is not currently available.', 404);
-  if (course.tasks?.some(t => t.required !== false)) { const section = await Section.findOne({ where: { name: req.user.section, active: true } }); const faculty = section?.facultyId ? await User.findOne({ where: { id: section.facultyId, role: 'faculty', active: true, approvalStatus: 'approved' } }) : null; if (!faculty) return fail(res, 'This course includes faculty-graded work. Ask Admin to assign a faculty member to your section before enrolling.'); }
+  // Faculty grading follows the course owner. Sections are not assigned to individual faculty.
   const now = Date.now();
   if ((course.enrollFrom && new Date(course.enrollFrom) > now) || (course.enrollUntil && new Date(course.enrollUntil) < now)) return fail(res, 'Enrollment is currently closed for this course.');
   let attempt;
@@ -372,7 +372,7 @@ async function ownedCredential(req) {
 export const certificate = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Certificate not found.', 404);
   res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `attachment; filename="CareerBridge-${c.id}.pdf"`);
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 55 });
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
     const request = await CredentialRequest.findOne({ where: { courseId: (await CourseAttempt.findByPk(c.attemptId))?.courseId, status: 'approved' } });
     const modern = false;
@@ -382,7 +382,7 @@ export const certificate = async (req, res) => {
   doc.fontSize(9).text(await setting('institutionName','MinSU Bongabong Campus'),55,68,{width:730,height:22,align:'center'});
   doc.fillColor('#172533').fontSize(29).text('Certificate of Completion',55,112,{width:730,align:'center'});
   doc.fontSize(12).text('This certifies that',55,168,{width:730,align:'center'});
-  const fitted = (value,y,size,min,height) => { while(size>min && doc.fontSize(size).heightOfString(value,{width:690})>height)size--;doc.fontSize(size).text(value,75,y,{width:690,height,align:'center'}); };
+  const fitted = (value,y,size,min,height) => { while(size>min && doc.widthOfString(value,{fontSize:size})>690)size--;let fittedValue=String(value);while(fittedValue.length>1&&doc.widthOfString(fittedValue,{fontSize:size})>690)fittedValue=fittedValue.slice(0,-2)+'…';doc.fontSize(size).text(fittedValue,75,y,{width:690,height,align:'center',lineBreak:false}); };
   fitted(c.recipientName,198,26,16,65);
   doc.fontSize(12).text('successfully completed the learning requirements for',55,280,{width:730,align:'center'});
   fitted(c.courseTitle,314,23,15,66);
@@ -451,8 +451,8 @@ export const submitTask = async (req, res) => {
     const [sub] = await PracticalSubmission.findOrCreate({ where: { attemptId: a.id, taskId: task.id }, defaults: { userId: req.user.id, response, link }, transaction });
     if (sub.status === 'graded' && sub.grade >= a.snapshot.passingScore) error('Passed task submissions are locked.');
     await sub.update({ response, link, status: 'submitted', scores: {}, grade: null, feedback: null }, { transaction });
-    const section = await Section.findOne({ where: { name: req.user.section, active: true }, transaction });
-    if (section?.facultyId) await Notification.create({ userId: section.facultyId, title: 'Practical task awaiting grading', message: `${req.user.name} submitted ${task.title}.`, href: '/faculty/evaluations' }, { transaction });
+    const course = await Course.findByPk(a.courseId, { transaction });
+    if (course?.ownerId) await Notification.create({ userId: course.ownerId, title: 'Practical task awaiting grading', message: `${req.user.name} submitted ${task.title}.`, href: '/faculty/evaluations' }, { transaction });
   }); req.flash('success_msg', 'Task submitted for faculty evaluation.'); res.redirect(`/student/learn/${req.params.id}/activities`);
 };
 export const submitFeedback = async (req, res) => {

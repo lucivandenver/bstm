@@ -1,6 +1,6 @@
 import { summarizeLearning } from '../services/evidence.js';
-import { PracticalSubmission, CredentialRequest } from '../models/portalModels.js';
-import { CourseRevision } from '../models/portalModels.js';
+import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
+import { CourseRevision, CourseAssignment } from '../models/portalModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { User, Course, CourseAttempt, StudentProfile, Credential, Assessment, Notification, sequelize } from '../models/learningModels.js';
@@ -32,7 +32,7 @@ export const users = async (req, res) => {
   const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
   const { rows, count } = await User.findAndCountAll({ where, order: [['createdAt', 'DESC']], limit: 30, offset: (page - 1) * 30 });
   const query = new URLSearchParams({ q, role: text(req.query.role), approval: text(req.query.approval) });
-  render(res, 'users', { title: 'Users & faculty approval', users: rows.map(publicUser), q, role: req.query.role, approval: req.query.approval, count, page,
+  render(res, 'users', { title: 'Users & faculty approval', users: rows.map(publicUser), sections: (await Section.findAll({ where: { active: true }, order: [['name','ASC']] })).map(plain), q, role: req.query.role, approval: req.query.approval, count, page,
     next: page * 30 < count ? `/admin/users?${query}&page=${page + 1}` : null, previous: page > 1 ? `/admin/users?${query}&page=${page - 1}` : null });
 };
 export const facultyManagement = async (req, res) => {
@@ -47,7 +47,7 @@ export const facultyManagement = async (req, res) => {
 export const userDetail = async (req, res) => {
   const user = await User.findByPk(req.params.id); if (!user) return res.status(404).send('User not found.');
   const [profile, attempts, sections] = await Promise.all([StudentProfile.findOne({ where: { userId: user.id } }), CourseAttempt.findAll({ where: { userId: user.id }, order: [['createdAt', 'DESC']] }), Section.findAll({ order: [['name', 'ASC']] })]);
-  render(res, 'user', { title: 'Account details', account: publicUser(user), profile: plain(profile), genders, sections: sections.map(plain),
+  render(res, 'user', { title: 'Account details', backUrl: '/admin/users', account: publicUser(user), profile: plain(profile), genders, sections: sections.map(plain),
     attempts: attempts.map(a => ({ id: a.id, title: a.snapshot.title, attempt: a.attemptNumber, status: a.status, score: a.finalScore, date: date(a.createdAt) })), isSelf: req.user.id === user.id, canManageAdmins: req.user.email === ownerEmail() });
 };
 function accountValues(body) {
@@ -75,26 +75,29 @@ export const saveUser = async (req, res) => {
       if ((user.id === req.user.id || user.email === ownerEmail()) && (!data.active || data.role !== 'admin')) fail('You cannot disable or demote yourself or the system owner.');
       if (data.section && !await Section.findOne({ where: { name: data.section }, transaction })) fail('Section not found.');
       if (user.role === 'admin' && (!data.active || data.role !== 'admin') && await User.count({ where: { role: 'admin', active: true }, transaction }) <= 1) fail('At least one active administrator is required.');
-      await user.update(data, { transaction });
+      await user.update({ ...data, ...(user.active && !data.active ? { sessionVersion: user.sessionVersion + 1 } : {}) }, { transaction });
       await audit(req.user.id, 'user.updated', 'user', user.id, { role: data.role, active: data.active, approval: data.approvalStatus }, transaction);
     });
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('That institutional ID is already assigned.'); throw error; }
   req.flash('success_msg', 'Account updated.'); res.redirect(`/admin/users/${req.params.id}`);
 };
 export const createUser = async (req, res) => {
-  if (req.body.role !== 'student') fail('Faculty accounts must register and be approved through Faculty Management. Create only student accounts here.');
   const data = accountValues({ ...req.body, active: 'true' });
+  if (!['student', 'faculty'].includes(data.role)) fail('Only Student and Faculty accounts can be provisioned here.');
   const address = email(req.body.email); const password = req.body.password;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) || address === ownerEmail()) fail('Use a valid unreserved email.');
   if (typeof password !== 'string' || password.length < 14 || Buffer.byteLength(password) > 72) fail('Use an initial password of at least 14 characters, at most 72 bytes.');
   if (data.section && !await Section.findOne({ where: { name: data.section, active: true } })) fail('Select an active section.');
+  const facultyProfile = data.role === 'faculty' ? { facultyPosition: text(req.body.facultyPosition, 120), facultyEducation: text(req.body.facultyEducation, 200), facultyQualifications: text(req.body.facultyQualifications, 2000) } : {};
+  if (data.role === 'faculty' && (!facultyProfile.facultyPosition || !facultyProfile.facultyEducation)) fail('Enter the faculty Position and Degree.');
+  if (data.role === 'faculty') data.approvalStatus = 'approved';
   try {
     await sequelize.transaction(async transaction => {
-      const user = await User.create({ ...data, email: address, password: await bcrypt.hash(password, 12) }, { transaction });
+      const user = await User.create({ ...data, ...facultyProfile, email: address, password: await bcrypt.hash(password, 12) }, { transaction });
       await audit(req.user.id, 'user.created', 'user', user.id, { role: data.role }, transaction);
     });
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('Email or institutional ID already exists.'); throw error; }
-  req.flash('success_msg', 'Student account created. Share the initial password through your approved private channel.'); res.redirect('/admin/users');
+  req.flash('success_msg', `${data.role === 'faculty' ? 'Faculty' : 'Student'} account created. Share the initial password through your approved private channel.`); res.redirect(data.role === 'faculty' ? '/admin/faculty' : '/admin/users');
 };
 export const approveFaculty = async (req, res) => {
   const status = text(req.body.status), remarks = text(req.body.remarks, 1000); if (!['approved', 'rejected', 'returned'].includes(status)) fail('Invalid approval decision.');
@@ -108,6 +111,15 @@ export const approveFaculty = async (req, res) => {
   });
   req.flash('success_msg', `Faculty account ${status}.`); res.redirect('/admin/faculty');
 };
+export const setFacultyActive = async (req, res) => {
+  const active = req.body.active === 'true';
+  await sequelize.transaction(async transaction => {
+    const user = await User.findOne({ where: { id: req.params.id, role: 'faculty' }, transaction, lock: transaction.LOCK.UPDATE }); if (!user) fail('Faculty account not found.', 404);
+    await user.update({ active, sessionVersion: active ? user.sessionVersion : user.sessionVersion + 1 }, { transaction });
+    await audit(req.user.id, active ? 'faculty.activated' : 'faculty.deactivated', 'user', user.id, {}, transaction);
+  });
+  req.flash('success_msg', `Faculty account ${active ? 'activated' : 'deactivated'}. Existing courses and records were preserved.`); res.redirect('/admin/faculty');
+};
 export const resetPassword = async (req, res) => {
   const password = req.body.newPassword;
   if (typeof password !== 'string' || password.length < 14 || Buffer.byteLength(password) > 72) fail('Use at least 14 characters, at most 72 bytes.');
@@ -120,22 +132,33 @@ export const resetPassword = async (req, res) => {
   });
   req.flash('success_msg', 'Password reset. Previous login sessions were invalidated.'); res.redirect(`/admin/users/${req.params.id}`);
 };
-export const sections = async (req, res) => render(res, 'sections', { title: 'Sections & faculty assignments', sections: (await Section.findAll({ include: [{ model: User, as: 'faculty', attributes: ['id', 'name'] }], order: [['name', 'ASC']] })).map(plain), faculty: (await User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id', 'name'] })).map(plain) });
+export const sections = async (req, res) => render(res, 'sections', { title: 'Manage sections', sections: (await Section.findAll({ order: [['name', 'ASC']] })).map(plain) });
 export const saveSection = async (req, res) => {
-  const name = text(req.body.name, 60), academicYear = text(req.body.academicYear, 30), facultyId = Number(req.body.facultyId) || null;
+  const name = text(req.body.name, 60), academicYear = text(req.body.academicYear, 30);
   if (!name || !/^\d{4}-\d{4}$/.test(academicYear)) fail('Enter section name and academic year (2026-2027).');
-  if (facultyId && !await User.findOne({ where: { id: facultyId, role: 'faculty', active: true, approvalStatus: 'approved' } })) fail('Select an approved faculty member.');
   try {
     await sequelize.transaction(async transaction => {
       let section = req.params.id ? await Section.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }) : null;
       if (req.params.id && !section) fail('Section not found.');
-      const data = { name, academicYear, facultyId, active: req.body.active === 'true' };
+      const data = { name, academicYear, facultyId: null, active: req.body.active === 'true' };
       if (section) { const oldName = section.name; await section.update(data, { transaction }); if (oldName !== name) await User.update({ section: name }, { where: { role: 'student', section: oldName }, transaction }); }
       else section = await Section.create(data, { transaction });
       await audit(req.user.id, 'section.saved', 'section', section.id, {}, transaction);
     });
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('That section already exists.'); throw error; }
   req.flash('success_msg', 'Section saved.'); res.redirect('/admin/sections');
+};
+export const deleteSection = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const section = await Section.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!section) fail('Section not found.', 404);
+    const students = await User.count({ where: { role: 'student', section: section.name }, transaction });
+    const [assignments, corrections] = await Promise.all([CourseAssignment.count({ where: { sectionId: section.id }, transaction }), ProfileCorrection.count({ where: { section: section.name }, transaction })]);
+    if (students || assignments || corrections) fail('This section is linked to student, correction, or course records. Deactivate it to preserve those records.');
+    if (section.facultyId) await section.update({ facultyId: null }, { transaction });
+    await audit(req.user.id, 'section.deleted', 'section', section.id, { name: section.name }, transaction);
+    await section.destroy({ transaction });
+  });
+  req.flash('success_msg', 'Section deleted.'); res.redirect('/admin/sections');
 };
 export const courses = async (req, res) => render(res, 'courses', { title: 'Course oversight', faculty: (await User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id','name'] })).map(plain), courses: (await Course.findAll({ order: [['title', 'ASC']] })).map(c => ({ ...plain(c), moduleCount: c.modules.length })), domains });
 export const saveCourse = async (req, res) => {
