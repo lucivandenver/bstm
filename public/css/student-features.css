@@ -1,0 +1,28 @@
+.course-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 20px;border-bottom:1px solid var(--line)}
+.course-tabs a{display:inline-flex;align-items:center;gap:7px;padding:10px 13px;color:var(--muted);font-weight:700;font-size:12px;border-bottom:2px solid transparent}
+.course-tabs a.active{color:var(--green);border-color:var(--green)}
+.course-tabs span{padding:1px 7px;border-radius:999px;background:#edf1ef;font-size:10px}
+.course-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:15px}
+.course-actions .button{margin-top:0;flex:1}
+.course-actions form{margin:0}
+.button.ghost{background:#fff;color:var(--muted);border-color:var(--line)}
+.button.ghost:hover{color:var(--green);border-color:var(--green)}
+.check-circle{display:inline-grid;place-items:center;flex:0 0 19px;width:19px;height:19px;border:1.5px solid #b8c5bd;border-radius:50%;color:#fff;font-size:11px;line-height:1}
+.check-circle.is-current{border-color:var(--green);box-shadow:inset 0 0 0 4px #fff;background:var(--green)}
+.check-circle.is-complete{border-color:var(--green);background:var(--green);font-weight:800}
+.lesson-link{display:flex;align-items:center;gap:8px}
+.learning-card .progress-circle{margin:0 auto 18px}
+.progress-state.is-empty{background:conic-gradient(#eaf0ec 0 360deg)}
+.progress-state.is-partial{background:conic-gradient(var(--green) var(--angle,0deg),#eaf0ec 0)}
+.career-search{display:grid;justify-items:center;gap:9px;margin-top:20px;padding:20px 15px;border:1px solid #dcebe1;border-radius:10px;background:linear-gradient(145deg,#f5fbf7,#fff);text-align:center}
+.career-search[hidden]{display:none}
+.career-map{position:relative;display:flex;align-items:center;justify-content:space-between;width:min(100%,300px);height:72px;padding:0 16px}
+.map-castle,.map-search,.map-spark{position:relative;z-index:1;display:grid;place-items:center;width:42px;height:42px;border:1px solid #d7e9dd;border-radius:50%;background:#fff;font-size:22px;box-shadow:0 6px 18px #0c5c3020}
+.map-search{animation:map-scout 2.4s ease-in-out infinite}
+.map-spark{position:absolute;right:30%;top:1px;width:26px;height:26px;border:0;background:transparent;box-shadow:none;animation:map-sparkle 1.5s ease-in-out infinite}
+.map-path{position:absolute;left:48px;right:48px;top:35px;height:3px;border-radius:5px;background:repeating-linear-gradient(90deg,#8fbea1 0 8px,transparent 8px 14px);overflow:hidden}
+.map-path:after{content:"";display:block;width:36%;height:100%;background:var(--green);animation:map-trail 1.7s linear infinite}
+@keyframes map-scout{0%,100%{transform:translateX(-55px) rotate(-8deg)}50%{transform:translateX(55px) rotate(8deg)}}
+@keyframes map-trail{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
+@keyframes map-sparkle{0%,100%{opacity:.45;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+@media(prefers-reduced-motion:reduce){.map-search,.map-path:after,.map-spark{animation:none}.map-search{transform:none}}

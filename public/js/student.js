@@ -38,6 +38,18 @@
     form.addEventListener('submit', () => { const button = form.querySelector('button[type=submit],button'); button.disabled = true; button.textContent = 'Saving results…'; });
   }
   for (const form of document.querySelectorAll('[data-ai-form]')) {
-    form.addEventListener('submit', () => { const button = form.querySelector('button'); button.disabled = true; button.textContent = 'Generating guidance…'; });
+    form.addEventListener('submit', () => {
+      const button = form.querySelector('button[type="submit"]') || form.querySelector('button');
+      const loading = form.querySelector('[data-ai-loading]');
+      if (loading) {
+        loading.hidden = false;
+        form.setAttribute('aria-busy', 'true');
+        const status = loading.querySelector('[data-ai-status]');
+        const messages = ['Mapping your BSTM strengths…', 'Checking career matches…', 'Preparing your recommendations…'];
+        let index = 0;
+        window.setInterval(() => { index = (index + 1) % messages.length; if (status && !loading.hidden) status.textContent = messages[index]; }, 1800);
+      }
+      if (button) { button.disabled = true; button.textContent = 'Finding career matches…'; }
+    });
   }
 })();

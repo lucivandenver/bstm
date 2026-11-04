@@ -13,9 +13,12 @@ router.post('/profile/files', multer({ storage: multer.memoryStorage(), limits: 
 router.post('/profile', asyncRoute(student.saveProfile));
 router.post('/connect-google', googleStart);
 router.get('/courses', asyncRoute(student.catalog));
+router.post('/courses/:id/save', asyncRoute(student.saveCourse));
+router.post('/courses/:id/unsave', asyncRoute(student.unsaveCourse));
 router.get('/courses/:id', asyncRoute(student.courseDetail));
 router.post('/courses/:id/enroll', asyncRoute(student.enroll));
 router.get('/learning', asyncRoute(student.myLearning));
+router.use('/learn/:id', asyncRoute(student.requireCompleteProfile));
 router.get('/learn/:id', asyncRoute(student.learn));
 router.post('/learn/:id/complete', asyncRoute(student.completeLesson));
 router.post('/learn/:id/heartbeat', asyncRoute(student.heartbeat));

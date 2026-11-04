@@ -19,6 +19,7 @@ export const Course = sequelize.define('Course', {
   description: DataTypes.TEXT, domain: DataTypes.STRING(60), level: DataTypes.STRING(40),
   minutes: DataTypes.INTEGER, version: { type: DataTypes.INTEGER, defaultValue: 1 },
   passingScore: { type: DataTypes.INTEGER, defaultValue: 75 },
+  awardsApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   modules: json([]), questions: json([]), prerequisites: json([]),
   published: { type: DataTypes.BOOLEAN, defaultValue: false }, starter: { type: DataTypes.BOOLEAN, defaultValue: false }
 });
@@ -26,7 +27,7 @@ export const CourseAttempt = sequelize.define('CourseAttempt', {
   userId: { type: DataTypes.INTEGER, allowNull: false }, courseId: { type: DataTypes.INTEGER, allowNull: false },
   attemptNumber: { type: DataTypes.INTEGER, allowNull: false }, courseVersion: DataTypes.INTEGER,
   // Snapshot freezes the requirements for this attempt when a course is later edited.
-  snapshot: json({}), completedLessons: json([]), quizScores: json({}),
+  snapshot: json({}), completedLessons: json([]), lastLessonId: DataTypes.STRING(100), quizScores: json({}),
   quizAttempts: json([]), status: { type: DataTypes.STRING(30), defaultValue: 'ongoing' },
   finalScore: DataTypes.INTEGER, completedAt: DataTypes.DATE, activeSeconds: { type: DataTypes.INTEGER, defaultValue: 0 },
   lastActivityAt: DataTypes.DATE, lastHeartbeatAt: DataTypes.DATE
@@ -46,9 +47,14 @@ export const Notification = sequelize.define('Notification', {
   userId: { type: DataTypes.INTEGER, allowNull: false }, title: DataTypes.STRING, message: DataTypes.TEXT, href: DataTypes.STRING,
   readAt: DataTypes.DATE
 });
-for (const model of [StudentProfile, CourseAttempt, Assessment, Credential, Notification]) {
+export const SavedCourse = sequelize.define('SavedCourse', {
+  userId: { type: DataTypes.INTEGER, allowNull: false },
+  courseId: { type: DataTypes.INTEGER, allowNull: false }
+}, { indexes: [{ unique: true, fields: ['userId', 'courseId'] }] });
+for (const model of [StudentProfile, CourseAttempt, Assessment, Credential, Notification, SavedCourse]) {
   model.belongsTo(User, { foreignKey: 'userId', onDelete: 'RESTRICT' });
 }
 CourseAttempt.belongsTo(Course, { foreignKey: 'courseId', onDelete: 'RESTRICT' });
+SavedCourse.belongsTo(Course, { foreignKey: 'courseId', onDelete: 'CASCADE' });
 Credential.belongsTo(CourseAttempt, { foreignKey: 'attemptId', onDelete: 'RESTRICT' });
 export { User, sequelize };
