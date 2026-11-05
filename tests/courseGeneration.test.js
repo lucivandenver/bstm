@@ -288,16 +288,20 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
     assert.match(r.html, /service.docx/);
     assert.doesNotMatch(r.html, /Something went wrong/);
     const originalFetch = globalThis.fetch;
-    process.env.GEMINI_API_KEY = "test-key";
+    process.env.GROQ_API_KEY = "test-key";
     try {
       globalThis.fetch = async (url, init) =>
-        String(url).startsWith("https://generativelanguage.googleapis.com/")
+        String(url).startsWith("https://api.groq.com/openai/v1/chat/completions")
           ? Response.json({
-              candidates: [
-                { content: { parts: [{ text: JSON.stringify(draft()) }] } },
+              choices: [
+                { finish_reason: 'stop', message: { content: JSON.stringify(draft()) } },
               ],
             })
           : originalFetch(url, init);
+      const groqPage = await f.get(`/faculty/sources/${source.id}`);
+      assert.equal(groqPage.status,200);
+      assert.match(groqPage.html,/configured AI providers \(Groq\)/);
+      assert.match(groqPage.html,/<button class="button" name="mode" value="ai" >Generate review-ready course/);
       const result = await f.request(`/faculty/sources/${source.id}/generate`, {
         method: "POST",
         headers: {
@@ -338,7 +342,7 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
       assert.equal((await Course.findByPk(courseId)).published, true);
     } finally {
       globalThis.fetch = originalFetch;
-      delete process.env.GEMINI_API_KEY;
+      delete process.env.GROQ_API_KEY;
     }
     r = await f.post(`/faculty/sources/${source.id}/generate`, {
       ...options,

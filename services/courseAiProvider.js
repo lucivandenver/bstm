@@ -5,8 +5,16 @@ export async function courseAiConfiguration() {
   const settings = Object.fromEntries((await Setting.findAll({where:{key:['courseAiProvider','courseAiEnabled','courseGeminiEnabled','courseGroqEnabled']}})).map(row => [row.key,row.value]));
   const enabled = settings.courseAiEnabled === undefined ? process.env.AI_ENABLED !== 'false' : settings.courseAiEnabled === 'true';
   const allowed = name => settings[name === 'groq' ? 'courseGroqEnabled' : 'courseGeminiEnabled'] !== 'false';
-  const provider =
-    (settings.courseAiProvider || process.env.COURSE_AI_PROVIDER || process.env.AI_PROVIDER) === "groq" ? "groq" : "gemini";
+  const keys = {
+    groq: process.env.GROQ_API_KEY?.trim(),
+    gemini: process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim(),
+  };
+  const selected = String(settings.courseAiProvider || process.env.COURSE_AI_PROVIDER || process.env.AI_PROVIDER || '').trim().toLowerCase();
+  const preferred = selected === 'groq' ? 'groq' : 'gemini';
+  const alternative = preferred === 'groq' ? 'gemini' : 'groq';
+  // Removing a provider key must not strand generation when the replacement is configured.
+  // An administrator's explicit disable remains authoritative.
+  const provider = allowed(preferred) && !keys[preferred] && keys[alternative] && allowed(alternative) ? alternative : preferred;
   const model =
     provider === "groq"
       ? process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b"
@@ -15,8 +23,7 @@ export async function courseAiConfiguration() {
           process.env.GEMINI_MODEL?.trim() ||
           "gemini-3.1-flash-lite"
         ).replace(/^models\//, "");
-  const key =
-    provider === "groq" ? process.env.GROQ_API_KEY : (process.env.GEMINI_API_KEY || process.env.GEMINI_FALLBACK_API_KEY);
+  const key = keys[provider];
   const fallback =
     process.env.COURSE_AI_FALLBACK === "groq" &&
     provider !== "groq" && allowed("groq") &&
@@ -26,6 +33,13 @@ export async function courseAiConfiguration() {
     model,
     ready: enabled && allowed(provider) && Boolean(key?.trim()),
     enabled,
+    unavailableReason: !enabled
+      ? 'Course AI generation is disabled. Ask Admin to enable it in System Settings.'
+      : !allowed(provider)
+        ? `${provider === 'groq' ? 'Groq' : 'Gemini'} is disabled. Ask Admin to enable it or select another configured provider.`
+        : !key
+          ? `The selected ${provider === 'groq' ? 'Groq' : 'Gemini'} provider has no configured API key. Ask Admin to check the Render environment settings.`
+          : '',
     geminiEnabled: allowed("gemini"),
     groqEnabled: allowed("groq"),
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()),
@@ -156,6 +170,7 @@ export function createCourseTransport({
             ? {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${key}`,
+                "User-Agent": "CareerBridge/1.0",
               }
             : { "Content-Type": "application/json", "x-goog-api-key": key },
           signal: AbortSignal.timeout(90000),
@@ -196,6 +211,7 @@ export function createCourseTransport({
         return { text, provider: config.provider, model: config.model };
       }
       const status = response?.status;
+      if (status === 403 && Object.keys(data).length === 0) throw generationError("COURSE_AI_UNAVAILABLE");
       if (status && ![408, 429, 500, 502, 503, 504].includes(status))
         throw generationError(
           [401, 403].includes(status)

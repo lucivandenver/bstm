@@ -161,6 +161,7 @@ test("Groq uses its own credentials and closed structured JSON schema, validated
       fetchImpl: async (url, init) => {
         assert.equal(url, "https://api.groq.com/openai/v1/chat/completions");
         assert.equal(init.headers.Authorization, "Bearer groq-test-key");
+        assert.equal(init.headers["User-Agent"], "CareerBridge/1.0");
         assert(!("x-goog-api-key" in init.headers));
         const body = JSON.parse(init.body);
         assert.equal(body.response_format.json_schema.strict, true);
@@ -263,4 +264,40 @@ test('Render AI_PROVIDER selects Groq and administrator disable overrides config
     await Setting.destroy({where:{key:'courseGroqEnabled'}});
     for(const [name,value] of previous) { if(value === undefined) delete process.env[name]; else process.env[name]=value; }
   }
+});
+
+test('replacing Gemini credentials with Groq selects the available enabled provider', async () => {
+  const names = ['GEMINI_API_KEY','GEMINI_FALLBACK_API_KEY','GROQ_API_KEY','COURSE_AI_PROVIDER','AI_PROVIDER','AI_ENABLED'];
+  const previous = names.map(name => [name,process.env[name]]);
+  try {
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_FALLBACK_API_KEY;
+    delete process.env.AI_PROVIDER;
+    delete process.env.COURSE_AI_PROVIDER;
+    process.env.GROQ_API_KEY='test-replacement-key';
+    process.env.AI_ENABLED='true';
+    assert.equal((await courseAiConfiguration()).provider,'groq');
+    assert.equal((await courseAiConfiguration()).ready,true);
+    process.env.COURSE_AI_PROVIDER='gemini';
+    assert.equal((await courseAiConfiguration()).provider,'groq');
+    await Setting.upsert({key:'courseAiProvider',value:'gemini'});
+    assert.equal((await courseAiConfiguration()).provider,'groq');
+    await Setting.upsert({key:'courseGroqEnabled',value:'false'});
+    assert.equal((await courseAiConfiguration()).ready,false);
+    await Setting.upsert({key:'courseGeminiEnabled',value:'false'});
+    assert.match((await courseAiConfiguration()).unavailableReason,/disabled/);
+  } finally {
+    await Setting.destroy({where:{key:['courseAiProvider','courseGroqEnabled','courseGeminiEnabled']}});
+    for(const [name,value] of previous) { if(value === undefined) delete process.env[name]; else process.env[name]=value; }
+  }
+});
+
+
+test('a non-JSON gateway denial is reported as provider availability instead of invalid credentials', async () => {
+  const previous = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY='test-gateway-key';
+  try {
+    const request = createCourseTransport({fetchImpl:async()=>new Response('error code: 1010',{status:403})});
+    await assert.rejects(()=>request({provider:'groq',model:'openai/gpt-oss-20b'},input),{code:'COURSE_AI_UNAVAILABLE'});
+  } finally { if(previous === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY=previous; }
 });

@@ -8,10 +8,10 @@
 <fieldset class="field"><legend>Competency areas · select all that apply</legend>{{#each domains}}<label class="check-label"><input type="checkbox" name="competencyAreas" value="{{this}}" {{#if (hasArea ../values.areas this)}}checked{{/if}}> {{this}}</label>{{/each}}</fieldset>
 <div class="field"><label>Target learning outcomes<textarea name="outcomes" maxlength="1500" rows="4" placeholder="What should students understand after this course?">{{values.outcomes}}</textarea></label></div>
 <div class="grid cols-2"><div class="field"><label>Difficulty<select name="level"><option {{selected values.level 'Foundation'}}>Foundation</option><option {{selected values.level 'Intermediate'}}>Intermediate</option><option {{selected values.level 'Advanced'}}>Advanced</option></select></label></div><div class="field"><label>Question count<input type="number" name="questionCount" min="3" max="30" value="{{values.questionCount}}" required></label></div></div>
-{{#unless aiReady}}<p class="notice">AI drafting is not configured yet. Ask Admin to configure the selected provider, then generate from these materials.</p>{{/unless}}
+{{#unless aiReady}}<p class="notice">{{aiUnavailableReason}}</p>{{/unless}}
 <label class="check-label"><input type="checkbox" name="consent" value="yes" required {{#if values.consent}}checked{{/if}}> I have permission to use this material and send its extracted text to the configured AI providers ({{aiProviderLabel}}).</label>
 <div class="notice" role="alert" data-generation-error {{#unless error}}hidden{{/unless}}>{{#if error}}{{error.message}} ({{error.code}} · Reference {{error.reference}}){{/if}}</div>
 <p class="small muted" role="status" aria-live="polite" data-generation-status></p>
-<div class="actions space-top"><button class="button" name="mode" value="ai" {{#unless aiReady}}disabled{{/unless}}>Generate AI draft</button></div>
+<div class="actions space-top"><button class="button" name="mode" value="ai" {{#unless aiReady}}disabled{{/unless}}>Generate review-ready course</button></div>
 </form><p class="small muted space-top">Large collections are analyzed in batches with a separate progress page; all generated answers require faculty review.</p></section></div>
 <script src="/js/faculty-generation.js" defer></script>{{> studentBottom}}
