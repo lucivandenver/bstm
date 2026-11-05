@@ -10,8 +10,8 @@ The old provider transport retried 429/5xx after only one/two seconds without re
 
 ## Changes
 
-- Shared course-provider queue, configurable request spacing, exponential backoff with jitter, Retry-After/RetryInfo handling and a maximum of four attempts. Long waiting periods return a retry time rather than holding the UI indefinitely. Daily quota, zero available quota, authentication, temporary rate limit and outage have separate safe messages. Credentials/raw provider error bodies are never displayed.
-- `AiJobs.state` stores validated batch checkpoints, sanitized generation options, a content/settings fingerprint and recovery details. A compatible failed job resumes its existing ID and does not consume another local daily admission. New/different course requests still enforce the daily limit. Completed drafts remain unpublished and require Faculty answer review.
+- Shared course-provider queue, configurable request spacing, exponential backoff with jitter, Retry-After/RetryInfo handling and a maximum of four attempts. Long waiting periods return a retry time rather than holding the UI indefinitely. Provider daily quota, zero available quota, authentication, temporary rate limit and outage have separate safe messages. Credentials/raw provider error bodies are never displayed.
+- `AiJobs.state` stores validated batch checkpoints, sanitized generation options, a content/settings fingerprint and recovery details. A compatible failed job resumes its existing ID. There is no application-level 24-hour course-generation cap; configured provider quota, rate limits, and billing still apply. Completed drafts remain unpublished and require Faculty answer review.
 - Checkpoints survive request/page reloads and service restarts. Cached sections are revalidated before reuse. Changing the source/options invalidates the fingerprint. Invalid or incomplete later batches cannot save a partial course.
 - Failed job pages display **Generation paused**, saved-section count, safe diagnostic code/reference, provider waiting countdown and **Resume generation**. Old jobs created before checkpoint storage can still reopen their saved materials and start the new flow.
 - Gemini remains supported; recommended course-specific setting is `gemini-3.1-flash-lite`. Career guidance keeps its existing Gemini configuration.
@@ -32,7 +32,7 @@ The new course-specific model overrides the older global `GEMINI_MODEL` for cour
 
 Use Start Command `npm run migrate && npm start`. Migration adds the nullable JSON checkpoint column to existing `AiJobs` without resetting records; new installations create it through normal sync. Run the existing migration before serving this version.
 
-Optional Groq: add private `GROQ_API_KEY`, set `GROQ_MODEL=openai/gpt-oss-20b`, then either use `COURSE_AI_PROVIDER=groq` or retain Gemini primary and set `COURSE_AI_FALLBACK=groq`. Defaults do not enable an unconfigured backup. Groq-only mode uses smaller 6,000-character batches, supports at most 20 generated modules and is intended for smaller collections. Free-plan TPM/RPD limits can still be reached, especially with a large Gemini batch sent to the backup. Higher quota or smaller courses may be necessary; this change does not promise unlimited free inference.
+Optional Groq: add private `GROQ_API_KEY`, set `GROQ_MODEL=openai/gpt-oss-20b`, then either use `COURSE_AI_PROVIDER=groq` or retain Gemini primary and set `COURSE_AI_FALLBACK=groq`. Defaults do not enable an unconfigured backup. Groq uses smaller 6,000-character batches; provider context, token, rate, and account quotas still apply. Higher provider quota or smaller topics may be necessary; this change does not promise unlimited free inference.
 
 Raw upload support remains 100 MB per file. Text collection and course-size limits still apply. Scanned/image-only PDFs still need OCR/selectable text.
 

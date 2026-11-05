@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { AiJob } from '../models/portalModels.js';
 import multer from 'multer';
 import { sourceLimits } from '../services/sourceLimits.js';
 import { sourceUploadStorage } from '../services/sourceUploadStorage.js';
@@ -14,16 +13,12 @@ r.get('/', asyncRoute(c.dashboard)); r.get('/profile', c.profile); r.post('/prof
 r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', (req,res)=>res.redirect('/faculty/upload')); r.post('/courses', (req,res)=>res.status(400).send('Create courses from Upload & Generate.'));
 r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.post('/courses/:id/delete', asyncRoute(c.deleteDraft)); r.get('/courses/:id/preview', asyncRoute(c.preview));
 r.get('/credentials', asyncRoute(c.credentials)); r.post('/courses/:id/credentials', asyncRoute(c.submitCredential));
-const draftLimit = (limit) => rateLimit({
-  windowMs: 60000, limit, keyGenerator: req => String(req.user.id),
-  skip: async req => req.body.mode === 'manual' || (req.body.background === 'yes' && Boolean(await AiJob.findOne({where:{userId:req.user.id,sourceId:req.params.id,status:'running',type:'course-draft'}}))),
-  handler: (req, res) => res.status(429).json({ ok: false, code: 'COURSE_REQUEST_LIMIT', message: 'Too many draft requests. Wait one minute before retrying. Your saved source remains available.' })
-});
 r.get('/upload', asyncRoute(c.uploadPage));
 r.post('/upload', rateLimit({ windowMs: 60000, limit: 60, keyGenerator: req => String(req.user.id), handler: (req,res) => res.status(429).json({ok:false,message:'Upload paused. Wait one minute and retry the remaining files; extracted files are saved.'}) }), (req,res,next) => upload.array('sources', sourceLimits.requestFiles)(req,res,error => { if (!error) return next(); const message=error.code==='LIMIT_TOTAL_SIZE'?'Combined request exceeds 100 MB. Use the upload queue to send files one at a time.':error.code==='LIMIT_FILE_SIZE'?'Each file can be up to 100 MB. The remaining files have not been uploaded.':'Upload up to 20 files per request, or use the sequential upload queue.'; if(req.get('accept')?.includes('application/json'))return res.status(413).json({ok:false,message}); error.status=413;error.message=message;next(error); }), asyncRoute(c.upload));
 r.get('/sources/:id', asyncRoute(c.source)); r.post('/sources/:id/delete', asyncRoute(c.deleteSource));
-r.post('/sources/:id/generate', draftLimit(2), asyncRoute(c.generate));
-r.post('/generation/:id/retry', rateLimit({windowMs:60000,limit:10,keyGenerator:req=>String(req.user.id)}), asyncRoute(c.resumeGeneration));
+r.post('/sources/:id/generate', asyncRoute(c.generate));
+r.post('/generation/:id/retry', asyncRoute(c.resumeGeneration));
+r.post('/generation/:id/approve-blueprint', asyncRoute(c.approveBlueprint));
 r.get('/generation/:id/events',asyncRoute(streamJob));
 r.post('/generation/:id/ticket',asyncRoute(issueTicket));
 r.get('/generation/:id', asyncRoute(c.generationStatus));

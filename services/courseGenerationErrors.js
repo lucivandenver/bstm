@@ -9,7 +9,7 @@ const messages = {
     429,
   ],
   COURSE_AI_CAPACITY: [
-    "This collection is too large for the configured Groq request budget. Use Gemini for this collection or divide it into smaller courses. Your materials are saved.",
+    "This source exceeds the safe request size supported by the selected AI provider. Your materials are saved; use a smaller topic or select a provider with a larger context window.",
     422,
   ],
   COURSE_JOB_INTERRUPTED: [
@@ -33,7 +33,7 @@ const messages = {
     429,
   ],
   COURSE_DAILY_LIMIT: [
-    "Your course generation limit for the last 24 hours has been reached. Your existing drafts remain available.",
+    "This job was paused by the previous version's 24-hour app limit. That limit has been removed; resume the saved job to continue.",
     429,
   ],
   COURSE_ALREADY_RUNNING: [
