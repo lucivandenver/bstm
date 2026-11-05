@@ -18,6 +18,7 @@ r.post('/upload', rateLimit({ windowMs: 60000, limit: 60, keyGenerator: req => S
 r.get('/sources/:id', asyncRoute(c.source)); r.post('/sources/:id/delete', asyncRoute(c.deleteSource));
 r.post('/sources/:id/generate', asyncRoute(c.generate));
 r.post('/generation/:id/retry', asyncRoute(c.resumeGeneration));
+r.post('/generation/:id/approve-blueprint', asyncRoute(c.approveBlueprint));
 r.get('/generation/:id/events',asyncRoute(streamJob));
 r.post('/generation/:id/ticket',asyncRoute(issueTicket));
 r.get('/generation/:id', asyncRoute(c.generationStatus));

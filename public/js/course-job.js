@@ -9,7 +9,23 @@
     retryAt = null,
     resuming = false;
   const resume = panel.querySelector("[data-job-resume]"),
-    details = panel.querySelector("[data-job-details]");
+    details = panel.querySelector("[data-job-details]"),
+    blueprintPanel = panel.querySelector("[data-blueprint-review]"),
+    blueprintForm = panel.querySelector("[data-blueprint-form]");
+  const escape = value => String(value ?? "").replace(/[&<>\"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  function showBlueprint(data) {
+    stopped = true; progress.hidden = true; blueprintPanel.hidden = false;
+    panel.querySelector("h2").textContent = "Review your course blueprint";
+    text.textContent = "The source review and blueprint are ready. Edit or confirm them before full course generation.";
+    const b = data.blueprint || {}, fields = blueprintPanel.querySelector("[data-blueprint-fields]");
+    fields.innerHTML = `<label class="field">Course title<input name="title" required maxlength="160" value="${escape(b.title)}"></label><label class="field">Description<textarea name="description" required maxlength="2000" rows="3">${escape(b.description)}</textarea></label><label class="field">Learning outcomes · one per line<textarea name="outcomes" required rows="5">${escape((b.outcomes||[]).join("\n"))}</textarea></label><fieldset class="field"><legend>Competency areas</legend>${(data.options?.competencyAreas||b.competencyAreas||[]).map(a=>`<label class="check-label"><input type="checkbox" name="competencyAreas" value="${escape(a)}" ${b.competencyAreas?.includes(a)?"checked":""}>${escape(a)}</label>`).join("")}</fieldset>${(b.modules||[]).map((m,i)=>`<article class="editor-block"><h3>Module ${i+1}</h3><label class="field">Module title<input name="moduleTitle" required maxlength="160" value="${escape(m.title)}"></label><label class="field">Module learning outcomes · one per line<textarea name="moduleOutcomes" required rows="3">${escape((m.outcomes||[]).join("\n"))}</textarea></label><input type="hidden" name="moduleReference" value="${escape(m.sourceReference)}"><p class="small muted">Source evidence: ${escape(m.sourceReference)}</p></article>`).join("")}`;
+  }
+  blueprintForm?.addEventListener("submit", async event => {
+    event.preventDefault(); const button=blueprintForm.querySelector('button[type="submit"]'),error=blueprintPanel.querySelector("[data-blueprint-error]");
+    button.disabled=true; error.textContent="Approving blueprint and starting course generation…";
+    try { const token=document.querySelector("meta[name=csrf-token]").content; const response=await fetch(panel.dataset.courseJob+"/approve-blueprint",{method:"POST",headers:{"X-CSRF-Token":token,"Accept":"application/json","Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(blueprintForm))}); const result=await response.json(); if(!response.ok||!result.ok)throw Error(result.message||"Blueprint could not be approved."); location.assign(result.redirect); }
+    catch(error){error.textContent=error.message;button.disabled=false;}
+  });
   async function poll() {
     if (stopped || document.hidden) return;
     try {
@@ -25,6 +41,7 @@
         progress.max = data.total;
         progress.value = data.completed || 0;
       }
+      if (data.status === "review" && data.phase === "blueprint-review") { showBlueprint(data); disconnect(); return; }
       if (data.status === "completed") {
         stopped = true;
         panel.querySelector("h2").textContent =
