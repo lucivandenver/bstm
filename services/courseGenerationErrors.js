@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 const messages = {
+  COURSE_JOB_INTERRUPTED: ["The service restarted before generation finished. Your source collection is saved. Open it and generate again.", 503],
   COURSE_AI_NOT_CONFIGURED: [
     "AI drafting is not configured. Ask Admin to set GEMINI_API_KEY and GEMINI_MODEL. You can import this source into a manual draft.",
     503,
@@ -21,7 +22,7 @@ const messages = {
     429,
   ],
   COURSE_ALREADY_RUNNING: [
-    "A draft request for this source is already running. Check generation history before starting another request.",
+    "A course draft request is already running for your account. Open generation history before starting another request.",
     409,
   ],
   COURSE_AI_TIMEOUT: [

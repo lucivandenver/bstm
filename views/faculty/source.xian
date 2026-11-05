@@ -3,6 +3,7 @@
 <div class="grid cols-2"><section class="card"><div class="row between"><h2>{{source.filename}}</h2><form method="post" action="/faculty/sources/{{source.id}}/delete" data-confirm="Delete this source resource? Generated courses and learning records will remain unchanged."><input type="hidden" name="_csrf" value="{{csrf}}"><button class="button danger" type="submit">Delete source</button></form></div><p class="small muted">Review the extracted text. Only this text is shared when you choose AI drafting. Scanned images need a text-based document.</p><div class="source-reader">{{#each source.sections}}<details open><summary>{{reference}}</summary><p>{{text}}</p></details>{{/each}}</div></section>
 <section class="card"><h2>Set up your course draft</h2><p class="small muted">Choose the area this course teaches. Tourism knowledge is a competency area, alongside Communication, Workplace and Digital skills.</p>
 <form method="post" action="/faculty/sources/{{source.id}}/generate" data-course-generation>
+<input type="hidden" name="background" value="yes">
 <input type="hidden" name="_csrf" value="{{csrf}}">
 <div class="field"><label>Competency area<select name="domain" required><option value="">Select a competency area</option>{{#each domains}}<option value="{{this}}" {{selected this ../values.domain}}>{{this}}</option>{{/each}}</select></label></div>
 <div class="field"><label>Target learning outcomes<textarea name="outcomes" required maxlength="1500" rows="4" placeholder="What should students understand after this course?">{{values.outcomes}}</textarea></label></div>
@@ -12,5 +13,5 @@
 <div class="notice" role="alert" data-generation-error {{#unless error}}hidden{{/unless}}>{{#if error}}{{error.message}} ({{error.code}} · Reference {{error.reference}}){{/if}}</div>
 <p class="small muted" role="status" aria-live="polite" data-generation-status></p>
 <div class="actions space-top"><button class="button" name="mode" value="ai" {{#unless aiReady}}disabled{{/unless}}>Generate AI draft</button><button class="button secondary" name="mode" value="manual" formnovalidate>Import source as manual draft</button></div>
-</form><p class="small muted space-top">Manual import uses the saved text without AI or a generation quota. Add questions in the editor. AI requests may take up to a minute; all generated answers require faculty review.</p></section></div>
+</form><p class="small muted space-top">Manual import uses the saved text without AI or a generation quota. Add questions in the editor. Large collections are analyzed in batches with a separate progress page; all generated answers require faculty review.</p></section></div>
 <script src="/js/faculty-generation.js" defer></script>{{> studentBottom}}

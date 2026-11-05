@@ -409,3 +409,5 @@
 body .rounded-none { border-radius: 14px; }
 #about-significance { scroll-margin-top: 104px; }
 .hero-highlight-icon{display:inline-block;object-fit:contain;flex-shrink:0;width:25px;height:25px}
+
+.landing-benefit-icon{display:block;width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 5px 5px #18382a12)}

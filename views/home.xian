@@ -213,7 +213,7 @@
 
         <!-- Graduating BSTM Students Card (Boxy) -->
         <div class="bg-[#FFF5F6] rounded-none p-8 sm:p-10 border border-rose-200/80 shadow-sm hover:shadow-lg transition-all">
-          <div class="text-4xl mb-4">{{> publicIcon name="students"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/graduation-cap.png" width="64" height="64" alt=""></div>
           <h3 class="text-2xl font-black text-slate-900 mb-3">Graduating BSTM Students</h3>
           <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
             You're about to enter the tourism and hospitality industry. CareerBridge helps you understand where you stand, what careers suit you best, and what you need to work on.
@@ -237,7 +237,7 @@
 
         <!-- Teachers & Administrators Card (Boxy) -->
         <div class="bg-[#F0FDF4] rounded-none p-8 sm:p-10 border border-emerald-200/80 shadow-sm hover:shadow-lg transition-all">
-          <div class="text-4xl mb-4">{{> publicIcon name="faculty"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/teacher.png" width="64" height="64" alt=""></div>
           <h3 class="text-2xl font-black text-slate-900 mb-3">Teachers & Administrators</h3>
           <p class="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
             Monitor student progress, analyze class-wide readiness scores, and use the data to improve career guidance, training, and curriculum support.
@@ -289,7 +289,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-14">
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">{{> publicIcon name="students"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/graduation-cap.png" width="64" height="64" alt=""></div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Graduating BSTM Students</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Understand knowledge readiness, identify areas for improvement, and explore aligned career options before entering the industry.
@@ -297,7 +297,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">{{> publicIcon name="book"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/books.png" width="64" height="64" alt=""></div>
           <h4 class="text-base font-bold text-slate-900 mb-2">BSTM Program & Faculty</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Gain insights into student preparation and skill gaps to enhance career guidance, training, and curriculum support.
@@ -305,7 +305,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">{{> publicIcon name="faculty"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/school.png" width="64" height="64" alt=""></div>
           <h4 class="text-base font-bold text-slate-900 mb-2">MinSU Bongabong Campus</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             A technology-based approach for supporting graduating students as they transition from academics to the workforce.
@@ -313,7 +313,7 @@
         </div>
 
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">{{> publicIcon name="match"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/airplane.png" width="64" height="64" alt=""></div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Tourism & Hospitality Industry</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Understand the knowledge, skills, and interests that graduating BSTM students associate with available career opportunities.
@@ -325,7 +325,7 @@
       <!-- Bottom Centered 5th Beneficiary: Future Researchers (Boxy) -->
       <div class="max-w-md mx-auto mt-6">
         <div class="bg-white rounded-none p-6 border border-gray-200 shadow-sm hover:shadow-lg transition-all text-center flex flex-col items-center">
-          <div class="text-4xl mb-4">{{> publicIcon name="spark"}}</div>
+          <div class="text-4xl mb-4"><img class="landing-benefit-icon" src="/images/fluent-emoji/magnifying-glass.png" width="64" height="64" alt=""></div>
           <h4 class="text-base font-bold text-slate-900 mb-2">Future Researchers</h4>
           <p class="text-xs text-slate-600 leading-relaxed">
             Serves as a reference and foundation for future studies on career readiness, tourism education, and technology-based assessment systems.

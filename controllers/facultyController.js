@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { sourceLimits } from '../services/sourceLimits.js';
+import { startCourseJob, courseJobStatus } from '../services/courseJobs.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
 import { buildEvidence, summarizeLearning } from '../services/evidence.js';
 import { Op } from 'sequelize';
@@ -106,33 +109,44 @@ const sourceValues = body => ({ domain: domains.includes(body?.domain) ? body.do
 const sourceView = (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, aiReady: aiConfiguration().ready, values: sourceValues(body), error });
 export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: aiConfiguration().ready, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
-  const files = req.files || (req.file ? [req.file] : []);
-  if (!files.length) fail('Choose at least one PDF, DOCX or PPTX file.');
-  if (files.length > 8 || files.reduce((sum, f) => sum + f.size, 0) > 32 * 1024 * 1024) fail('Upload up to 8 files with a combined size under 32 MB.');
-  let sections;
-  const failed = [];
-  sections = [];
-  for (const file of files) {
-    try {
-      const extracted = await extractSource(file);
-      sections.push(...extracted.map(s => ({ reference: `${text(file.originalname, 90)} · ${s.reference}`, text: s.text })));
-    } catch (e) { failed.push(`${text(file.originalname, 120)}: ${e.status ? e.message : 'could not read this document'}`); }
+  const json=req.get('accept')?.includes('application/json');
+  const reject=(message,status=422)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
+  const files=req.files||(req.file?[req.file]:[]),sourceId=req.body.sourceId;
+  if(!files.length)return reject('Choose at least one PDF, DOCX, PPTX or TXT file.');
+  if(files.reduce((n,f)=>n+f.buffer.length,0)>sourceLimits.requestBytes)return reject('Upload at most 100 MB per request. The upload queue sends one file at a time.',413);
+  if(sourceId && (!/^\d+$/.test(sourceId)||!await SourceDocument.findOne({where:{id:sourceId,ownerId:req.user.id}})))return reject('Source collection not found.',404);
+  const extracted=[],failed=[];
+  for(const file of files){
+    try{
+      const key=createHash('sha256').update(file.buffer).digest('hex');
+      const sections=await extractSource(file);
+      extracted.push({name:text(file.originalname,120),key,sections:sections.map(section=>({...section,documentKey:key,documentName:text(file.originalname,120),reference:`${text(file.originalname,80)} [${key.slice(0,8)}] · ${section.reference}`}))});
+    }catch(error){failed.push({filename:text(file.originalname,120),message:error.status?error.message:'Could not decode this document. Use a valid PDF, DOCX, PPTX or TXT file.'});}
   }
-  if (!sections.length) fail(`No files could be processed. ${failed.join(' · ')}`);
-  if (sections.reduce((n, section) => n + section.text.length, 0) > 100000) fail('The successfully extracted files exceed the 100,000 character limit. Upload smaller groups of related files.');
+  if(!extracted.length)return reject(failed.map(f=>`${f.filename}: ${f.message}`).join(' · '));
   let source;
-  try {
-    source = await sequelize.transaction(async transaction => {
-      const row = await SourceDocument.create({ ownerId: req.user.id, filename: files.map(f => text(f.originalname, 80)).join(', ').slice(0, 250), sections }, { transaction });
-      await audit(req.user.id, 'source.uploaded', 'source', row.id, { files: files.length - failed.length, failedFiles: failed.length, sections: sections.length }, transaction);
-      return row;
+  try{
+    source=await sequelize.transaction(async transaction=>{
+      const row=sourceId?await SourceDocument.findOne({where:{id:sourceId,ownerId:req.user.id},transaction,lock:transaction.LOCK.UPDATE}):null;
+      if(sourceId&&!row)fail('Source collection not found.',404);
+      if(row&&await AiJob.findOne({where:{sourceId:row.id,status:'running'},transaction}))fail('Wait for the current generation to finish before adding files.');
+      const sections=row?sourceSections(row):[],keys=new Set(sections.map(s=>s.documentKey).filter(Boolean));
+      for(const doc of extracted)if(!keys.has(doc.key)){sections.push(...doc.sections);keys.add(doc.key);}
+      if(sections.length>sourceLimits.sections||sections.reduce((n,s)=>n+s.text.length,0)>sourceLimits.textCharacters)fail('This collection would exceed 1,000,000 extracted characters or 10,000 sections. Previously extracted files are safe; put remaining material in another course.');
+      const names=[...new Set(sections.map(s=>s.documentName).filter(Boolean))];
+      const filename=names.length>1?`${names[0]} + ${names.length-1} related files`:names[0]||row?.filename;
+      const saved=row?await row.update({filename,sections},{transaction}):await SourceDocument.create({ownerId:req.user.id,filename,sections},{transaction});
+      await audit(req.user.id,'source.uploaded','source',saved.id,{files:extracted.length,failedFiles:failed.length,sections:sections.length},transaction);return saved;
     });
-  } catch (e) {
-    const error = safeGenerationError(e, 'upload-save');
-    if (req.get('accept')?.includes('application/json')) return res.status(error.status).json({ ok: false, message: error.message, code: error.code, reference: error.reference });
-    req.flash('error_msg', `${error.message} Reference: ${error.reference}`); return res.redirect('/faculty/upload');
-  }
-  req.flash(failed.length ? 'error_msg' : 'success_msg', `${failed.length ? `${failed.length} file(s) could not be processed: ${failed.join(' · ')}. ` : ''}Source text extracted. Review it before creating a draft.`); res.redirect(`/faculty/sources/${source.id}`);
+  }catch(error){if(error.status)return reject(error.message,error.status);const safe=safeGenerationError(error,'upload-save');return reject(`${safe.message} Reference: ${safe.reference}`,safe.status);}
+  const redirect=`/faculty/sources/${source.id}`;
+  if(json)return res.json({ok:true,sourceId:source.id,redirect,failed,files:extracted.map(f=>f.name)});
+  req.flash(failed.length?'error_msg':'success_msg',failed.length?failed.map(f=>`${f.filename}: ${f.message}`).join(' · '):'Source collection saved. Generate your course with lessons, questions and answers.');res.redirect(redirect);
+};
+export const generationStatus = async (req,res) => {
+  const progress=await courseJobStatus(req.user.id,req.params.id);
+  if(req.get('accept')?.includes('application/json'))return res.json({ok:true,...progress});
+  render(res,'generation',{title:'Generating your course',progress});
 };
 export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); sourceView(res, s); };
 export const deleteSource = async (req, res) => { const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404); await audit(req.user.id, 'source.deleted', 'source', source.id, { filename: source.filename }); await source.destroy(); req.flash('success_msg', 'Source resource deleted. Existing courses and generated drafts are unchanged.'); res.redirect('/faculty/upload'); };
@@ -142,6 +156,12 @@ export const generate = async (req, res) => {
     const manual = req.body.mode === 'manual', values = sourceValues(req.body);
     if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
     if (!manual && (req.body.consent !== 'yes' || !values.outcomes)) throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with Gemini.');
+    if(!manual && req.body.background==='yes'){
+      const job=await startCourseJob(req.user.id,source,{...req.body,outcomes:values.outcomes});
+      const statusUrl=`/faculty/generation/${job.id}`;
+      if(req.get('accept')?.includes('application/json'))return res.status(202).json({ok:true,statusUrl,redirect:statusUrl});
+      return res.redirect(statusUrl);
+    }
     const { course } = await (manual ? manualSourceDraft : generateCourse)(req.user.id, source, { ...req.body, outcomes: values.outcomes });
     req.flash('success_msg', manual ? 'Source imported into an unpublished draft. Add assessments and review all content before publishing.' : 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.');
     const redirect = `/faculty/courses/${course.id}/edit`;
