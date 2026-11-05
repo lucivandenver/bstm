@@ -23,6 +23,7 @@ r.post('/upload', rateLimit({ windowMs: 60000, limit: 60, keyGenerator: req => S
 r.get('/sources/:id', asyncRoute(c.source)); r.post('/sources/:id/delete', asyncRoute(c.deleteSource));
 r.post('/sources/:id/generate', draftLimit(2, false), draftLimit(5, true), asyncRoute(c.generate));
 r.get('/generation/:id', asyncRoute(c.generationStatus));
+r.get('/generation/:id/stream', c.generationStream);
 r.get('/questions', asyncRoute(c.bank)); r.post('/questions', asyncRoute(c.saveQuestion)); r.post('/questions/:id', asyncRoute(c.saveQuestion));
 r.get('/students', asyncRoute(c.students)); r.get('/students/:id', asyncRoute(c.student)); r.post('/students/:id/notes', asyncRoute(c.note));
 r.get('/monitoring', asyncRoute(c.monitoring)); r.get('/reports', asyncRoute(c.monitoring));

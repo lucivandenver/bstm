@@ -16,7 +16,7 @@ export const Course = sequelize.define('Course', {
   enrollFrom: DataTypes.DATE, enrollUntil: DataTypes.DATE, deadline: DataTypes.DATE,
   certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true },
   slug: { type: DataTypes.STRING, unique: true, allowNull: false }, title: { type: DataTypes.STRING, allowNull: false },
-  description: DataTypes.TEXT, domain: DataTypes.STRING(60), level: DataTypes.STRING(40),
+  description: DataTypes.TEXT, domain: DataTypes.STRING(60), competencyAreas: json([]), level: DataTypes.STRING(40),
   minutes: DataTypes.INTEGER, version: { type: DataTypes.INTEGER, defaultValue: 1 },
   passingScore: { type: DataTypes.INTEGER, defaultValue: 75 },
   awardsApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -41,7 +41,8 @@ export const Credential = sequelize.define('Credential', {
   userId: { type: DataTypes.INTEGER, allowNull: false }, attemptId: { type: DataTypes.INTEGER, allowNull: false, unique: true },
   courseTitle: DataTypes.STRING, recipientName: DataTypes.STRING, courseVersion: DataTypes.INTEGER,
   score: DataTypes.INTEGER, stars: DataTypes.INTEGER, issuedAt: DataTypes.DATE,
-  facultySignature: DataTypes.TEXT('long'), facultyName: DataTypes.STRING(100), adminSignature: DataTypes.TEXT('long'), adminName: DataTypes.STRING(160), badgeLabel: DataTypes.STRING(60),
+  facultySignature: DataTypes.TEXT('long'), facultyName: DataTypes.STRING(100), facultyPosition: DataTypes.STRING(120),
+  adminSignature: DataTypes.TEXT('long'), adminName: DataTypes.STRING(160), adminPosition: DataTypes.STRING(160), badgeLabel: DataTypes.STRING(60),
   revoked: { type: DataTypes.BOOLEAN, defaultValue: false }
 });
 export const Notification = sequelize.define('Notification', {

@@ -5,13 +5,12 @@
 <form method="post" action="/faculty/sources/{{source.id}}/generate" data-course-generation>
 <input type="hidden" name="background" value="yes">
 <input type="hidden" name="_csrf" value="{{csrf}}">
-<div class="field"><label>Competency area<select name="domain" required><option value="">Select a competency area</option>{{#each domains}}<option value="{{this}}" {{selected this ../values.domain}}>{{this}}</option>{{/each}}</select></label></div>
+<fieldset class="field"><legend>Competency areas</legend><p class="small muted">Choose all areas covered by this course.</p>{{#each areas}}<label class="check-label"><input type="checkbox" name="domains" value="{{name}}" {{#if checked}}checked{{/if}}> {{name}}</label>{{/each}}</fieldset>
 <div class="field"><label>Target learning outcomes<textarea name="outcomes" required maxlength="1500" rows="4" placeholder="What should students understand after this course?">{{values.outcomes}}</textarea></label></div>
 <div class="grid cols-2"><div class="field"><label>Difficulty<select name="level"><option {{selected values.level 'Foundation'}}>Foundation</option><option {{selected values.level 'Intermediate'}}>Intermediate</option><option {{selected values.level 'Advanced'}}>Advanced</option></select></label></div><div class="field"><label>Question count<input type="number" name="questionCount" min="3" max="30" value="{{values.questionCount}}" required></label></div></div>
-{{#unless aiReady}}<p class="notice">AI drafting is not configured yet. Ask Admin to configure Gemini, or import the source below and add your own assessments.</p>{{/unless}}
+{{#unless aiReady}}<p class="notice">AI drafting is temporarily unavailable. Ask Admin to configure or restore the AI provider, then retry. Your saved source remains available.</p>{{/unless}}
 <label class="check-label"><input type="checkbox" name="consent" value="yes" required {{#if values.consent}}checked{{/if}}> I have permission to use this material and send its extracted text to Gemini.</label>
 <div class="notice" role="alert" data-generation-error {{#unless error}}hidden{{/unless}}>{{#if error}}{{error.message}} ({{error.code}} · Reference {{error.reference}}){{/if}}</div>
 <p class="small muted" role="status" aria-live="polite" data-generation-status></p>
-<div class="actions space-top"><button class="button" name="mode" value="ai" {{#unless aiReady}}disabled{{/unless}}>Generate AI draft</button><button class="button secondary" name="mode" value="manual" formnovalidate>Import source as manual draft</button></div>
-</form><p class="small muted space-top">Manual import uses the saved text without AI or a generation quota. Add questions in the editor. Large collections are analyzed in batches with a separate progress page; all generated answers require faculty review.</p></section></div>
+</form><div class="actions space-top"><button class="button" name="mode" value="ai" {{#unless aiReady}}disabled{{/unless}}>Generate review-ready course</button></div><p class="small muted space-top">Large collections are analyzed in batches with a live progress page; all generated lessons and answers require faculty review before publishing.</p></section></div>
 <script src="/js/faculty-generation.js" defer></script>{{> studentBottom}}

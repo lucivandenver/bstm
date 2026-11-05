@@ -1,5 +1,5 @@
 {{> facultyTop}}
-<section class="card" data-course-job="/faculty/generation/{{progress.id}}">
+<section class="card" data-course-job="/faculty/generation/{{progress.id}}" data-course-stream="/faculty/generation/{{progress.id}}/stream">
 <p class="eyebrow">MATERIALS → LESSONS → ASSESSMENTS</p><h2>Your course is being prepared</h2>
 <p role="status" aria-live="polite" data-job-status>Checking generation status…</p>
 <progress aria-label="Teaching material batches analyzed" style="width:100%;margin:24px 0"></progress>
