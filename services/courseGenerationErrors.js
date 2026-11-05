@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 const messages = {
   COURSE_JOB_INTERRUPTED: ["The service restarted before generation finished. Your source collection is saved. Open it and generate again.", 503],
   COURSE_AI_NOT_CONFIGURED: [
-    "AI drafting is not configured. Ask Admin to set GEMINI_API_KEY and GEMINI_MODEL. You can import this source into a manual draft.",
+    "AI drafting is not configured. Ask Admin to configure a supported provider. Your uploaded source is saved and can be retried.",
     503,
   ],
   COURSE_AI_AUTH: [
@@ -14,11 +14,11 @@ const messages = {
     503,
   ],
   COURSE_AI_QUOTA: [
-    "Gemini has reached a provider request limit. Retry later or use a manual draft.",
+    "The AI provider has reached its request limit. Your uploaded source is saved; retry after the provider limit resets or ask Admin to configure a fallback provider.",
     429,
   ],
   COURSE_DAILY_LIMIT: [
-    "Your course generation limit for the last 24 hours has been reached. Your existing drafts and manual editor remain available.",
+    "Your successful course generation limit for the last 24 hours has been reached. Your existing drafts and saved source materials remain available.",
     429,
   ],
   COURSE_ALREADY_RUNNING: [
@@ -30,11 +30,11 @@ const messages = {
     503,
   ],
   COURSE_AI_UNAVAILABLE: [
-    "The AI provider is temporarily unavailable. Retry later or import the source into a manual draft.",
+    "The AI provider is temporarily unavailable. Your source is saved; retry later or ask Admin to configure a fallback provider.",
     503,
   ],
   COURSE_AI_REQUEST: [
-    "The provider could not accept this draft request. Ask Admin to check the model configuration, or use the manual editor.",
+    "The provider could not accept this draft request. Ask Admin to check the model configuration, then retry from your saved source.",
     503,
   ],
   COURSE_AI_TRUNCATED: [
@@ -46,11 +46,11 @@ const messages = {
     422,
   ],
   COURSE_AI_INVALID: [
-    "The returned draft could not be validated. No incomplete course was saved. Try fewer questions or use the manual editor.",
+    "The returned draft could not be validated. No incomplete course was saved. Try fewer questions or split the source into smaller topics.",
     422,
   ],
   COURSE_SOURCE_UNSUPPORTED: [
-    "AI draft contained unsupported source references. No course was published. Review the source or use a manual draft.",
+    "AI draft contained unsupported source references. No course was published. Review the source and retry generation.",
     422,
   ],
   COURSE_SOURCE_INSUFFICIENT: [

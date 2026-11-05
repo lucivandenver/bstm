@@ -12,7 +12,7 @@ import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
 import { domains } from '../data/starterCourses.js';
 import { blankCourse, courseInput, publishCheck, questionInput, fail } from '../services/courseAuthoring.js';
-import { generateCourse, manualSourceDraft, aiConfiguration, sourceSections } from '../services/courseAi.js';
+import { generateCourse, aiConfiguration, sourceSections } from '../services/courseAi.js';
 import { generationError, safeGenerationError } from '../services/courseGenerationErrors.js';
 import { extractSource } from '../services/sourceExtraction.js';
 import { progress, careerMatches, publicQuestions } from '../services/learning.js';
@@ -60,7 +60,9 @@ export const courses = async (req, res) => {
 };
 export const editor = async (req, res) => {
   const course = req.params.id ? plain(await ownedCourse(req)) : blankCourse('');
-  const [bank, otherCourses, revisions] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] }), course.id ? CourseRevision.findAll({ where: { courseId: course.id }, order: [['createdAt', 'DESC']], limit: 20 }) : []]);
+  course.modules ||= []; course.questions ||= []; course.tasks ||= []; course.outcomes ||= []; course.prerequisites ||= []; course.policy ||= {}; course.competencyAreas ||= [course.domain].filter(Boolean);
+  const [bank, otherCourses] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] })]);
+  let revisions = []; if (course.id) { try { revisions = await CourseRevision.findAll({ where: { courseId: course.id }, order: [['createdAt', 'DESC']], limit: 20 }); } catch { revisions = []; } }
   render(res, 'editor', { title: course.id ? 'Edit course' : 'Create a course', backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
 export const saveCourse = async (req, res) => {
@@ -105,9 +107,9 @@ export const deleteDraft = async (req, res) => {
   req.flash('success_msg', 'Unused draft deleted.'); res.redirect('/faculty/courses');
 };
 export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), questions: publicQuestions(c.questions) }); };
-const sourceValues = body => ({ domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
-const sourceView = (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, aiReady: aiConfiguration().ready, values: sourceValues(body), error });
-export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: aiConfiguration().ready, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+const sourceValues = body => { const picked = (Array.isArray(body?.domains) ? body.domains : body?.domains ? [body.domains] : body?.domain ? [body.domain] : []).filter(d => domains.includes(d)); return { domains: picked, domain: picked[0] || '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' }; };
+const sourceView = (res, source, body, error) => { const values=sourceValues(body); return render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, areas:domains.map(name=>({name,checked:values.domains.includes(name)})), aiReady: aiConfiguration().ready, values, error }); };
+export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, areas:domains.map(name=>({name})), aiReady: aiConfiguration().ready, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=422)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
@@ -148,22 +150,37 @@ export const generationStatus = async (req,res) => {
   if(req.get('accept')?.includes('application/json'))return res.json({ok:true,...progress});
   render(res,'generation',{title:'Generating your course',progress});
 };
+export const generationStream = (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' }); res.flushHeaders();
+  let closed = false, busy = false;
+  const send = async () => {
+    if (closed || busy) return; busy = true;
+    try {
+      const progress = await courseJobStatus(req.user.id, req.params.id);
+      res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
+      if (['completed','failed'].includes(progress.status)) { closed = true; clearInterval(timer); res.end(); }
+    } catch { res.write(': retry\n\n'); }
+    finally { busy = false; }
+  };
+  const timer = setInterval(send, 1200); send();
+  req.on('close', () => { closed = true; clearInterval(timer); });
+};
 export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); sourceView(res, s); };
 export const deleteSource = async (req, res) => { const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404); await audit(req.user.id, 'source.deleted', 'source', source.id, { filename: source.filename }); await source.destroy(); req.flash('success_msg', 'Source resource deleted. Existing courses and generated drafts are unchanged.'); res.redirect('/faculty/upload'); };
 export const generate = async (req, res) => {
   const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404);
   try {
-    const manual = req.body.mode === 'manual', values = sourceValues(req.body);
-    if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
-    if (!manual && (req.body.consent !== 'yes' || !values.outcomes)) throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with Gemini.');
-    if(!manual && req.body.background==='yes'){
-      const job=await startCourseJob(req.user.id,source,{...req.body,outcomes:values.outcomes});
+    const values = sourceValues(req.body);
+    if (!values.domains.length) throw generationError('COURSE_INPUT', 'Choose at least one competency area for this course.');
+    if (req.body.consent !== 'yes' || !values.outcomes) throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with the configured AI provider.');
+    if(req.body.background==='yes'){
+      const job=await startCourseJob(req.user.id,source,{...req.body,domain:values.domains[0],domains:values.domains,competencyAreas:values.domains,outcomes:values.outcomes});
       const statusUrl=`/faculty/generation/${job.id}`;
       if(req.get('accept')?.includes('application/json'))return res.status(202).json({ok:true,statusUrl,redirect:statusUrl});
       return res.redirect(statusUrl);
     }
-    const { course } = await (manual ? manualSourceDraft : generateCourse)(req.user.id, source, { ...req.body, outcomes: values.outcomes });
-    req.flash('success_msg', manual ? 'Source imported into an unpublished draft. Add assessments and review all content before publishing.' : 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.');
+    const { course } = await generateCourse(req.user.id, source, { ...req.body,domain:values.domains[0],domains:values.domains,competencyAreas:values.domains,outcomes:values.outcomes });
+    req.flash('success_msg', 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.');
     const redirect = `/faculty/courses/${course.id}/edit`;
     if (req.get('accept')?.includes('application/json')) return res.json({ ok: true, redirect });
     res.redirect(redirect);

@@ -168,6 +168,7 @@ export function validateGeneratedDraft(raw, sections, options) {
       minutes: raw.minutes ?? 60,
       passingScore: 75,
       domain: options.domain,
+      competencyAreas: options.domains || options.competencyAreas || [options.domain],
       level: options.level,
       modules,
       questions,
@@ -334,21 +335,24 @@ export function courseBatches(sections, requestedCount) {
   }));
 }
 async function providerFetch(url, init) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let response;
-    try {
-      response = await fetch(url, {
-        ...init,
-        signal: AbortSignal.timeout(90000),
-      });
-    } catch (error) {
-      if (attempt === 2) throw error;
+  const { fallbackKeys = [], ...request } = init;
+  const keys = [request.headers['x-goog-api-key'], ...fallbackKeys].filter(Boolean);
+  let lastResponse;
+  for (const key of [...new Set(keys)]) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(url, { ...request, headers: { ...request.headers, 'x-goog-api-key': key }, signal: AbortSignal.timeout(90000) });
+        lastResponse = response;
+        if (![429, 500, 502, 503, 504].includes(response.status)) return response;
+        if (attempt === 2 && key !== keys.at(-1)) break;
+        if (attempt === 2) return response;
+      } catch (error) {
+        if (attempt === 2 && key === keys.at(-1)) throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
     }
-    if (response && ![429, 500, 502, 503, 504].includes(response.status))
-      return response;
-    if (attempt === 2) return response;
-    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
   }
+  return lastResponse;
 }
 async function requestDraft(
   config,
@@ -363,8 +367,9 @@ async function requestDraft(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": process.env.GEMINI_API_KEY.trim(),
+        "x-goog-api-key": config.providers?.[0]?.key || process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim(),
       },
+      fallbackKeys: config.providers?.slice(1).map(provider => provider.key) || [],
       signal: AbortSignal.timeout(60000),
       body: JSON.stringify({
         systemInstruction: {
@@ -384,7 +389,7 @@ async function requestDraft(
               {
                 text: JSON.stringify({
                   targetOutcomes: text(options.outcomes, 1500),
-                  competencyArea: options.domain,
+                  competencyAreas: options.domains || options.competencyAreas || [options.domain],
                   difficulty: options.level,
                   questionCount: count,
                   sections,
@@ -509,7 +514,7 @@ export async function generateCourse(userId, source, options) {
       !Number.isInteger(count) ||
       count < 3 ||
       count > 30 ||
-      !domains.includes(options.domain) ||
+      !(options.domains || options.competencyAreas || [options.domain]).some(d => domains.includes(d)) ||
       !text(options.outcomes, 1500)
     )
       throw generationError("COURSE_INPUT");
@@ -550,6 +555,7 @@ export async function generateCourse(userId, source, options) {
         (await AiJob.count({
           where: {
             userId,
+            status: { [Op.in]: ["running", "completed"] },
             createdAt: { [Op.gte]: new Date(Date.now() - 86400000) },
           },
           transaction,

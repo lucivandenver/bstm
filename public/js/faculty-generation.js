@@ -6,9 +6,9 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const mode = event.submitter?.value || "ai";
-    if (!form.elements.domain.value) {
-      form.elements.domain.focus();
-      form.elements.domain.reportValidity();
+    if (!form.querySelector('input[name="domains"]:checked')) {
+      form.querySelector('input[name="domains"]').focus();
+      status.textContent = "Choose at least one competency area.";
       return;
     }
     const body = new URLSearchParams(new FormData(form));
@@ -18,10 +18,7 @@
     buttons.forEach((b) => (b.disabled = true));
     form.setAttribute("aria-busy", "true");
     error.hidden = true;
-    status.textContent =
-      mode === "manual"
-        ? "Importing your saved source…"
-        : "Generating and validating your draft. Keep this page open; larger collections are analyzed in batches…";
+    status.textContent = "Starting course generation from your saved materials…";
     try {
       const response = await fetch(form.action, {
         method: "POST",
