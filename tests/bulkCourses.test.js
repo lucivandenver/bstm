@@ -245,14 +245,18 @@ test("three large files upload incrementally, retry without duplicates, and gene
         Accept: "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        _csrf: f.csrf,
-        background: "yes",
-        domain: "Tourism knowledge",
-        outcomes: "Understand tourism booking.",
-        questionCount: "8",
-        consent: "yes",
-      }),
+      body: new URLSearchParams([
+        ...new URLSearchParams({
+          _csrf: f.csrf,
+          background: "yes",
+          domain: "Tourism knowledge",
+          outcomes: "Understand tourism booking.",
+          questionCount: "8",
+          consent: "yes",
+        }),
+        ["competencyAreas", "Tourism knowledge"],
+        ["competencyAreas", "Communication"],
+      ]),
     });
     assert.equal(r.status, 202, r.html);
     const { statusUrl } = JSON.parse(r.html);
@@ -310,13 +314,14 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.equal(course.published, false);
     assert.equal((await f.get(state.preview)).status, 200);
     assert.equal((await f.get(state.redirect)).status, 200);
-    const reviewed = {
-      ...course.get({ plain: true }),
-      questions: course.questions.map((q) => ({ ...q, reviewed: true })),
-    };
+    assert.deepEqual(course.competencyAreas, [
+      "Tourism knowledge",
+      "Communication",
+    ]);
     const publish = await f.post(`/faculty/courses/${course.id}`, {
-      action: "publish",
-      courseData: JSON.stringify(reviewed),
+      action: "approve-generated",
+      confirmReview: "yes",
+      version: course.version,
     });
     assert.equal(publish.status, 302, publish.html);
     assert.equal((await course.reload()).published, true);
@@ -372,6 +377,63 @@ test("three large files upload incrementally, retry without duplicates, and gene
       "a later failed batch cannot save or publish a partial course",
     );
     assert.equal((await SourceDocument.findByPk(sourceId)).sections.length, 3);
+    const oldFallback = process.env.COURSE_AI_FALLBACK,
+      oldBackup = process.env.GROQ_API_KEY;
+    try {
+      process.env.COURSE_AI_FALLBACK = "groq";
+      process.env.GROQ_API_KEY = "backup-test-key";
+      const denied = await f.request(failedUrl + "/retry", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ _csrf: f.csrf }),
+      });
+      assert.equal(
+        denied.status,
+        400,
+        "adding another provider requires renewed material-sharing permission",
+      );
+    } finally {
+      if (oldFallback === undefined) delete process.env.COURSE_AI_FALLBACK;
+      else process.env.COURSE_AI_FALLBACK = oldFallback;
+      if (oldBackup === undefined) delete process.env.GROQ_API_KEY;
+      else process.env.GROQ_API_KEY = oldBackup;
+    }
+    const providerCallsBeforeResume = failedCalls;
+    const resumed = await f.request(failedUrl + "/retry", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ _csrf: f.csrf }),
+    });
+    assert.equal(resumed.status, 202, resumed.html);
+    assert.equal(
+      JSON.parse(resumed.html).redirect,
+      failedUrl,
+      "retry reuses the saved job",
+    );
+    let recovered;
+    for (let n = 0; n < 80; n++) {
+      recovered = JSON.parse(
+        (
+          await f.request(failedUrl, {
+            headers: { Accept: "application/json" },
+          })
+        ).html,
+      );
+      if (recovered.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.equal(recovered.status, "completed");
+    assert.equal(
+      failedCalls - providerCallsBeforeResume,
+      2,
+      "the first validated batch is restored, not regenerated",
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await new Promise((r) => server.close(r));

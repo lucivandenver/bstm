@@ -17,6 +17,7 @@ r.get('/courses', asyncRoute(c.courses)); r.post('/courses/:id', asyncRoute(c.sa
 r.get('/credentials', asyncRoute(c.credentials)); r.post('/credentials/:id/revoke', asyncRoute(c.revokeCredential));
 r.get('/announcements', asyncRoute(c.announcements)); r.post('/announcements', asyncRoute(c.saveAnnouncement)); r.post('/announcements/:id', asyncRoute(c.saveAnnouncement));
 r.get('/careers', asyncRoute(c.careerPaths)); r.post('/careers', asyncRoute(c.saveCareer)); r.post('/careers/:id', asyncRoute(c.saveCareer));
+r.post('/settings/course-ai', asyncRoute(c.saveCourseAiSettings));
 r.get('/settings', asyncRoute(c.settings)); r.post('/settings', asyncRoute(c.saveSettings));
 r.get('/audit', asyncRoute(c.auditLogs)); r.get('/reports', asyncRoute(c.reports)); r.get('/reports/export', asyncRoute(c.exportReport));
 r.get('/account', c.account); r.get('/profile', (req, res) => res.redirect('/admin/account'));

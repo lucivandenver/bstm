@@ -7,23 +7,27 @@ import { rateLimit } from 'express-rate-limit';
 import { requireUser, requireFaculty, asyncRoute } from '../middleware/security.js';
 import { googleStart } from '../controllers/googleController.js';
 import * as c from '../controllers/facultyController.js';
+import {streamJob,issueTicket} from '../services/courseLive.js';
 const r = Router(); r.use(requireUser, requireFaculty);
 const upload = multer({ storage: sourceUploadStorage(), limits: { fileSize: sourceLimits.fileBytes + 1, files: sourceLimits.requestFiles, fields: 8 } });
 r.get('/', asyncRoute(c.dashboard)); r.get('/profile', c.profile); r.post('/profile', asyncRoute(c.saveProfile)); r.post('/connect-google', googleStart);
-r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', asyncRoute(c.editor)); r.post('/courses', asyncRoute(c.saveCourse));
+r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', (req,res)=>res.redirect('/faculty/upload')); r.post('/courses', (req,res)=>res.status(400).send('Create courses from Upload & Generate.'));
 r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.post('/courses/:id/delete', asyncRoute(c.deleteDraft)); r.get('/courses/:id/preview', asyncRoute(c.preview));
 r.get('/credentials', asyncRoute(c.credentials)); r.post('/courses/:id/credentials', asyncRoute(c.submitCredential));
-const draftLimit = (limit, manual) => rateLimit({
+const draftLimit = (limit) => rateLimit({
   windowMs: 60000, limit, keyGenerator: req => String(req.user.id),
-  skip: async req => (req.body.mode === 'manual') !== manual || (!manual && req.body.background === 'yes' && Boolean(await AiJob.findOne({where:{userId:req.user.id,sourceId:req.params.id,status:'running',type:'course-draft'}}))),
+  skip: async req => req.body.mode === 'manual' || (req.body.background === 'yes' && Boolean(await AiJob.findOne({where:{userId:req.user.id,sourceId:req.params.id,status:'running',type:'course-draft'}}))),
   handler: (req, res) => res.status(429).json({ ok: false, code: 'COURSE_REQUEST_LIMIT', message: 'Too many draft requests. Wait one minute before retrying. Your saved source remains available.' })
 });
 r.get('/upload', asyncRoute(c.uploadPage));
 r.post('/upload', rateLimit({ windowMs: 60000, limit: 60, keyGenerator: req => String(req.user.id), handler: (req,res) => res.status(429).json({ok:false,message:'Upload paused. Wait one minute and retry the remaining files; extracted files are saved.'}) }), (req,res,next) => upload.array('sources', sourceLimits.requestFiles)(req,res,error => { if (!error) return next(); const message=error.code==='LIMIT_TOTAL_SIZE'?'Combined request exceeds 100 MB. Use the upload queue to send files one at a time.':error.code==='LIMIT_FILE_SIZE'?'Each file can be up to 100 MB. The remaining files have not been uploaded.':'Upload up to 20 files per request, or use the sequential upload queue.'; if(req.get('accept')?.includes('application/json'))return res.status(413).json({ok:false,message}); error.status=413;error.message=message;next(error); }), asyncRoute(c.upload));
 r.get('/sources/:id', asyncRoute(c.source)); r.post('/sources/:id/delete', asyncRoute(c.deleteSource));
-r.post('/sources/:id/generate', draftLimit(2, false), draftLimit(5, true), asyncRoute(c.generate));
+r.post('/sources/:id/generate', draftLimit(2), asyncRoute(c.generate));
+r.post('/generation/:id/retry', rateLimit({windowMs:60000,limit:10,keyGenerator:req=>String(req.user.id)}), asyncRoute(c.resumeGeneration));
+r.get('/generation/:id/events',asyncRoute(streamJob));
+r.post('/generation/:id/ticket',asyncRoute(issueTicket));
 r.get('/generation/:id', asyncRoute(c.generationStatus));
-r.get('/generation/:id/stream', c.generationStream);
+r.get('/generation/:id/stream', asyncRoute(streamJob));
 r.get('/questions', asyncRoute(c.bank)); r.post('/questions', asyncRoute(c.saveQuestion)); r.post('/questions/:id', asyncRoute(c.saveQuestion));
 r.get('/students', asyncRoute(c.students)); r.get('/students/:id', asyncRoute(c.student)); r.post('/students/:id/notes', asyncRoute(c.note));
 r.get('/monitoring', asyncRoute(c.monitoring)); r.get('/reports', asyncRoute(c.monitoring));

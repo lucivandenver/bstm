@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import hbs from 'hbs';
 import { starterCourses } from '../data/starterCourses.js';
 import { publicQuestions } from '../services/learning.js';
+hbs.registerHelper('areaLabels', (areas, primary) => Array.isArray(areas) && areas.length ? areas.join(' • ') : primary);
 hbs.registerHelper('eq', (a, b) => a === b);
 hbs.registerHelper('selected', (a, b) => a === b ? 'selected' : '');
 for (const file of fs.readdirSync('views/partials')) {

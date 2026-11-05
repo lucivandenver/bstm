@@ -66,10 +66,11 @@
     const generate = e.submitter?.value !== "extract";
     if (
       generate &&
-      (!form.querySelector('input[name="domains"]:checked') || !form.elements.consent.checked)
+      (!form.querySelector('[name="competencyAreas"]:checked') ||
+        !form.elements.consent.checked)
     ) {
       status.textContent =
-        "Choose at least one competency area and confirm permission before AI generation.";
+        "Choose the competency area and confirm permission before AI generation.";
       return;
     }
     if (
@@ -136,6 +137,7 @@
         _csrf: form.elements._csrf.value,
         mode: "ai",
         background: "yes",
+
         level: form.elements.level.value,
         questionCount: form.elements.questionCount.value,
         outcomes:
@@ -143,7 +145,10 @@
           "Derive clear learning outcomes from all supplied teaching materials. Explain and assess their key concepts.",
         consent: "yes",
       });
-      for (const area of form.querySelectorAll('input[name="domains"]:checked')) body.append("domains", area.value);
+      for (const box of form.querySelectorAll(
+        '[name="competencyAreas"]:checked',
+      ))
+        body.append("competencyAreas", box.value);
       const response = await fetch(`/faculty/sources/${sourceId}/generate`, {
         method: "POST",
         headers: {

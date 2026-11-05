@@ -62,12 +62,37 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
   const f=browser(base),s=browser(base),o=browser(base),a=browser(base),f2=browser(base);
   try{
     for(const [client,user] of [[f,faculty],[s,student],[o,outsider],[a,admin],[f2,otherFaculty]]){await client.login(user.email,'TestingPassword-2026!');await client.get('/'+user.role);}
-    for(const path of ['/faculty','/faculty/courses','/faculty/courses/new','/faculty/upload','/faculty/questions','/faculty/students','/faculty/students/'+student.id,'/faculty/monitoring','/faculty/reports','/faculty/assignments','/faculty/evaluations','/faculty/announcements','/faculty/profile','/notifications'])assert.equal((await f.get(path)).status,200,path);
+    for(const path of ['/faculty','/faculty/courses','/faculty/upload','/faculty/questions','/faculty/students','/faculty/students/'+student.id,'/faculty/monitoring','/faculty/reports','/faculty/assignments','/faculty/evaluations','/faculty/announcements','/faculty/profile','/notifications'])assert.equal((await f.get(path)).status,200,path);
     for(const path of ['/admin/academic','/admin/ai','/admin/competencies','/admin/maintenance','/notifications'])assert.equal((await a.get(path)).status,200,path);
+    await a.get('/admin/settings');
+    const oldGroqKey = process.env.GROQ_API_KEY;
+    process.env.GROQ_API_KEY = 'admin-controls-test-key';
+    assert.equal((await f.post('/admin/settings/course-ai',{provider:'groq',enabled:'true',groqEnabled:'true'})).status,403);
+    assert.equal((await a.post('/admin/settings/course-ai',{provider:'groq',enabled:'true',groqEnabled:'true'})).status,302);
+    const {courseAiConfiguration} = await import('../services/courseAiProvider.js');
+    assert.equal((await courseAiConfiguration()).provider,'groq');
+    assert.equal((await courseAiConfiguration()).ready,true);
+    assert.equal((await courseAiConfiguration()).geminiEnabled,false);
+    assert.equal((await a.post('/admin/settings/course-ai',{provider:'groq',groqEnabled:'true'})).status,302);
+    assert.equal((await courseAiConfiguration()).ready,false);
+    const aiSettings = await a.get('/admin/settings');
+    assert.equal(aiSettings.status,200);
+    assert.ok(!aiSettings.html.includes('admin-controls-test-key'));
+    await Setting.destroy({where:{key:['courseAiProvider','courseAiEnabled','courseGeminiEnabled','courseGroqEnabled']}});
+    if(oldGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY=oldGroqKey;
     assert.equal((await f.get('/faculty/students/'+outsider.id)).status,404);
     assert.equal((await f2.get('/faculty/students/'+student.id)).status,404);
     let draft=content();let r=await f.post('/faculty/courses',{courseData:JSON.stringify({...draft,questions:[{...draft.questions[0],reviewed:false}]}),action:'publish'});assert.equal(r.status,400);assert.equal(await Course.count(),0);
-    r=await f.post('/faculty/courses',{courseData:JSON.stringify(draft),action:'publish'});assert.equal(r.status,302,r.html);const c=await Course.findOne();assert.equal(c.ownerId,faculty.id);assert.equal(c.published,true);
+    assert.equal((await f.get('/faculty/courses/new')).location,'/faculty/upload');
+    const c=await Course.create({...draft,ownerId:faculty.id,slug:'legacy-published',published:true});
+    await CourseRevision.create({courseId:c.id,version:1,actorId:faculty.id,action:'published',snapshot:draft});
+    await c.update({modules:JSON.stringify(draft.modules)});
+    const legacyEditor=await f.get('/faculty/courses/'+c.id+'/edit');
+    assert.equal(legacyEditor.status,200);
+    assert.match(legacyEditor.html,/&quot;modules&quot;:\s*\[/);
+    assert.equal((await f.get('/faculty/courses')).status,200);
+    assert.equal((await f.get('/faculty/credentials')).status,200);
+    await c.update({modules:draft.modules});
     assert.equal((await f2.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify(draft),action:'publish'})).status,404);
     assert.equal((await s.get(`/faculty/courses/${c.id}/edit`)).status,403);
     const section=await Section.findOne({where:{name:'BSTM 4-1'}});await f.get('/faculty/assignments');r=await f.post('/faculty/assignments',{courseId:c.id,sectionId:section.id,required:'true',dueAt:'2027-01-10T12:00'});assert.equal(r.status,302);
@@ -115,7 +140,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
     process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
     try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');
-      globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n,sourceQuote:'An invented quote that is not in the material.'})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1);await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/limit/);
+      globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n,sourceQuote:'An invented quote that is not in the material.'})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1);await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1,'failed retries reuse the admitted job');
     }finally{globalThis.fetch=original;delete process.env.GEMINI_API_KEY;delete process.env.GEMINI_MODEL;}
   }finally{await new Promise(resolve=>server.close(resolve));await closeResources();}
 });

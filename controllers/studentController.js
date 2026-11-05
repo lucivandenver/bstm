@@ -115,7 +115,7 @@ export const catalog = async (req, res) => {
   const cards = courses.filter(c => facultyById.has(c.ownerId))
     .filter(c => view !== 'saved' || savedIds.has(c.id))
     .filter(c => view !== 'enrolled' || enrolledIds.has(c.id))
-    .filter(c => (!query || `${c.title} ${c.description}`.toLowerCase().includes(query)) && (!domain || c.domain === domain))
+    .filter(c => (!query || `${c.title} ${c.description}`.toLowerCase().includes(query)) && (!domain || (c.competencyAreas || [c.domain]).includes(domain)))
     .filter(c => !author || String(c.ownerId) === author)
     .map(c => {
     const active = attempts.find(a => a.courseId === c.id && a.status === 'ongoing');
@@ -342,7 +342,7 @@ export const careers = async (req, res) => {
   if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
   const recommendations = eligibleCourses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(c => ({ ...plain(c), locked: c.prerequisites.some(id => !completedIds.has(Number(id))) }));
-  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => track.required.includes(course.domain)).map(course => ({ ...plain(course), learningStatus: completedIds.has(course.id) ? 'Completed' : attempts.some(a => a.courseId === course.id && a.status === 'ongoing') ? 'In progress' : 'Available', done: completedIds.has(course.id), active: attempts.some(a => a.courseId === course.id && a.status === 'ongoing') })) }));
+  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => (course.competencyAreas || [course.domain]).some(area=>track.required.includes(area))).map(course => ({ ...plain(course), learningStatus: completedIds.has(course.id) ? 'Completed' : attempts.some(a => a.courseId === course.id && a.status === 'ongoing') ? 'In progress' : 'Available', done: completedIds.has(course.id), active: attempts.some(a => a.courseId === course.id && a.status === 'ongoing') })) }));
   render(res, 'careers', { evidenceDate: date(new Date()), evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore })), hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
     developingCourses:learningContext.developing, aiReady: aiConfiguration().ready, ai: req.session.careerAi || null });
 };

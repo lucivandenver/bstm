@@ -9,8 +9,13 @@ export function questionInput(q, domain) {
   if (prompt.length < 8 || options.length < 2 || options.some(o => !o) || new Set(options.map(o => o.toLowerCase())).size !== options.length || !Number.isInteger(Number(q.answer)) || Number(q.answer) < 0 || Number(q.answer) >= options.length) fail('Each question needs a clear prompt, distinct choices and one correct answer.');
   return { id: id(q.id || randomUUID(), 'question'), prompt, options, answer: Number(q.answer), explanation: text(q.explanation, 2000), domain: domains.includes(q.domain) ? q.domain : domain, moduleId: text(q.moduleId, 60), sourceReference: text(q.sourceReference, 200), sourceQuote: text(q.sourceQuote, 1200), reviewed: q.reviewed === true };
 }
+export function courseAreas(value, primary) {
+  const selected = Array.isArray(value) && value.length ? value : [primary];
+  if (selected.some(area => !domains.includes(area))) fail('Select valid competency areas.');
+  return [...new Set(selected)];
+}
 export function courseInput(input, { draft = false } = {}) {
-  const title = text(input.title, 160), description = text(input.description, 4000), requestedAreas = Array.isArray(input.competencyAreas) ? input.competencyAreas : [input.domain], competencyAreas = [...new Set(requestedAreas.map(v => text(v, 60)).filter(v => domains.includes(v)))], domain = domains.includes(text(input.domain, 60)) ? text(input.domain, 60) : competencyAreas[0];
+  const title = text(input.title, 160), description = text(input.description, 4000), domain = text(input.domain, 60);
   if (title.length < 4 || !description || !domains.includes(domain)) fail('Enter a course title, description and competency area.');
   const passingScore = Number(input.passingScore), minutes = Number(input.minutes);
   if (!Number.isInteger(passingScore) || passingScore < 50 || passingScore > 100 || !Number.isInteger(minutes) || minutes < 5 || minutes > 6000) fail('Use a passing score of 50–100 and a learning time of 5–6000 minutes.');
@@ -28,7 +33,7 @@ export function courseInput(input, { draft = false } = {}) {
   const enrollFrom = date(input.enrollFrom), enrollUntil = date(input.enrollUntil), deadline = date(input.deadline);
   if (enrollFrom && enrollUntil && enrollUntil <= enrollFrom) fail('Enrollment closing must be after opening.');
   const prerequisites = array(input.prerequisites || [], 30, 'prerequisites').map(Number); if (prerequisites.some(n => !Number.isInteger(n) || n < 1)) fail('Invalid prerequisite course.');
-  return { title, description, domain, competencyAreas: competencyAreas.length ? competencyAreas : [domain], passingScore, minutes, level: ['Foundation', 'Intermediate', 'Advanced'].includes(input.level) ? input.level : 'Foundation', outcomes: array(input.outcomes || [], 20, 'outcomes').map(o => text(o, 500)).filter(Boolean), modules, questions, tasks, policy, prerequisites: [...new Set(prerequisites)], enrollFrom, enrollUntil, deadline, certificateEnabled: input.certificateEnabled !== false };
+  return { title, description, domain, competencyAreas: courseAreas(input.competencyAreas, domain), passingScore, minutes, level: ['Foundation', 'Intermediate', 'Advanced'].includes(input.level) ? input.level : 'Foundation', outcomes: array(input.outcomes || [], 20, 'outcomes').map(o => text(o, 500)).filter(Boolean), modules, questions, tasks, policy, prerequisites: [...new Set(prerequisites)], enrollFrom, enrollUntil, deadline, certificateEnabled: input.certificateEnabled !== false };
 }
 export function publishCheck(c) {
   courseInput(c); // Re-validate drafts before any publication path, including Admin.
@@ -36,4 +41,3 @@ export function publishCheck(c) {
   if (c.modules.some(m => !m.title || !m.lessons.length || m.lessons.some(l => !l.title || l.body.length < 30) || !c.questions.some(q => q.moduleId === m.id))) fail('Each module needs a title, a complete lesson and at least one quiz question.');
   if (c.questions.some(q => !q.reviewed || !q.explanation)) fail('Review every question and provide its answer explanation before publishing.');
 }
-export const blankCourse = domain => ({ title: '', description: '', domain, level: 'Foundation', minutes: 60, passingScore: 75, outcomes: [], prerequisites: [], tasks: [], policy: {}, certificateEnabled: true, modules: [{ id: 'module-1', title: 'Module 1', lessons: [{ id: 'lesson-1', title: '', body: '', takeaways: [] }] }], questions: [] });
