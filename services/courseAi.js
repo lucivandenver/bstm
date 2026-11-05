@@ -8,7 +8,7 @@ import { Op } from "sequelize";
 import { randomUUID, createHash } from "node:crypto";
 import { AiJob, CourseRevision } from "../models/portalModels.js";
 import { sequelize, User, Course } from "../models/learningModels.js";
-import { setting, audit } from "./accounts.js";
+import { audit } from "./accounts.js";
 import { courseInput } from "./courseAuthoring.js";
 import {
   generationError,
@@ -397,7 +397,6 @@ export async function generateCourse(userId, source, options) {
       count,
       config.provider === "groq" ? 6000 : limits.chunkCharacters,
     );
-    if (plan.length > 20) throw generationError("COURSE_AI_CAPACITY");
     const savedOptions = {
       competencyAreas: options.competencyAreas || [options.domain],
       domain: options.domain,
@@ -425,10 +424,6 @@ export async function generateCourse(userId, source, options) {
       )
       .digest("hex");
     stage = "quota";
-    const limit = Math.max(
-      1,
-      Math.min(50, Number(await setting("aiDailyLimit", "5")) || 5),
-    );
     await sequelize.transaction(async (transaction) => {
       // Serialize this faculty's job admission; do not create nested Setting savepoints or lock all faculty globally.
       const user = await User.findByPk(userId, {
@@ -463,17 +458,6 @@ export async function generateCourse(userId, source, options) {
       const resume = previous.find(
         (candidate) => candidate.state?.fingerprint === fingerprint,
       );
-      if (
-        !resume &&
-        (await AiJob.count({
-          where: {
-            userId,
-            createdAt: { [Op.gte]: new Date(Date.now() - 86400000) },
-          },
-          transaction,
-        })) >= limit
-      )
-        throw generationError("COURSE_DAILY_LIMIT");
       const state = {
         fingerprint,
         options: savedOptions,

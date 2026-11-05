@@ -10,7 +10,7 @@ The screenshot shows a generic failure after submitting `/faculty/sources/2/gene
 
 The new flow validates the provider's structured output and source quotes, assigns stable internal module/question references, and saves the course, revision, job result and audit record in one transaction. It preserves faculty ownership and unpublished/review-before-publish gates. Failed saves roll back the draft; a logging failure cannot mask the original error. Configuration, provider limits, response truncation, unsupported source content and database problems have safe codes and log references without exposing keys, SQL or source content.
 
-The source form retains fields and extracted text on errors, disables duplicate submissions while waiting and offers a source-preserving manual import without Gemini or an AI quota. Manual drafts need faculty-authored assessments before publishing. Admission is serialized per faculty; stale running jobs expire after five minutes. The rolling daily request cap still counts failed provider attempts, since those can consume provider capacity. Separate request limits keep manual import available after AI retries.
+The source form retains fields and extracted text on errors, disables duplicate submissions while waiting and offers a source-preserving manual import without Gemini or an AI quota. Manual drafts need faculty-authored assessments before publishing. Admission is serialized per faculty; stale running jobs expire after five minutes. There is no application-level rolling daily course-generation cap; provider quotas still apply. Source uploads retain their short-window rate limit.
 
 ## Competency areas
 
@@ -38,7 +38,7 @@ AI needs private Render environment values `GEMINI_API_KEY` and `GEMINI_MODEL` f
 | --- | --- |
 | `COURSE_AI_NOT_CONFIGURED` | Configure the two Gemini values, or use manual import. |
 | `COURSE_AI_AUTH` / `COURSE_AI_MODEL` | Check the configured key, project permissions and model. |
-| `COURSE_AI_QUOTA` / `COURSE_DAILY_LIMIT` | Wait for the applicable limit or use a manual draft. |
+| `COURSE_AI_QUOTA` | Wait for the provider quota/rate window or use a manual draft. Legacy `COURSE_DAILY_LIMIT` jobs can be resumed; the application cap has been removed. |
 | `COURSE_AI_TRUNCATED` / `COURSE_SOURCE_INSUFFICIENT` | Use fewer questions or a more focused source. |
 | `COURSE_SOURCE_UNSUPPORTED` | Review source text; the ungrounded draft was rejected. |
 | `COURSE_SCHEMA_NOT_READY` | Check the existing migration on the configured database. |

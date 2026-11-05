@@ -25,7 +25,7 @@ Branch: `feature/complete-learning-portals`. Built on main `39f5ab691103b8ce482c
 ## Deliberate operating limits
 
 - Scanned/image-only documents are flagged for external OCR. The app does not claim to extract readable text that is absent.
-- AI requires `GEMINI_API_KEY` and `GEMINI_MODEL` in the private environment. No provider credentials are committed. Without AI, manual authoring and rules-based career matching work normally. Course generation has a request cap per faculty in a rolling 24 hours; this is not a billing/token budget.
+- AI requires private provider credentials in the environment. No provider credentials are committed. Without AI, manual authoring and rules-based career matching work normally. Course generation has no application-level 24-hour request cap; provider quotas, rate limits, context limits and billing still apply.
 - Source generation runs as a bounded HTTP request (60-second provider timeout), with a job result log. It is not a distributed background queue. A process termination can leave a job marked running; operators should inspect provider/host status before retrying.
 - Source material is limited to 8 MB, 80 PDF pages/slides and 100,000 extracted characters. Office decompression has entry/size limits. Personal supporting files are private database blobs, at most 2 MB each and 10 files per student. Persistent files do not rely on Render's ephemeral filesystem.
 - Practical recordings are submitted as accessible HTTPS links. There is no built-in video recorder or plagiarism detector. A faculty member must be assigned to a student's active section before enrolling in a course with required practical work.

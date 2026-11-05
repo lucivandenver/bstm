@@ -1,4 +1,4 @@
-const CACHE = "careerbridge-static-v3";
+const CACHE = "careerbridge-static-v4";
 const ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
