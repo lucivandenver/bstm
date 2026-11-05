@@ -1,4 +1,4 @@
-const CACHE = "careerbridge-static-v2";
+const CACHE = "careerbridge-static-v3";
 const ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -13,13 +13,16 @@ const ASSETS = [
   "/js/portal.js",
   "/js/pwa.js",
   "/js/signature.js",
+  "/js/source-upload.js",
+  "/js/course-job.js",
+  "/js/faculty-generation.js",
   "/js/public-ui.js",
   "/js/auth.js",
   "/images/careerbridge_brand_logo.png",
   "/images/icons/airplane.svg",
-  "/images/icons/airplane-192.png",
-  "/images/icons/airplane-512.png",
-  "/images/icons/airplane-maskable-512.png",
+  "/images/icons/airplane-3d-192.png",
+  "/images/icons/airplane-3d-512.png",
+  "/images/icons/airplane-3d-maskable-512.png",
 ];
 self.addEventListener("install", (event) =>
   event.waitUntil(

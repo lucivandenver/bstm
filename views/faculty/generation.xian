@@ -1,0 +1,9 @@
+{{> facultyTop}}
+<section class="card" data-course-job="/faculty/generation/{{progress.id}}">
+<p class="eyebrow">MATERIALS → LESSONS → ASSESSMENTS</p><h2>Your course is being prepared</h2>
+<p role="status" aria-live="polite" data-job-status>Checking generation status…</p>
+<progress aria-label="Teaching material batches analyzed" style="width:100%;margin:24px 0"></progress>
+<p class="small muted">Each source batch is analyzed before the complete draft is saved. You can return from Upload &amp; Generate → Generation history. Faculty reviews the content and answers before publishing to students.</p>
+<div class="actions space-top" data-job-actions hidden><a class="button" data-job-preview href="#">Preview generated course</a><a class="button secondary" data-job-edit href="#">Edit lessons &amp; answers</a></div>
+<a class="button secondary space-top" data-job-retry hidden href="/faculty/sources/{{progress.sourceId}}">Open saved materials &amp; retry</a>
+</section><script src="/js/course-job.js" defer></script>{{> studentBottom}}

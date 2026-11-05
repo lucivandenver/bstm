@@ -15,3 +15,8 @@ Source commit: `1ffb34c752ecf5d402f04cfb4b392c77f57c54bc`. These locally served 
 - `graduation-cap.png`: `assets/Graduation cap/3D/graduation_cap_3d.png`
 - `palm-tree.png`: `assets/Palm tree/3D/palm_tree_3d.png`
 - `magnifying-glass.png`: `assets/Magnifying glass tilted left/3D/magnifying_glass_tilted_left_3d.png`
+
+- `airplane.png`: `assets/Airplane/3D/airplane_3d.png`
+- `books.png`: `assets/Books/3D/books_3d.png`
+- `school.png`: `assets/School/3D/school_3d.png`
+- `teacher.png`: `assets/Teacher/Default/3D/teacher_3d_default.png`

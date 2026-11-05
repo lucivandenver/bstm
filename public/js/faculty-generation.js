@@ -21,7 +21,7 @@
     status.textContent =
       mode === "manual"
         ? "Importing your saved source…"
-        : "Generating and validating your draft. Keep this page open; this can take up to a minute…";
+        : "Generating and validating your draft. Keep this page open; larger collections are analyzed in batches…";
     try {
       const response = await fetch(form.action, {
         method: "POST",
