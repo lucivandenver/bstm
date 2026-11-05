@@ -1,24 +1,39 @@
 import { randomBytes } from "node:crypto";
 const messages = {
-  COURSE_JOB_INTERRUPTED: ["The service restarted before generation finished. Your source collection is saved. Open it and generate again.", 503],
+  COURSE_AI_NO_QUOTA: [
+    "The provider reports no available quota for this model/project. Admin must check the free-plan model and project limits, enable quota, or configure another provider. Saved course sections can be resumed afterwards.",
+    429,
+  ],
+  COURSE_AI_DAILY_QUOTA: [
+    "The provider daily quota or credit allowance is exhausted. Wait for its reset or ask Admin to review the provider plan. Completed course sections are saved; resume afterwards.",
+    429,
+  ],
+  COURSE_AI_CAPACITY: [
+    "This collection is too large for the configured Groq request budget. Use Gemini for this collection or divide it into smaller courses. Your materials are saved.",
+    422,
+  ],
+  COURSE_JOB_INTERRUPTED: [
+    "The service restarted before generation finished. Your source collection and validated course sections are saved. Resume generation to continue.",
+    503,
+  ],
   COURSE_AI_NOT_CONFIGURED: [
-    "AI drafting is not configured. Ask Admin to configure a supported provider. Your uploaded source is saved and can be retried.",
+    "AI drafting is not configured. Ask Admin to configure the selected Gemini or Groq provider. Your uploaded materials are saved.",
     503,
   ],
   COURSE_AI_AUTH: [
-    "The AI provider rejected the credentials or permissions. Ask Admin to check the Gemini API key and project access.",
+    "The AI provider rejected the credentials or permissions. Ask Admin to check the selected provider key and project access.",
     503,
   ],
   COURSE_AI_MODEL: [
-    "The configured Gemini model is unavailable. Ask Admin to check GEMINI_MODEL for this API key.",
+    "The configured AI model is unavailable. Ask Admin to check the model setting for this provider key.",
     503,
   ],
   COURSE_AI_QUOTA: [
-    "The AI provider has reached its request limit. Your uploaded source is saved; retry after the provider limit resets or ask Admin to configure a fallback provider.",
+    "The AI provider is rate-limiting requests. Completed sections are saved. Resume after the indicated waiting period.",
     429,
   ],
   COURSE_DAILY_LIMIT: [
-    "Your successful course generation limit for the last 24 hours has been reached. Your existing drafts and saved source materials remain available.",
+    "Your course generation limit for the last 24 hours has been reached. Your existing drafts remain available.",
     429,
   ],
   COURSE_ALREADY_RUNNING: [
@@ -30,11 +45,11 @@ const messages = {
     503,
   ],
   COURSE_AI_UNAVAILABLE: [
-    "The AI provider is temporarily unavailable. Your source is saved; retry later or ask Admin to configure a fallback provider.",
+    "The AI provider is temporarily unavailable. Completed sections are saved; resume generation when it recovers.",
     503,
   ],
   COURSE_AI_REQUEST: [
-    "The provider could not accept this draft request. Ask Admin to check the model configuration, then retry from your saved source.",
+    "The provider could not accept this draft request. Ask Admin to check the model configuration.",
     503,
   ],
   COURSE_AI_TRUNCATED: [
@@ -42,15 +57,15 @@ const messages = {
     422,
   ],
   COURSE_AI_BLOCKED: [
-    "The AI provider could not produce content for this source. Review the teaching material or use a manual draft.",
+    "The AI provider could not produce content for this source. Review the teaching material.",
     422,
   ],
   COURSE_AI_INVALID: [
-    "The returned draft could not be validated. No incomplete course was saved. Try fewer questions or split the source into smaller topics.",
+    "The returned draft could not be validated. No incomplete course was saved. Try fewer questions.",
     422,
   ],
   COURSE_SOURCE_UNSUPPORTED: [
-    "AI draft contained unsupported source references. No course was published. Review the source and retry generation.",
+    "AI draft contained unsupported source references. No course was published. Review the source.",
     422,
   ],
   COURSE_SOURCE_INSUFFICIENT: [
@@ -74,7 +89,7 @@ const messages = {
     503,
   ],
   COURSE_INPUT: [
-    "Choose a competency area, enter target outcomes and select 3–30 questions.",
+    "Select one or more competency areas and choose 3–30 questions.",
     400,
   ],
 };

@@ -6,9 +6,9 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const mode = event.submitter?.value || "ai";
-    if (!form.querySelector('input[name="domains"]:checked')) {
-      form.querySelector('input[name="domains"]').focus();
-      status.textContent = "Choose at least one competency area.";
+    if (!form.querySelector('[name="competencyAreas"]:checked')) {
+      error.hidden = false;
+      error.textContent = "Select at least one competency area.";
       return;
     }
     const body = new URLSearchParams(new FormData(form));
@@ -18,7 +18,7 @@
     buttons.forEach((b) => (b.disabled = true));
     form.setAttribute("aria-busy", "true");
     error.hidden = true;
-    status.textContent = "Starting course generation from your saved materials…";
+    status.textContent = "Starting course generation…";
     try {
       const response = await fetch(form.action, {
         method: "POST",

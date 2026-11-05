@@ -1,6 +1,8 @@
 import { AiJob } from "../models/portalModels.js";
 import { generateCourse } from "./courseAi.js";
+import { courseAiConfiguration } from "./courseAiProvider.js";
 import { generationError } from "./courseGenerationErrors.js";
+import { signalCourseJob } from "./courseLive.js";
 const active = new Map();
 export async function startCourseJob(userId, source, options) {
   const running = await AiJob.findOne({
@@ -32,12 +34,18 @@ export async function startCourseJob(userId, source, options) {
         resolve(job);
       },
       onProgress(progress) {
-        if (jobId) active.set(jobId, progress);
+        if (jobId) {
+          active.set(jobId, progress);
+          signalCourseJob(jobId);
+        }
       },
     })
       .catch(reject)
       .finally(() => {
-        if (jobId) active.delete(jobId);
+        if (jobId) {
+          active.delete(jobId);
+          signalCourseJob(jobId);
+        }
       });
   });
 }
@@ -51,13 +59,22 @@ export async function courseJobStatus(userId, id) {
     });
   // A single-instance service restart cannot continue an in-memory provider task.
   // Mark it retryable instead of displaying a permanent spinner.
-  if (job.status === "running" && !active.has(job.id))
-    await job.update({ status: "failed", errorCode: "COURSE_JOB_INTERRUPTED" });
+  if (job.status === "running" && !active.has(job.id)) {
+    await AiJob.update(
+      { status: "failed", errorCode: "COURSE_JOB_INTERRUPTED" },
+      { where: { id: job.id, status: "running" } },
+    );
+    await job.reload();
+  }
   const progress = active.get(job.id);
+  const config = await courseAiConfiguration(),
+    providers = config.fallback ? ["gemini", "groq"] : [config.provider];
   return {
     id: job.id,
     status: job.status,
     sourceId: job.sourceId,
+    completed: job.state?.batches?.length || 0,
+    total: job.state?.total || 0,
     ...(progress || {}),
     ...(job.courseId
       ? {
@@ -66,7 +83,17 @@ export async function courseJobStatus(userId, id) {
         }
       : {}),
     ...(job.status === "failed"
-      ? { code: job.errorCode, message: generationError(job.errorCode).message }
+      ? {
+          code: job.errorCode,
+          message: generationError(job.errorCode).message,
+          reference: job.state?.reference,
+          retryAt: job.state?.retryAt,
+          canResume:
+            job.state?.options?.consent === true &&
+            providers.every((provider) =>
+              job.state.options.consentProviders?.includes(provider),
+            ),
+        }
       : {}),
   };
 }

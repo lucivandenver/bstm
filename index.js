@@ -24,6 +24,7 @@
     */
     
 import './config/env.js';
+import {attachCourseSockets} from './services/courseLive.js';
 import './models/portalModels.js';
 import { Section, Announcement } from './models/adminModels.js';
 import { Op } from 'sequelize';
@@ -45,6 +46,8 @@ const PORT = process.env.PORT || 3000;
 app.disable('x-powered-by');
 if (production) app.set('trust proxy', 1);
 app.use(express.json({ limit: '500kb' }));
+// Existing imported drafts can contain a full collection of extracted text.
+app.post(/^\/faculty\/courses\/\d+\/?$/,express.urlencoded({extended:true,limit:'16mb'}));
 app.use(express.urlencoded({ extended: true, limit: '500kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
@@ -81,6 +84,8 @@ for (const file of fs.readdirSync(path.join(__dirname, 'views/partials'))) {
   if (file.endsWith('.xian')) hbs.registerPartial(file.replace('.xian', ''), fs.readFileSync(path.join(__dirname, 'views/partials', file), 'utf8'));
 }
 hbs.registerHelper('json', value => JSON.stringify(value, null, 2));
+hbs.registerHelper('areaLabels', (areas,primary) => Array.isArray(areas) && areas.length ? areas.join(' • ') : primary);
+hbs.registerHelper('hasArea', (areas,area) => Array.isArray(areas) && areas.includes(area));
 hbs.registerHelper('eq', (a, b) => a === b);
 hbs.registerHelper('selected', (a, b) => a === b ? 'selected' : '');
 // Developer-only file reload. Student progress updates use persisted application endpoints.
@@ -131,6 +136,7 @@ export const startServer = async (port = PORT) => {
   await sessionStore.sync();
   return new Promise((resolve, reject) => {
     const server = app.listen(port, () => { console.log(`CareerBridge is running. Open ${production ? appUrl : 'http://localhost:' + server.address().port} in your browser.`); resolve(server); });
+    attachCourseSockets(server);
     server.on('error', reject);
   });
 };

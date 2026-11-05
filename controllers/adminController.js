@@ -1,3 +1,4 @@
+import { courseAiConfiguration } from '../services/courseAiProvider.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
 import { summarizeLearning } from '../services/evidence.js';
 import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
@@ -257,7 +258,7 @@ export const saveCareer = async (req, res) => {
   } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') fail('That pathway title already exists.'); throw error; }
   req.flash('success_msg', 'Career pathway saved.'); res.redirect('/admin/careers');
 };
-export const settings = async (req, res) => render(res, 'settings', { title: 'System settings', portalSettings: Object.fromEntries((await Setting.findAll()).map(s => [s.key, s.value])), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
+export const settings = async (req, res) => render(res, 'settings', { title: 'System settings', portalSettings: Object.fromEntries((await Setting.findAll()).map(s => [s.key, s.value])), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), aiConfigured: (await courseAiConfiguration()).ready, aiStatus: await courseAiConfiguration() });
 export const saveSettings = async (req, res) => {
   const previousSignature = await setting('adminSignature', '');
   const signature = req.body.adminSignature && req.body.adminSignature !== previousSignature ? await validatedSignature(req.body.adminSignature) : previousSignature;
@@ -306,4 +307,20 @@ export const changePassword = async (req, res) => {
   req.session.sessionVersion = req.user.sessionVersion;
   await audit(req.user.id, 'account.password_changed', 'user', req.user.id);
   req.flash('success_msg', 'Password updated. Other login sessions have been invalidated.'); res.redirect('/admin/account');
+};
+
+export const saveCourseAiSettings = async (req, res) => {
+  const provider = req.body.provider;
+  if (!['gemini','groq'].includes(provider)) fail('Select Gemini or Groq.');
+  const enabled = req.body.enabled === 'true';
+  const gemini = req.body.geminiEnabled === 'true';
+  const groq = req.body.groqEnabled === 'true';
+  if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its API key in Render first.');
+  const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq)};
+  await sequelize.transaction(async transaction => {
+    for (const [key,value] of Object.entries(values)) await Setting.upsert({key,value},{transaction});
+    await audit(req.user.id,'course-ai.settings.updated','system','course-ai',values,transaction);
+  });
+  req.flash('success_msg','Course AI settings saved. New AI requests use the selected enabled provider.');
+  res.redirect('/admin/settings');
 };

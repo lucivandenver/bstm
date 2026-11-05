@@ -10,7 +10,6 @@ const { AiJob, SourceDocument, CourseRevision } =
 const { Setting } = await import("../models/adminModels.js");
 const {
   generateCourse,
-  manualSourceDraft,
   sourceSections,
   validateGeneratedDraft,
 } = await import("../services/courseAi.js");
@@ -103,29 +102,14 @@ await test("AI responses are grounded, mapped to server IDs and always require r
     sections,
   );
 });
-await test("missing configuration and explicit competency selection retain a usable manual path", async () => {
+await test("missing provider configuration leaves the saved source available", async () => {
   delete process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_MODEL;
   await assert.rejects(() => generateCourse(faculty.id, source, options), {
     code: "COURSE_AI_NOT_CONFIGURED",
   });
   assert.equal(await AiJob.count(), 0);
-  await assert.rejects(
-    () => manualSourceDraft(faculty.id, source, { ...options, domain: "" }),
-    { code: "COURSE_INPUT" },
-  );
-  const { course } = await manualSourceDraft(faculty.id, source, options);
-  assert.equal(course.published, false);
-  assert.equal(course.questions.length, 0);
-  assert.ok(course.modules[0].lessons[0].body.includes(quote));
-  assert.equal(
-    await CourseRevision.count({ where: { courseId: course.id } }),
-    1,
-  );
-  await assert.rejects(
-    () => manualSourceDraft(faculty.id + 10, source, options),
-    { code: "COURSE_INPUT" },
-  );
+
 });
 await test("provider failures are actionable and do not save partial courses", async () => {
   process.env.GEMINI_API_KEY = "test-key";
@@ -241,7 +225,11 @@ await test("admission failure before a job is created uses a safe diagnostic", a
       throw { original: { code: "ER_NO_SUCH_TABLE" }, sql: "do not disclose" };
     };
     await assert.rejects(
-      () => generateCourse(faculty.id, source, options),
+      () =>
+        generateCourse(faculty.id, source, {
+          ...options,
+          outcomes: "New admission should check database quota storage.",
+        }),
       (e) =>
         e.code === "COURSE_SCHEMA_NOT_READY" &&
         !e.message.includes("do not disclose"),
@@ -255,7 +243,7 @@ await test("admission failure before a job is created uses a safe diagnostic", a
     "COURSE_STORAGE_BUSY",
   );
 });
-await test("duplicate running requests and daily quota are blocked independently of manual import", async () => {
+await test("duplicate running requests and daily quota are blocked for new generations", async () => {
   const job = await AiJob.create({
     userId: faculty.id,
     sourceId: source.id,
@@ -267,14 +255,19 @@ await test("duplicate running requests and daily quota are blocked independently
   });
   await job.update({ status: "failed" });
   await Setting.update({ value: "1" }, { where: { key: "aiDailyLimit" } });
-  await assert.rejects(() => generateCourse(faculty.id, source, options), {
-    code: "COURSE_DAILY_LIMIT",
-  });
-  const result = await manualSourceDraft(faculty.id, source, options);
-  assert.equal(result.course.published, false);
+  await assert.rejects(
+    () =>
+      generateCourse(faculty.id, source, {
+        ...options,
+        outcomes: "A distinct new course request.",
+      }),
+    {
+      code: "COURSE_DAILY_LIMIT",
+    },
+  );
   await Setting.upsert({ key: "aiDailyLimit", value: "50" });
 });
-await test("Faculty HTTP source errors retain form inputs and manual import works without Gemini", async () => {
+await test("Faculty source errors retain inputs and legacy manual submissions are rejected", async () => {
   const server = await startServer(0),
     base = `http://127.0.0.1:${server.address().port}`,
     f = browser(base);
@@ -282,7 +275,7 @@ await test("Faculty HTTP source errors retain form inputs and manual import work
     await f.login(faculty.email, "TestingPassword-2026!");
     let r = await f.get(`/faculty/sources/${source.id}`);
     assert.equal(r.status, 200);
-    assert.match(r.html, /Select a competency area/);
+    assert.match(r.html, /Competency areas/);
     assert.match(r.html, /data-course-generation/);
     delete process.env.GEMINI_API_KEY;
     r = await f.post(`/faculty/sources/${source.id}/generate`, {
@@ -352,9 +345,8 @@ await test("Faculty HTTP source errors retain form inputs and manual import work
       mode: "manual",
       consent: "",
     });
-    assert.equal(r.status, 302);
-    assert.match(r.location, /\/faculty\/courses\/\d+\/edit/);
-    assert.equal((await f.get(r.location)).status, 200);
+    assert.equal(r.status,400);
+    assert.match(r.html,/Select Generate course/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await closeResources();

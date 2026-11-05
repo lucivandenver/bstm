@@ -11,12 +11,16 @@ import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, AiJob, 
 import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
 import { domains } from '../data/starterCourses.js';
-import { blankCourse, courseInput, publishCheck, questionInput, fail } from '../services/courseAuthoring.js';
+import { courseAreas, courseInput, publishCheck, questionInput, fail } from '../services/courseAuthoring.js';
 import { generateCourse, aiConfiguration, sourceSections } from '../services/courseAi.js';
 import { generationError, safeGenerationError } from '../services/courseGenerationErrors.js';
 import { extractSource } from '../services/sourceExtraction.js';
 import { progress, careerMatches, publicQuestions } from '../services/learning.js';
 import { finalizeAttempt } from '../services/portalLearning.js';
+function savedArray(value) {
+  if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }
+  return Array.isArray(value) ? value : [];
+}
 const plain = r => r?.get({ plain: true });
 const date = d => d ? new Date(d).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '—';
 const render = (res, view, data = {}) => res.render(`faculty/${view}`, { facultyNav: view, ...data });
@@ -34,7 +38,7 @@ export const dashboard = async (req, res) => {
 export const profile = (req, res) => render(res, 'profile', { title: 'My faculty profile', googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
 export const credentials = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['title', 'ASC']] });
+  const courses = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
   const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory','certificateSignatoryPosition'] } })).map(s => [s.key, s.value]));
   render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
@@ -56,29 +60,38 @@ export const courses = async (req, res) => {
   const courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] });
   const ids = courses.map(c => c.id);
   const [attempts, requests, assignments] = await Promise.all([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }), CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }), CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
-  render(res, 'courses', { title: 'My courses', courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: c.modules.length, questionCount: c.questions.length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+  render(res, 'courses', { title: 'My courses', courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
-  const course = req.params.id ? plain(await ownedCourse(req)) : blankCourse('');
-  course.modules ||= []; course.questions ||= []; course.tasks ||= []; course.outcomes ||= []; course.prerequisites ||= []; course.policy ||= {}; course.competencyAreas ||= [course.domain].filter(Boolean);
-  const [bank, otherCourses] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] })]);
-  let revisions = []; if (course.id) { try { revisions = await CourseRevision.findAll({ where: { courseId: course.id }, order: [['createdAt', 'DESC']], limit: 20 }); } catch { revisions = []; } }
-  render(res, 'editor', { title: course.id ? 'Edit course' : 'Create a course', backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
+  const course = plain(await ownedCourse(req));
+  for(const field of ['modules','questions','tasks','outcomes','prerequisites','policy','competencyAreas']){
+    if(typeof course[field]==='string')try{course[field]=JSON.parse(course[field]);}catch{fail('This course contains unreadable saved content. Open its original source to generate a replacement.',422);}
+  }
+  course.competencyAreas=courseAreas(course.competencyAreas,course.domain);
+  const [bank, otherCourses, revisions] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] }), course.id ? CourseRevision.findAll({ where: { courseId: course.id }, attributes:['version','action','createdAt'], order: [['createdAt', 'DESC']], limit: 20 }) : []]);
+  render(res, 'editor', { title: 'Revise course', backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
 export const saveCourse = async (req, res) => {
-  let input; try { input = JSON.parse(req.body.courseData); } catch { fail('Invalid course form. Reload and try again.'); }
-  const data = courseInput(input, { draft: req.body.action !== 'publish' }); let id;
+  const approve=req.body.action==='approve-generated',publish=approve||req.body.action==='publish';
+  let input,id;
+  if(!approve){try{input=JSON.parse(req.body.courseData);}catch{fail('Invalid course form. Reload and try again.');}}
   await sequelize.transaction(async transaction => {
-    let c = req.params.id ? await ownedCourse(req, transaction) : null;
+    const c=await ownedCourse(req,transaction);
+    if(approve){
+      if(req.body.confirmReview!=='yes'||Number(req.body.version)!==c.version)fail('Review the current course version before publishing.',409);
+      if(c.published)fail('This course is already published.',409);
+      if(!await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'},transaction}))fail('Generate a course from your saved materials first.');
+      input={...plain(c),questions:c.questions.map(q=>({...q,reviewed:true}))};
+    }
+    const data=courseInput(input,{draft:!publish});
     const wasPublished = Boolean(c?.published);
     if (c && data.prerequisites.includes(c.id)) fail('A course cannot require itself.');
     // Every prerequisite must exist and cannot create an indirect cycle.
     for (const prerequisite of data.prerequisites) {
       const seen = new Set(); const visit = async cid => { if (c && cid === c.id) fail('Prerequisites would form a cycle.'); if (seen.has(cid)) return; seen.add(cid); const dependency = await Course.findByPk(cid, { transaction }); if (!dependency) fail('Prerequisite course does not exist.'); for (const next of dependency.prerequisites) await visit(Number(next)); }; await visit(prerequisite);
     }
-    if (req.body.action === 'publish') publishCheck(data);
-    if (c) { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: req.body.action === 'publish' }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
-    else c = await Course.create({ ...data, ownerId: req.user.id, slug: `faculty-${randomUUID()}`, published: req.body.action === 'publish' }, { transaction });
+    if (publish) publishCheck(data);
+    { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: publish }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
     id = c.id;
     if (c.published && !wasPublished) {
       const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
@@ -87,7 +100,7 @@ export const saveCourse = async (req, res) => {
     await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: c.published ? 'published' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, c.published ? 'course.published' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', req.body.action === 'publish' ? 'Course published. Certificates and badges remain locked until an Admin approves your credential configuration.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? 'Course published. Certificates and badges remain locked until an Admin approves your credential configuration.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
 export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
 export const deleteDraft = async (req, res) => {
@@ -106,10 +119,10 @@ export const deleteDraft = async (req, res) => {
   });
   req.flash('success_msg', 'Unused draft deleted.'); res.redirect('/faculty/courses');
 };
-export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), questions: publicQuestions(c.questions) }); };
-const sourceValues = body => { const picked = (Array.isArray(body?.domains) ? body.domains : body?.domains ? [body.domains] : body?.domain ? [body.domain] : []).filter(d => domains.includes(d)); return { domains: picked, domain: picked[0] || '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' }; };
-const sourceView = (res, source, body, error) => { const values=sourceValues(body); return render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, areas:domains.map(name=>({name,checked:values.domains.includes(name)})), aiReady: aiConfiguration().ready, values, error }); };
-export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, areas:domains.map(name=>({name})), aiReady: aiConfiguration().ready, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), generated:Boolean(await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'}})), questions: publicQuestions(c.questions) }); };
+const sourceValues = body => ({ areas:[].concat(body?.competencyAreas||body?.domain||[]), domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
+const sourceView = async (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
+export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=422)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
@@ -145,49 +158,51 @@ export const upload = async (req, res) => {
   if(json)return res.json({ok:true,sourceId:source.id,redirect,failed,files:extracted.map(f=>f.name)});
   req.flash(failed.length?'error_msg':'success_msg',failed.length?failed.map(f=>`${f.filename}: ${f.message}`).join(' · '):'Source collection saved. Generate your course with lessons, questions and answers.');res.redirect(redirect);
 };
+export const resumeGeneration = async (req,res) => {
+  const invalid=(message,status=400)=>res.status(status).json({ok:false,message});
+  try{
+    const previous=await AiJob.findOne({where:{id:req.params.id,userId:req.user.id,type:'course-draft'}});
+    if(!previous)return invalid('Generation request not found.',404);
+    if(previous.status==='completed'&&previous.courseId)return res.json({ok:true,redirect:`/faculty/generation/${previous.id}`});
+    const config=await aiConfiguration(),providers=config.fallback?['gemini','groq']:[config.provider];
+    if(!previous.state?.options?.consent||!providers.every(provider=>previous.state.options.consentProviders?.includes(provider)))return invalid('Provider configuration changed or permission is missing. Open the saved source and confirm the current providers before generating again.');
+    const source=await SourceDocument.findOne({where:{id:previous.sourceId,ownerId:req.user.id}});if(!source)return invalid('Source collection not found.',404);
+    if(previous.state.retryAt&&Date.parse(previous.state.retryAt)>Date.now())return res.status(429).json({ok:false,message:'The provider waiting period has not ended. Your saved sections remain available.',retryAt:previous.state.retryAt});
+    const job=await startCourseJob(req.user.id,source,{...previous.state.options,consent:'yes'});
+    res.status(202).json({ok:true,redirect:`/faculty/generation/${job.id}`});
+  }catch(error){const safe=safeGenerationError(error,'resume');res.status(safe.status).json({ok:false,message:safe.message,code:safe.code,reference:safe.reference});}
+};
 export const generationStatus = async (req,res) => {
   const progress=await courseJobStatus(req.user.id,req.params.id);
   if(req.get('accept')?.includes('application/json'))return res.json({ok:true,...progress});
   render(res,'generation',{title:'Generating your course',progress});
 };
-export const generationStream = (req, res) => {
-  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' }); res.flushHeaders();
-  let closed = false, busy = false;
-  const send = async () => {
-    if (closed || busy) return; busy = true;
-    try {
-      const progress = await courseJobStatus(req.user.id, req.params.id);
-      res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
-      if (['completed','failed'].includes(progress.status)) { closed = true; clearInterval(timer); res.end(); }
-    } catch { res.write(': retry\n\n'); }
-    finally { busy = false; }
-  };
-  const timer = setInterval(send, 1200); send();
-  req.on('close', () => { closed = true; clearInterval(timer); });
-};
-export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); sourceView(res, s); };
+export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); await sourceView(res, s); };
 export const deleteSource = async (req, res) => { const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404); await audit(req.user.id, 'source.deleted', 'source', source.id, { filename: source.filename }); await source.destroy(); req.flash('success_msg', 'Source resource deleted. Existing courses and generated drafts are unchanged.'); res.redirect('/faculty/upload'); };
 export const generate = async (req, res) => {
   const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404);
   try {
-    const values = sourceValues(req.body);
-    if (!values.domains.length) throw generationError('COURSE_INPUT', 'Choose at least one competency area for this course.');
-    if (req.body.consent !== 'yes' || !values.outcomes) throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with the configured AI provider.');
+    if(req.body.mode==='manual')throw generationError('COURSE_INPUT','Select Generate course to create lessons and assessments from these materials.');
+    const selected=courseAreas([].concat(req.body.competencyAreas||req.body.domain||[]),req.body.domain);
+    req.body.domain=selected[0];req.body.competencyAreas=selected;
+    const values=sourceValues(req.body);
+    if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
+    if (req.body.consent !== 'yes') throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with the selected AI provider.');
     if(req.body.background==='yes'){
-      const job=await startCourseJob(req.user.id,source,{...req.body,domain:values.domains[0],domains:values.domains,competencyAreas:values.domains,outcomes:values.outcomes});
+      const job=await startCourseJob(req.user.id,source,{...req.body,outcomes:values.outcomes || 'Derive learning outcomes from the supplied materials.'});
       const statusUrl=`/faculty/generation/${job.id}`;
       if(req.get('accept')?.includes('application/json'))return res.status(202).json({ok:true,statusUrl,redirect:statusUrl});
       return res.redirect(statusUrl);
     }
-    const { course } = await generateCourse(req.user.id, source, { ...req.body,domain:values.domains[0],domains:values.domains,competencyAreas:values.domains,outcomes:values.outcomes });
+    const { course } = await generateCourse(req.user.id, source, { ...req.body, outcomes: values.outcomes || 'Derive learning outcomes from the supplied materials.' });
     req.flash('success_msg', 'AI draft created. Check lesson accuracy and every source reference, then mark each question reviewed before publishing.');
     const redirect = `/faculty/courses/${course.id}/edit`;
     if (req.get('accept')?.includes('application/json')) return res.json({ ok: true, redirect });
     res.redirect(redirect);
   } catch (e) {
-    const error = e.reference ? e : safeGenerationError(e, 'generate-form');
+    const error = e.reference ? e : safeGenerationError(e, 'input');
     if (req.get('accept')?.includes('application/json')) return res.status(error.status).json({ ok: false, message: error.message, code: error.code, reference: error.reference });
-    res.status(error.status); sourceView(res, source, req.body, { message: error.message, code: error.code, reference: error.reference });
+    res.status(error.status); await sourceView(res, source, req.body, { message: error.message, code: error.code, reference: error.reference });
   }
 };
 export const bank = async (req, res) => render(res, 'bank', { title: 'Question bank', domains, questions: (await QuestionBank.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']], limit: 300 })).map(plain) });
