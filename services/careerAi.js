@@ -8,7 +8,7 @@ export function careerLearningContext(attempts, credentials = []) {
     latest.set(a.courseId, a);
   const describe = (a) => ({
     title: String(a.snapshot.title || "Course").slice(0, 160),
-    domain: a.snapshot.domain,
+    competencyAreas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas : [a.snapshot.domain],
   });
   return {
     completed: [...latest.values()]

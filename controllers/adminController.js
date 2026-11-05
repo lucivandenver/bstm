@@ -185,7 +185,7 @@ export const credentialApprovals = async (req, res) => {
   const requests = await CredentialRequest.findAll({ where, order: [['updatedAt','DESC']], limit: 300 });
   const courses = await Course.findAll({ where: { id: { [Op.in]: requests.map(r => r.courseId) } } });
   const faculty = await User.findAll({ where: { id: { [Op.in]: requests.map(r => r.facultyId) } } });
-  const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory'] } })).map(s => [s.key, s.value]));
+  const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory','certificateSignatoryPosition'] } })).map(s => [s.key, s.value]));
   render(res, 'credentialApprovals', { title: 'Credential approvals', status, ...settings, requests: requests.map(r => ({ ...plain(r), course: plain(courses.find(c => c.id === r.courseId)), faculty: publicUser(faculty.find(f => f.id === r.facultyId)) })) });
 };
 export const reviewCredential = async (req, res) => {
@@ -199,7 +199,7 @@ export const reviewCredential = async (req, res) => {
     await request.update({ status, remarks: remarks || null, reviewedBy: req.user.id, reviewedAt: new Date() }, { transaction });
     await course.update({ awardsApproved: status === 'approved' }, { transaction });
     const facultyAccount = await User.findByPk(request.facultyId, { transaction });
-    const signatureSettings = await Setting.findAll({ where: { key: ['adminSignature','certificateSignatory'] }, transaction }); const signatures = Object.fromEntries(signatureSettings.map(s => [s.key, s.value]));
+    const signatureSettings = await Setting.findAll({ where: { key: ['adminSignature','certificateSignatory','certificateSignatoryPosition'] }, transaction }); const signatures = Object.fromEntries(signatureSettings.map(s => [s.key, s.value]));
     if (status === 'approved' && facultyAccount?.approvalStatus !== 'approved') fail('Approve the faculty registration before approving its credentials.');
     if (status === 'approved' && !signatures.adminSignature) fail('Upload and save the administrator signature in System Settings before approving credentials.');
     const attempts = await CourseAttempt.findAll({ where: { courseId: course.id }, transaction, lock: transaction.LOCK.UPDATE });
@@ -211,7 +211,7 @@ export const reviewCredential = async (req, res) => {
         const quizAverage = modules.length ? modules.reduce((sum, module) => sum + (attempt.quizScores?.[module.id] || 0), 0) / modules.length : attempt.finalScore;
         const practicalAverage = tasks.length ? practicals.filter(submission => tasks.some(task => task.id === submission.taskId)).reduce((sum, submission) => sum + (submission.grade || 0), 0) / tasks.length : 0;
         const weighted = Math.round(quizAverage * (policy.quizWeight ?? 0) / 100 + attempt.finalScore * (policy.finalWeight ?? 100) / 100 + practicalAverage * (policy.practicalWeight ?? 0) / 100);
-        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, adminSignature: signatures.adminSignature || null, adminName: signatures.certificateSignatory || null, badgeLabel: request.badge?.label || 'Course completion' }, transaction });
+        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', adminSignature: signatures.adminSignature || null, adminName: signatures.certificateSignatory || null, adminPosition: signatures.certificateSignatoryPosition || 'Administrator', badgeLabel: request.badge?.label || 'Course completion' }, transaction });
         if (created) await Notification.create({ userId: attempt.userId, title: 'Certificate and badge approved', message: `Your completion of ${course.title} now qualifies for its approved certificate and badge.`, href: '/student/achievements' }, { transaction });
       }
     }
@@ -261,7 +261,7 @@ export const settings = async (req, res) => render(res, 'settings', { title: 'Sy
 export const saveSettings = async (req, res) => {
   const previousSignature = await setting('adminSignature', '');
   const signature = req.body.adminSignature && req.body.adminSignature !== previousSignature ? await validatedSignature(req.body.adminSignature) : previousSignature;
-  const values = { certificateTemplate: 'classic', institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), adminSignature: signature || previousSignature, registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
+  const values = { certificateTemplate: 'classic', institutionName: text(req.body.institutionName, 160), academicYear: text(req.body.academicYear, 30), certificateFooter: text(req.body.certificateFooter, 250), certificateSignatory: text(req.body.certificateSignatory, 160), certificateSignatoryPosition: text(req.body.certificateSignatoryPosition, 160), adminSignature: signature || previousSignature, registrationEnabled: req.body.registrationEnabled === 'true' ? 'true' : 'false', facultyRegistrationEnabled: req.body.facultyRegistrationEnabled === 'true' ? 'true' : 'false' };
   if (!values.institutionName || !/^\d{4}-\d{4}$/.test(values.academicYear)) fail('Enter an institution and academic year.');
   await sequelize.transaction(async transaction => {
     for (const [key, value] of Object.entries(values)) await Setting.upsert({ key, value }, { transaction });

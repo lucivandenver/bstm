@@ -59,8 +59,10 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
   }
   const evidence = Object.fromEntries(domains.map(domain => [domain, []]));
   for (const attempt of latest.values()) {
-    const domain = attempt.snapshot.domain;
-    if (evidence[domain]) evidence[domain].push(attempt.finalScore);
+    const areas = Array.isArray(attempt.snapshot.competencyAreas) && attempt.snapshot.competencyAreas.length
+      ? attempt.snapshot.competencyAreas
+      : [attempt.snapshot.domain];
+    for (const domain of new Set(areas)) if (evidence[domain]) evidence[domain].push(attempt.finalScore);
   }
   const scores = {};
   for (const domain of domains) {
@@ -70,7 +72,7 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
   const knowledgeScores = { ...scores }, practicalScores = {};
   for (const domain of domains) {
     const values = [];
-    for (const attempt of latest.values()) if (attempt.snapshot.domain === domain) {
+    for (const attempt of latest.values()) if ((Array.isArray(attempt.snapshot.competencyAreas) && attempt.snapshot.competencyAreas.length ? attempt.snapshot.competencyAreas : [attempt.snapshot.domain]).includes(domain)) {
       const tasks = (attempt.snapshot.tasks || []).filter(t => t.required !== false);
       const valid = tasks.map(t => practicals.find(p => p.attemptId === attempt.id && p.taskId === t.id)).filter(p => p && Number.isFinite(p.grade));
       if (tasks.length && valid.length === tasks.length) values.push(valid.reduce((sum,p) => sum + p.grade,0) / valid.length);

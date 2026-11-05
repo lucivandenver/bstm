@@ -397,12 +397,13 @@ export const certificate = async (req, res) => {
   const url = `${appUrl}/verify/${c.id}`;
   doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`,75,477,{width:610,align:'center',link:url});
   doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`,75,499,{width:610,align:'center'});
-    const signatory = c.adminName || await setting('certificateSignatory',''), adminSignature = c.adminSignature || await setting('adminSignature',''), facultySignature = c.facultySignature || request?.facultySignature || '', facultyName = c.facultyName || (request ? (await User.findByPk(request.facultyId))?.name : '');
+    const signatory = c.adminName || await setting('certificateSignatory',''), adminPosition = c.adminPosition || await setting('certificateSignatoryPosition','Administrator'), adminSignature = c.adminSignature || await setting('adminSignature',''), facultySignature = c.facultySignature || request?.facultySignature || '', facultyAccount = request ? await User.findByPk(request.facultyId) : null, facultyName = c.facultyName || facultyAccount?.name || '', facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
     if (facultySignature) { const raw = Buffer.from(facultySignature.split(',')[1], 'base64'); doc.image(raw,175,455,{fit:[150,54],align:'center'}); }
     if (adminSignature) { const raw = Buffer.from(adminSignature.split(',')[1], 'base64'); doc.image(raw,535,455,{fit:[150,54],align:'center'}); }
-    if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,535,515,{width:150,height:22,align:'center'});
-    if (facultyName) doc.fillColor('#172533').fontSize(9).text(facultyName,175,515,{width:150,height:22,align:'center'});
-    doc.fillColor('#64748b').fontSize(8).text('Course Faculty',175,535,{width:150,align:'center'}); doc.text('Administrator',535,535,{width:150,align:'center'});
+    if (facultyName) doc.fillColor('#172533').fontSize(9).text(facultyName,175,510,{width:150,height:18,align:'center'});
+    if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,535,510,{width:150,height:18,align:'center'});
+    doc.fillColor('#64748b').fontSize(8).text(facultyPosition,175,530,{width:150,height:20,align:'center'});
+    doc.text(adminPosition,535,530,{width:150,height:20,align:'center'});
   const qr = await QRCode.toBuffer(url,{width:90,margin:1});doc.image(qr,728,478,{width:66});doc.end();
 };
 export const badge = async (req, res) => {
