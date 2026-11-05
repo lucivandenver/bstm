@@ -311,12 +311,16 @@ export const changePassword = async (req, res) => {
 
 export const saveCourseAiSettings = async (req, res) => {
   const provider = req.body.provider;
-  if (!['gemini','groq'].includes(provider)) fail('Select Gemini or Groq.');
+    if (!['gemini','groq','vertex'].includes(provider)) fail('Select Gemini, Groq, or Vertex AI.');
   const enabled = req.body.enabled === 'true';
   const gemini = req.body.geminiEnabled === 'true';
   const groq = req.body.groqEnabled === 'true';
-  if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its API key in Render first.');
-  const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq)};
+    const vertex = req.body.vertexEnabled === 'true';
+    const vertexConfigured = process.env.VERTEX_AUTH_MODE?.trim().toLowerCase() === 'api_key'
+      ? Boolean(process.env.VERTEX_API_KEY?.trim())
+      : Boolean(process.env.VERTEX_PROJECT_ID?.trim() && process.env.VERTEX_LOCATION?.trim() && (process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()));
+    if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : provider === 'vertex' ? vertex && vertexConfigured : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its credentials in Render first.');
+    const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq),courseVertexEnabled:String(vertex)};
   await sequelize.transaction(async transaction => {
     for (const [key,value] of Object.entries(values)) await Setting.upsert({key,value},{transaction});
     await audit(req.user.id,'course-ai.settings.updated','system','course-ai',values,transaction);
