@@ -12,7 +12,10 @@ await test('career HTTP generation uses owned earned/developing evidence, return
  const server=await startServer(0),base=`http://127.0.0.1:${server.address().port}`,client=browser(base),original=globalThis.fetch;
  const key=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL;
  try{
-  await client.login(user.email,'TestingPassword-2026!');await client.get('/student/careers');process.env.GEMINI_API_KEY='test-key';process.env.GEMINI_MODEL='test-model';
+  await client.login(user.email,'TestingPassword-2026!');
+  let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
+  r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
+  process.env.GEMINI_API_KEY='test-key';process.env.GEMINI_MODEL='test-model';
   globalThis.fetch=async(url,init)=>{
    if(!String(url).startsWith('https://generativelanguage.googleapis.com/'))return original(url,init);
    assert(!init.body.includes(user.name));assert(!init.body.includes(user.email));assert(!init.body.includes(user.studentId));
@@ -20,7 +23,7 @@ await test('career HTTP generation uses owned earned/developing evidence, return
    return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({summary:'Use your completed tourism evidence.',nextSteps:['Practise','Learn','Review'],matches:[{pathwayIndex:0,reason:'Completed tourism evidence supports this direction.',nextStep:'Finish digital reservations.'}]})}]}}]});
   };
   const body=new URLSearchParams({_csrf:client.csrf,consent:'yes'});
-  let r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).redirect,'/student/careers#ai-results');
+  r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).redirect,'/student/careers#ai-results');
   r=await client.get('/student/careers');assert.match(r.html,/Completed tourism evidence supports this direction/);assert.match(r.html,/id="ai-results"/);
   await developing.update({completedLessons:['l2','l3']});r=await client.get('/student/careers');assert.doesNotMatch(r.html,/Completed tourism evidence supports this direction/,'changing progress invalidates the cached guidance');
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({_csrf:client.csrf})});assert.equal(r.status,400);

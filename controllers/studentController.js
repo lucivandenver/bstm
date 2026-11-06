@@ -350,6 +350,8 @@ export const results = async (req, res) => {
     attempts: attempts.map(decorate), assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })) });
 };
 export const careers = async (req, res) => {
+  if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
+  const showCareerMatches = req.session.careerMatchSearchUserId === req.user.id;
   const [attempts, baseline, profile, courses] = await Promise.all([
     attemptsFor(req.user.id), Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
     StudentProfile.findOne({ where: { userId: req.user.id } }), Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } } })
@@ -376,7 +378,7 @@ export const careers = async (req, res) => {
     const areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
     return areas.some(area => track.required.includes(area));
   }).map(course => { const done = completedIds.has(course.id); const active = !done && ongoingIds.has(course.id); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
-  render(res, 'careers', { evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
+  render(res, 'careers', { showCareerMatches, evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
     evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore,
       areas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas.join(', ') : a.snapshot.domain,
       award: credentialAttemptIds.has(Number(a.id)) ? 'Certificate earned' : 'Course completed' })),
@@ -400,6 +402,7 @@ export const generateGuidance = async (req, res) => {
     const ai=await explainCareer(evidence,learning);
     if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
     req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
+    req.session.careerMatchSearchUserId = req.user.id;
     req.flash('success_msg','Career recommendations generated from your learning evidence.');
     if(json)return res.json({ok:true,redirect:'/student/careers#ai-results'});
     res.redirect('/student/careers#ai-results');

@@ -1,4 +1,21 @@
 (() => {
+  const matchLink = document.querySelector("[data-career-match-search]");
+  const matchLoading = document.querySelector("[data-career-match-loading]");
+  if (matchLink && matchLoading) {
+    matchLink.addEventListener("click", (event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (matchLink.dataset.searching) return;
+      matchLink.dataset.searching = "true";
+      matchLink.setAttribute("aria-disabled", "true");
+      matchLoading.hidden = false;
+      matchLoading.scrollIntoView({
+        block: "nearest",
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+      });
+      window.setTimeout(() => location.assign(matchLink.href), 850);
+    });
+  }
   const form = document.querySelector("[data-career-form]");
   if (!form) return;
   const button = form.querySelector("button[type=submit]"),
