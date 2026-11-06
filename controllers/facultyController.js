@@ -87,7 +87,7 @@ export const saveCourse = async (req, res) => {
       if(req.body.confirmReview!=='yes'||Number(req.body.version)!==c.version)fail('Review the current course version before publishing.',409);
       if(c.published)fail('This course is already published.',409);
       if(!await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'},transaction}))fail('Generate a course from your saved materials first.');
-      input={...plain(c),questions:c.questions.map(q=>({...q,reviewed:true}))};
+      input={...plain(c),modules:c.modules.map(module=>({...module,lessons:module.lessons.map(lesson=>({...lesson,sourceReviewed:true}))})),questions:c.questions.map(q=>({...q,reviewed:true}))};
     }
     const data=courseInput(input,{draft:!publish});
     const wasPublished = Boolean(c?.published);
@@ -105,13 +105,20 @@ export const saveCourse = async (req, res) => {
         const norm = value => String(value || '').normalize('NFKC').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/\s+/g,' ').trim().toLowerCase();
         for (const module of data.modules) for (const lesson of module.lessons) {
           const evidence = sourceRows.find(row => row.reference === lesson.sourceReference);
-          if (!lesson.sourceReviewed || (lesson.sourceQuote && (!evidence || !norm(evidence.text).includes(norm(lesson.sourceQuote)))) || (!lesson.sourceQuote && lesson.sourceReference && !lesson.sourceNeedsReview))
-            fail('Review every generated lesson and either confirm its direct source quote or mark it as reviewed without a direct citation.', 422);
+          if (!lesson.sourceReviewed) fail('Review every generated lesson in the editor or confirm the complete review in student preview before publishing.', 422);
+          if (!lesson.sourceQuote || !evidence || !norm(evidence.text).includes(norm(lesson.sourceQuote))) {
+            lesson.sourceQuote = '';
+            lesson.sourceNeedsReview = true;
+            if (!evidence) lesson.sourceReference = 'Manual faculty review · no direct citation';
+          }
         }
         for (const question of data.questions) {
           const evidence = sourceRows.find(row => row.reference === question.sourceReference);
-          if ((question.sourceQuote && (!evidence || !norm(evidence.text).includes(norm(question.sourceQuote)))) || (!question.sourceQuote && question.sourceReference && !question.sourceNeedsReview))
-            fail('Review each assessment citation or mark the question as general course knowledge without a direct citation.', 422);
+          if (!question.sourceQuote || !evidence || !norm(evidence.text).includes(norm(question.sourceQuote))) {
+            question.sourceQuote = '';
+            question.sourceNeedsReview = true;
+            if (!evidence) question.sourceReference = 'Manual faculty review · no direct citation';
+          }
         }
       }
     }
@@ -124,7 +131,7 @@ export const saveCourse = async (req, res) => {
     await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: c.published ? 'published' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, c.published ? 'course.published' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', publish ? 'Course published. Certificates and badges remain locked until an Admin approves your credential configuration.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? 'Course published and available to students. Completion certificates follow the published course rules.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
 export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
 export const deleteDraft = async (req, res) => {
