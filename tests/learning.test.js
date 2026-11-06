@@ -60,31 +60,4 @@ test('signup validates identity fields, confirmation and bcrypt byte limits', ()
   assert.equal(registrationInput(input).email, 'test@example.com');
   assert.equal(registrationInput(input).studentId, '2026-001');
   assert.equal(registrationInput(input).role, 'student');
-  assert.throws(() => registrationInput({ ...input, account_type: 'admin' }), /Student or Faculty/);
-  assert.throws(() => registrationInput({ ...input, confirm_password: 'wrong' }), /match/);
-  assert.throws(() => registrationInput({ ...input, password: 'x' }), /password/);
-  assert.throws(() => registrationInput({ ...input, password: '🙂'.repeat(30), confirm_password: '🙂'.repeat(30) }), /password/);
-});
-test('profile validates only the academic details kept in the student profile', () => {
-  const input = { yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', bio: 'Tourism student' };
-  assert.equal(profileInput(input).complete, true);
-  assert.equal(profileInput(input).bio, 'Tourism student');
-  assert.equal(profileInput(input).ojtHours, undefined);
-  assert.throws(() => profileInput({ ...input, yearLevel: '1st year ' + 'x' }), /year level/);
-  assert.throws(() => profileInput({ ...input, academicYear: '2026' }), /academic year/);
-});
-test('starter course references, question keys and baseline cover four areas', () => {
-  for (const c of starterCourses) {
-    const modules = new Set(c.modules.map(m => m.id));
-    const lessons = c.modules.flatMap(m => m.lessons.map(l => l.id));
-    assert.equal(new Set(lessons).size, lessons.length);
-    assert.equal(new Set(c.questions.map(q => q.id)).size, c.questions.length);
-    for (const question of c.questions) {
-      assert.ok(modules.has(question.moduleId));
-      assert.ok(question.answer >= 0 && question.answer < question.options.length);
-    }
-    assert.ok(c.modules.every(m => c.questions.some(q => q.moduleId === m.id)));
-  }
-  assert.equal(new Set(baselineQuestions.map(q => q.domain)).size, 4);
-  assert.equal(starsFor(75), 1); assert.equal(starsFor(85), 2); assert.equal(starsFor(95), 3);
-});
+  assert.throws(() => registrationInp

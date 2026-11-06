@@ -91,43 +91,4 @@ export async function courseJobStatus(userId, id) {
       status: 404,
     });
   // A single-instance service restart cannot continue an in-memory provider task.
-  // Mark it retryable instead of displaying a permanent spinner.
-  if (job.status === "running" && !active.has(job.id)) {
-    await AiJob.update(
-      { status: "failed", errorCode: "COURSE_JOB_INTERRUPTED" },
-      { where: { id: job.id, status: "running" } },
-    );
-    await job.reload();
-  }
-  const progress = active.get(job.id);
-  const config = await courseAiConfiguration(),
-    providers = config.fallback ? ["gemini", "groq"] : [config.provider];
-  return {
-    id: job.id,
-    status: job.status,
-    sourceId: job.sourceId,
-    completed: job.state?.batches?.length || 0,
-    total: job.state?.total || 0,
-    ...(progress || {}),
-    ...(job.courseId
-      ? {
-          redirect: `/faculty/courses/${job.courseId}/edit`,
-          preview: `/faculty/courses/${job.courseId}/preview`,
-        }
-      : {}),
-    ...(job.status === "review" ? { blueprint: job.state?.blueprint, options: job.state?.options, phase: "blueprint-review" } : {}),
-    ...(job.status === "failed"
-      ? {
-          code: job.errorCode,
-          message: generationError(job.errorCode).message,
-          reference: job.state?.reference,
-          retryAt: job.state?.retryAt,
-          canResume:
-            job.state?.options?.consent === true &&
-            providers.every((provider) =>
-              job.state.options.consentProviders?.includes(provider),
-            ),
-        }
-      : {}),
-  };
-}
+  // Mark it retryable instead 
