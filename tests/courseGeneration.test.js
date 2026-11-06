@@ -85,9 +85,9 @@ await test("AI responses are grounded, mapped to server IDs and always require r
   assert.equal(result.domain, domains[0]);
   const bad = draft();
   bad.questions[0].sourceQuote = "A completely invented source statement.";
-  assert.throws(() => validateGeneratedDraft(bad, sections, options), {
-    code: "COURSE_SOURCE_UNSUPPORTED",
-  });
+  const reviewedWithoutQuote = validateGeneratedDraft(bad, sections, options);
+  assert.equal(reviewedWithoutQuote.questions[0].sourceQuote, "");
+  assert.equal(reviewedWithoutQuote.questions[0].sourceNeedsReview, true);
   assert.throws(
     () =>
       validateGeneratedDraft({ ...draft(), questions: [] }, sections, options),
@@ -101,6 +101,7 @@ await test("AI responses are grounded, mapped to server IDs and always require r
     sourceSections({ sections: JSON.stringify(sections) }),
     sections,
   );
+  assert.equal(sourceSections({ sections: [{ reference: "Page 1", text: " " }] })[0].text, "");
 });
 await test("missing provider configuration leaves the saved source available", async () => {
   delete process.env.GEMINI_API_KEY;
@@ -352,3 +353,4 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
     await closeResources();
   }
 });
+

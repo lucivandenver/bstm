@@ -262,8 +262,8 @@ export async function requestCourseAi(config, input) {
         : process.env.NODE_ENV === "test"
           ? 0
           : config.provider === "groq"
-            ? 60000
-            : 12000;
+            ? 1500
+            : 2500;
     const wait = Math.max(0, nextRequestAt - Date.now());
     if (wait) {
       input.onStatus?.({
@@ -313,3 +313,4 @@ export async function requestCourseAi(config, input) {
     }
   }, input.onStatus);
 }
+

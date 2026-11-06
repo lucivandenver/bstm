@@ -57,10 +57,16 @@ export const submitCredential = async (req, res) => {
   req.flash('success_msg','Transparent signature and credential configuration sent to Admin for review. Existing issued awards retain their original signatures.');res.redirect('/faculty/credentials');
 };
 export const courses = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] });
+  let courses, databaseNotice='';
+  try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] }); }
+  catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
   const ids = courses.map(c => c.id);
-  const [attempts, requests, assignments] = await Promise.all([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }), CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }), CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
-  render(res, 'courses', { title: 'My courses', courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+  let attempts=[],requests=[],assignments=[];
+  if(ids.length){
+    const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
+    [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
+  }
+  render(res, 'courses', { title: 'My courses', databaseNotice, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -93,14 +99,19 @@ export const saveCourse = async (req, res) => {
     if (publish) {
       publishCheck(data);
       const generatedJob = await AiJob.findOne({ where: { courseId: c.id, status: 'completed', type: 'course-draft' }, transaction });
-      if (generatedJob && data.modules.some(m => m.lessons.some(l => l.sourceReference))) {
+      if (generatedJob) {
         const source = await SourceDocument.findOne({ where: { id: generatedJob.sourceId, ownerId: req.user.id }, transaction });
         const sourceRows = source ? sourceSections(source) : [];
         const norm = value => String(value || '').normalize('NFKC').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/\s+/g,' ').trim().toLowerCase();
         for (const module of data.modules) for (const lesson of module.lessons) {
           const evidence = sourceRows.find(row => row.reference === lesson.sourceReference);
-          if (!evidence || !lesson.sourceQuote || !norm(evidence.text).includes(norm(lesson.sourceQuote)) || !lesson.sourceReviewed)
-            fail('Review and verify every generated lesson source reference and quote before publishing.', 422);
+          if (!lesson.sourceReviewed || (lesson.sourceQuote && (!evidence || !norm(evidence.text).includes(norm(lesson.sourceQuote)))) || (!lesson.sourceQuote && lesson.sourceReference && !lesson.sourceNeedsReview))
+            fail('Review every generated lesson and either confirm its direct source quote or mark it as reviewed without a direct citation.', 422);
+        }
+        for (const question of data.questions) {
+          const evidence = sourceRows.find(row => row.reference === question.sourceReference);
+          if ((question.sourceQuote && (!evidence || !norm(evidence.text).includes(norm(question.sourceQuote)))) || (!question.sourceQuote && question.sourceReference && !question.sourceNeedsReview))
+            fail('Review each assessment citation or mark the question as general course knowledge without a direct citation.', 422);
         }
       }
     }
@@ -147,7 +158,9 @@ const sourceView = async (res, source, body, error) => render(res, 'source', { t
 export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
-  const reject=(message,status=422)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
+  const progressStream=req.get('accept')?.includes('application/x-ndjson');
+  const emit=event=>{if(!progressStream)return;if(!res.headersSent){res.status(200).type('application/x-ndjson');res.set('Cache-Control','no-cache, no-transform');res.set('X-Accel-Buffering','no');res.flushHeaders?.();}res.write(`${JSON.stringify(event)}\n`);res.flush?.();};
+  const reject=(message,status=422)=>{if(progressStream){if(!res.headersSent)res.status(status).type('application/x-ndjson').set('Cache-Control','no-cache, no-transform');res.write(`${JSON.stringify({ok:false,message,done:true})}\n`);return res.end();}if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
   const files=req.files||(req.file?[req.file]:[]),sourceId=req.body.sourceId;
   if(!files.length)return reject('Choose at least one PDF, DOCX, PPTX or TXT file.');
   if(files.reduce((n,f)=>n+f.buffer.length,0)>sourceLimits.requestBytes)return reject('Upload at most 100 MB per request. The upload queue sends one file at a time.',413);
@@ -156,7 +169,8 @@ export const upload = async (req, res) => {
   for(const file of files){
     try{
       const key=createHash('sha256').update(file.buffer).digest('hex');
-      const sections=await extractSource(file);
+      emit({phase:'extracting',filename:text(file.originalname,120),current:0,total:0,unit:'pages'});
+      const sections=await extractSource(file,{onProgress:progress=>emit({...progress,filename:text(file.originalname,120)})});
       extracted.push({name:text(file.originalname,120),key,sections:sections.map(section=>({...section,documentKey:key,documentName:text(file.originalname,120),reference:`${text(file.originalname,80)} [${key.slice(0,8)}] · ${section.reference}`}))});
     }catch(error){failed.push({filename:text(file.originalname,120),message:error.status?error.message:'Could not decode this document. Use a valid PDF, DOCX, PPTX or TXT file.'});}
   }
@@ -177,6 +191,7 @@ export const upload = async (req, res) => {
     });
   }catch(error){if(error.status)return reject(error.message,error.status);const safe=safeGenerationError(error,'upload-save');return reject(`${safe.message} Reference: ${safe.reference}`,safe.status);}
   const redirect=`/faculty/sources/${source.id}`;
+  if(progressStream){if(!res.headersSent)res.status(200).type('application/x-ndjson').set('Cache-Control','no-cache, no-transform');res.write(`${JSON.stringify({ok:true,done:true,sourceId:source.id,redirect,failed,duplicates:[...new Set(duplicateFiles)],files:extracted.map(f=>f.name)})}\n`);return res.end();}
   if(json)return res.json({ok:true,sourceId:source.id,redirect,failed,duplicates:[...new Set(duplicateFiles)],files:extracted.map(f=>f.name)});
   const notes=[...failed.map(f=>`${f.filename}: ${f.message}`),...(duplicateFiles.length?[`Duplicate files skipped: ${[...new Set(duplicateFiles)].join(', ')}.`]:[])];
   req.flash(notes.length?'error_msg':'success_msg',notes.length?notes.join(' · '):'Source collection saved. Review its extraction quality, then create a blueprint before generating lessons and assessments.');res.redirect(redirect);
@@ -212,7 +227,7 @@ export const approveBlueprint = async (req, res) => {
     const modules = titles.map((title, i) => {
       const reference = text(refs[i], 200), section = sections.find(s => s.reference === reference);
       if (!section) throw generationError('COURSE_SOURCE_UNSUPPORTED');
-      return { title, outcomes: text(outcomesByModule[i], 1000).split(/\r?\n/).map(v => text(v, 300)).filter(Boolean).slice(0, 5), sourceReference: reference };
+      return { title, outcomes: text(outcomesByModule[i], 1000).split(/\r?\n/).map(v => text(v, 300)).filter(Boolean).slice(0, 5), sourceReference: reference, sourceNeedsReview: !section.text.trim() || original.modules[i]?.sourceNeedsReview === true };
     });
     const areas = [].concat(req.body.competencyAreas || []).filter(a => domains.includes(a));
     if (!areas.length) return res.status(422).json({ ok: false, message: 'Select at least one competency area.' });
@@ -336,3 +351,4 @@ export const announce = async (req, res) => {
   await Notification.bulkCreate(students.map(s => ({ userId: s.id, title, message: body, href: '/student/notifications' })));
   await audit(req.user.id, 'faculty.announcement_sent', 'faculty', req.user.id, { recipients: students.length }); req.flash('success_msg', 'Announcement sent to your assigned students.'); res.redirect('/faculty/announcements');
 };
+

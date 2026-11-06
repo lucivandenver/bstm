@@ -4,7 +4,7 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fail } from "./courseAuthoring.js";
 import { sourceLimits as limits } from "./sourceLimits.js";
 const clean = (s) => s.replace(/\s+/g, " ").trim();
-export async function extractSource(file) {
+export async function extractSource(file, { onProgress } = {}) {
   if (!file?.buffer?.length || file.buffer.length > limits.fileBytes)
     fail("Upload a PDF, DOCX, PPTX or TXT up to 100 MB.");
   const ext = file.originalname.split(".").pop().toLowerCase();
@@ -30,6 +30,7 @@ export async function extractSource(file) {
           text: clean(content.items.map((i) => i.str || "").join(" ")),
         });
         page.cleanup();
+        onProgress?.({ phase: 'extracting', current: n, total: pdf.numPages, unit: 'pages' });
         if (
           sections.reduce((sum, s) => sum + s.text.length, 0) >
           limits.textCharacters
@@ -59,6 +60,7 @@ export async function extractSource(file) {
         .split(/\n\s*\n/)
         .filter((s) => s.trim())
         .map((s, i) => ({ reference: `Paragraph ${i + 1}`, text: clean(s) }));
+      onProgress?.({ phase: 'extracting', current: 1, total: 1, unit: 'document' });
     } else {
       const files = entries
         .filter((e) => /^ppt\/slides\/slide\d+\.xml$/.test(e.name))
@@ -86,6 +88,7 @@ export async function extractSource(file) {
               .join(" "),
           ),
         });
+        onProgress?.({ phase: 'extracting', current: sections.length, total: files.length, unit: 'slides' });
       }
     }
   } else if (ext === "txt") {
@@ -95,19 +98,18 @@ export async function extractSource(file) {
       .split(/\n\s*\n/)
       .filter((s) => s.trim())
       .map((s, i) => ({ reference: `Paragraph ${i + 1}`, text: clean(s) }));
+    onProgress?.({ phase: 'extracting', current: 1, total: 1, unit: 'document' });
   } else
     fail(
       "Supported formats: PDF, DOCX, PPTX and TXT. Save legacy DOC files as DOCX or PDF first.",
     );
   sections = sections.filter((s) => s.text);
   const length = sections.reduce((n, s) => n + s.text.length, 0);
-  if (length < 300)
-    fail(
-      "Not enough selectable text. Scanned documents need OCR first; upload a text-based document.",
-    );
+  if (length === 0) sections = [{ reference: 'No searchable text · manual verification required', text: '' }];
   if (length > limits.textCharacters || sections.length > limits.sections)
     fail(
       "Source exceeds 1,000,000 extracted characters or 10,000 sections. Add remaining material to another course.",
     );
   return sections;
 }
+
