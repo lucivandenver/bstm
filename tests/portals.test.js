@@ -91,7 +91,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal(legacyEditor.status,200);
     assert.match(legacyEditor.html,/&quot;modules&quot;:\s*\[/);
     assert.equal((await f.get('/faculty/courses')).status,200);
-    assert.equal((await f.get('/faculty/credentials')).status,200);
+    r=await f.get('/faculty/credentials');assert.equal(r.status,200);
+    for(const logo of ['/images/certificates/minsu-seal.png','/images/certificates/cbm-logo.png','/images/certificates/cts-logo.png'])assert.ok(r.html.includes(logo),`faculty certificate preview includes ${logo}`);
     await c.update({modules:draft.modules});
     assert.equal((await f2.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify(draft),action:'publish'})).status,404);
     assert.equal((await s.get(`/faculty/courses/${c.id}/edit`)).status,403);
@@ -132,13 +133,18 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await f.get('/faculty/announcements');await f.post('/faculty/announcements',{title:'Assigned update',body:'Your next learning task is ready.'});assert.ok(await Notification.count({where:{userId:student.id,title:'Assigned update'}}));assert.equal(await Notification.count({where:{userId:outsider.id,title:'Assigned update'}}),0);
     r=await s.get('/notifications/count');assert.ok(JSON.parse(r.html).unread>0);
     const notification=await Notification.create({userId:student.id,title:'Read one notice',message:'A single notification should update this account count.',href:'/student'});
+    await new Promise(resolve=>setTimeout(resolve,3));
+    const remainingNotice=await Notification.create({userId:student.id,title:'Keep this unread notice',message:'Opening another notification should leave this one visible.',href:'/student'});
     const outsiderNotice=await Notification.create({userId:outsider.id,title:'Private notice',message:'This belongs to another account.',href:'/student'});
+    r=await s.get('/notifications/feed');let feed=JSON.parse(r.html);assert.ok(feed.notifications.some(item=>item.id===notification.id));assert.ok(feed.notifications.some(item=>item.id===remainingNotice.id));
     assert.equal((await o.post(`/notifications/${notification.id}/open`)).status,404);
     const beforeOpen=await Notification.count({where:{userId:student.id,readAt:null}});
     assert.equal((await s.post(`/notifications/${notification.id}/open`)).status,302);
     assert.equal(await Notification.count({where:{userId:student.id,readAt:null}}),beforeOpen-1);
+    r=await s.get('/notifications/feed');feed=JSON.parse(r.html);assert.ok(!feed.notifications.some(item=>item.id===notification.id),'read notification disappears from dropdown feed');assert.ok(feed.notifications.some(item=>item.id===remainingNotice.id),'other unread notifications stay in dropdown');
     r=await s.request('/notifications/read',{method:'POST',headers:{Accept:'application/json','X-CSRF-Token':s.csrf}});
     assert.equal(r.status,200);assert.equal(JSON.parse(r.html).unread,0);
+    r=await s.get('/notifications/feed');feed=JSON.parse(r.html);assert.equal(feed.unread,0);assert.equal(feed.notifications.length,0,'mark all clears all dropdown notification content');
     assert.equal((await Notification.findByPk(outsiderNotice.id)).readAt,null,'mark all as read must only update the current user');
     await f.get('/faculty/upload');const zip=new JSZip();zip.file('word/document.xml',`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${draft.questions[0].sourceQuote.repeat(8)}</w:t></w:r></w:p></w:body></w:document>`);const form=new FormData();form.append('sources',new Blob([await zip.generateAsync({type:'nodebuffer'})]),'teaching.docx');r=await f.request('/faculty/upload',{method:'POST',headers:{'X-CSRF-Token':f.csrf},body:form});assert.equal(r.status,302);const uploaded=await SourceDocument.findOne({where:{filename:'teaching.docx'}});assert.ok(uploaded.sections[0].text);assert.equal((await f2.get(`/faculty/sources/${uploaded.id}`)).status,404);
     await s.get('/student/profile');const photo=new FormData();photo.append('kind','photo');photo.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7S8AAAAASUVORK5CYII=','base64')]),'profile.png');r=await s.request('/student/profile/files',{method:'POST',headers:{'X-CSRF-Token':s.csrf},body:photo});assert.equal(r.status,302);const {StudentFile}=await import('../models/portalModels.js');const file=await StudentFile.findOne();assert.equal((await o.get('/files/'+file.id)).status,404);assert.equal((await f.get('/files/'+file.id)).status,200);assert.equal((await s.get('/files/'+file.id)).status,200);

@@ -65,7 +65,8 @@ await test('Admin management is protected and Faculty/Student registration remai
     r = await faculty.get('/faculty'); assert.ok(!r.html.includes('Student notice'));
     await admin.post('/admin/careers', { title: 'Visitor Services Assistant', focus: 'Visitor services', required: ['Communication', 'Workplace'], active: 'true' });
     assert.equal(await CareerPath.count({ where: { title: 'Visitor Services Assistant' } }), 1);
-    r = await outsider.get('/student/careers'); assert.ok(r.html.includes('Visitor Services Assistant'));
+    r = await outsider.get('/student/careers'); assert.ok(r.html.includes('Your matches will appear here')); assert.ok(!r.html.includes('Visitor Services Assistant'));
+    r = await outsider.get('/student/careers?find=matches'); assert.ok(r.html.includes('Visitor Services Assistant'));
     const firstPath = await CareerPath.findOne(); const previousTitle = firstPath.title;
     await firstPath.update({ title: 'Renamed validated pathway' }); await seedAdministration();
     assert.equal(await CareerPath.count({ where: { title: previousTitle } }), 0, 'seed must preserve admin renames');
