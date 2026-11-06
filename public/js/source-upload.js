@@ -26,17 +26,30 @@
       const xhr = new XMLHttpRequest();
       xhr.open("POST", form.action);
       xhr.timeout = 180000;
-      xhr.setRequestHeader("Accept", "application/json");
+      xhr.setRequestHeader("Accept", "application/x-ndjson, application/json");
       xhr.setRequestHeader("X-CSRF-Token", form.elements._csrf.value);
+      let readAt = 0, partial = "", finalData = null;
+      const consumeProgress = () => {
+        const chunk = xhr.responseText.slice(readAt); readAt = xhr.responseText.length;
+        const lines = (partial + chunk).split("\n"); partial = lines.pop() || "";
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line);
+            if (event.done) finalData = event;
+            else if (event.phase === "extracting") status.textContent = event.total
+              ? `${event.filename}: extracting text · ${event.current} of ${event.total} ${event.unit}`
+              : `${event.filename}: upload received · starting text extraction…`;
+          } catch {}
+        }
+      };
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable)
-          status.textContent = `${file.name}: uploading ${Math.round((e.loaded / e.total) * 100)}% · extracting text after upload…`;
+          status.textContent = `${file.name}: uploading ${Math.round((e.loaded / e.total) * 100)}%`;
       };
       xhr.onload = () => {
-        let data;
-        try {
-          data = JSON.parse(xhr.responseText);
-        } catch {}
+        consumeProgress();
+        let data = finalData;
+        if (!data) try { data = JSON.parse(xhr.responseText); } catch {}
         if (xhr.status >= 200 && xhr.status < 300 && data?.ok) resolve(data);
         else
           reject(
@@ -58,6 +71,7 @@
             "Extraction took too long. Retry this file; confirmed files stay saved.",
           ),
         );
+      xhr.onprogress = consumeProgress;
       xhr.send(body);
     });
   form.addEventListener("submit", async (e) => {
@@ -174,3 +188,4 @@
     }
   });
 })();
+

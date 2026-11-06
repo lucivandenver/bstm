@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { Op } from 'sequelize';
 import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
-import { finalizeAttempt, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
+import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
 import { CareerPath } from '../models/adminModels.js';
 import { setting, genders } from '../services/accounts.js';
@@ -365,11 +365,14 @@ export const generateGuidance = async (req, res) => {
   }catch(error){return reject(error.code?error.message:'AI guidance is temporarily unavailable. Your previous results and rule-based pathways remain available.',error.status||503);}
 };
 export const achievements = async (req, res) => {
-  const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const allAttempts = await attemptsFor(req.user.id);
   const completed = allAttempts.filter(a => a.status === 'completed').sort((a,b) => new Date(a.completedAt) - new Date(b.completedAt));
+  const existing = await Credential.findAll({ where: { userId: req.user.id }, attributes: ['attemptId'] });
+  const issuedAttempts = new Set(existing.map(row => Number(row.attemptId)));
+  for (const attempt of completed) if (attempt.snapshot.certificateEnabled !== false && !issuedAttempts.has(Number(attempt.id))) await ensureCompletionCredential(attempt, req.user);
+  const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
-  const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved !== true && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
+  const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
   render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), starsText: '★'.repeat(c.stars) })) });
 };
 async function ownedCredential(req) {
@@ -397,12 +400,13 @@ export const certificate = async (req, res) => {
   const url = `${appUrl}/verify/${c.id}`;
   doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`,75,477,{width:610,align:'center',link:url});
   doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`,75,499,{width:610,align:'center'});
-    const signatory = c.adminName || await setting('certificateSignatory',''), adminPosition = c.adminPosition || await setting('certificateSignatoryPosition','Administrator'), adminSignature = c.adminSignature || await setting('adminSignature',''), facultySignature = c.facultySignature || request?.facultySignature || '', facultyAccount = request ? await User.findByPk(request.facultyId) : null, facultyName = c.facultyName || facultyAccount?.name || '', facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
+    const systemIssued = c.adminName === 'CareerBridge Learning System';
+    const signatory = c.adminName || await setting('certificateSignatory',''), adminPosition = c.adminPosition || (systemIssued ? 'System-issued completion record' : await setting('certificateSignatoryPosition','Administrator')), adminSignature = c.adminSignature || (systemIssued ? '' : await setting('adminSignature','')), facultySignature = c.facultySignature || request?.facultySignature || '', facultyAccount = request ? await User.findByPk(request.facultyId) : null, facultyName = c.facultyName || facultyAccount?.name || '', facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
     if (facultySignature) { const raw = Buffer.from(facultySignature.split(',')[1], 'base64'); doc.image(raw,175,455,{fit:[150,54],align:'center'}); }
     if (adminSignature) { const raw = Buffer.from(adminSignature.split(',')[1], 'base64'); doc.image(raw,535,455,{fit:[150,54],align:'center'}); }
     if (facultyName) doc.fillColor('#172533').fontSize(9).text(facultyName,175,510,{width:150,height:18,align:'center'});
     if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,535,510,{width:150,height:18,align:'center'});
-    doc.fillColor('#64748b').fontSize(8).text(facultyPosition,175,530,{width:150,height:20,align:'center'});
+    if (facultyName || facultySignature) doc.fillColor('#64748b').fontSize(8).text(facultyPosition,175,530,{width:150,height:20,align:'center'});
     doc.text(adminPosition,535,530,{width:150,height:20,align:'center'});
   const qr = await QRCode.toBuffer(url,{width:90,margin:1});doc.image(qr,728,478,{width:66});doc.end();
 };
@@ -503,3 +507,4 @@ export const reviewAnswers = async (req,res) => {
   if (a.snapshot.policy?.feedbackTiming === 'after-completion' && a.status !== 'completed') return fail(res,'Answer explanations are released after course completion.',403);
   render(res,'review',{ title:'Assessment feedback', attempt: decorate(plain(a)), questions: scopeQuestions(a,scope).map(q => ({ prompt:q.prompt, answer:q.options[q.answer], explanation:q.explanation, sourceReference:q.sourceReference })) });
 };
+
