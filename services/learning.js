@@ -54,7 +54,7 @@ export function checkChallenge(token, userId, scope) {
 }
 export function careerMatches(attempts, baseline, interest = '', tracks = defaultCareerTracks, practicals = []) {
   const latest = new Map();
-  for (const attempt of [...attempts].sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt))) {
+  for (const attempt of [...attempts].sort((a, b) => new Date(a.completedAt || a.createdAt || 0) - new Date(b.completedAt || b.createdAt || 0))) {
     if (attempt.status === 'completed') latest.set(attempt.courseId, attempt);
   }
   const evidence = Object.fromEntries(domains.map(domain => [domain, []]));
@@ -62,14 +62,21 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
     const areas = Array.isArray(attempt.snapshot.competencyAreas) && attempt.snapshot.competencyAreas.length
       ? attempt.snapshot.competencyAreas
       : [attempt.snapshot.domain];
-    for (const domain of new Set(areas)) if (evidence[domain]) evidence[domain].push(attempt.finalScore);
+    const score = attempt.finalScore === null || attempt.finalScore === undefined ? NaN : Number(attempt.finalScore);
+    for (const domain of new Set(areas)) if (evidence[domain] && Number.isFinite(score) && score >= 0 && score <= 100) evidence[domain].push(score);
   }
-  const scores = {};
+  const scores = {}, knowledgeScores = {};
   for (const domain of domains) {
     const courseScores = evidence[domain];
-    scores[domain] = courseScores.length ? Math.round(courseScores.reduce((a, b) => a + b, 0) / courseScores.length) : baseline?.scores?.[domain] ?? null;
+    const courseScore = courseScores.length ? courseScores.reduce((a, b) => a + b, 0) / courseScores.length : null;
+    const rawDiagnostic = baseline?.scores?.[domain] == null ? NaN : Number(baseline.scores[domain]);
+    const diagnosticScore = Number.isFinite(rawDiagnostic) && rawDiagnostic >= 0 && rawDiagnostic <= 100 ? rawDiagnostic : null;
+    knowledgeScores[domain] = courseScore !== null && diagnosticScore !== null
+      ? Math.round((courseScore + diagnosticScore) / 2)
+      : courseScore !== null ? Math.round(courseScore) : diagnosticScore;
+    scores[domain] = knowledgeScores[domain];
   }
-  const knowledgeScores = { ...scores }, practicalScores = {};
+  const practicalScores = {};
   for (const domain of domains) {
     const values = [];
     for (const attempt of latest.values()) if ((Array.isArray(attempt.snapshot.competencyAreas) && attempt.snapshot.competencyAreas.length ? attempt.snapshot.competencyAreas : [attempt.snapshot.domain]).includes(domain)) {
@@ -80,14 +87,26 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
     practicalScores[domain] = values.length ? Math.round(values.reduce((a,b) => a+b,0) / values.length) : null;
     if (scores[domain] !== null && practicalScores[domain] !== null) scores[domain] = Math.round(scores[domain] * 0.7 + practicalScores[domain] * 0.3);
   }
+  const interestWords = String(interest || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  const stopWords = new Set(['and', 'the', 'for', 'with', 'area', 'career', 'work', 'jobs', 'job']);
+  const interestTerms = new Set(interestWords.filter(word => word.length > 2 && !stopWords.has(word)));
   return { scores, knowledgeScores, practicalScores, tracks: tracks.map(track => {
-    const known = track.required.filter(d => scores[d] !== null);
-    const sufficient = known.length === track.required.length;
+    const required = [...new Set(Array.isArray(track.required) ? track.required.filter(d => domains.includes(d)) : [])];
+    const known = required.filter(d => scores[d] !== null);
+    const sufficient = required.length > 0 && known.length === required.length;
     const average = known.length ? known.reduce((sum, d) => sum + scores[d], 0) / known.length : 0;
-    const gaps = track.required.filter(d => scores[d] === null || scores[d] < 75);
-    return { ...track, rank: sufficient ? average : -1, label: !sufficient ? 'More evidence needed' : average >= 85 && !gaps.length ? 'Strong learning alignment' : 'Developing alignment',
-      explanation: !sufficient ? 'Complete assessments in each required area to develop this recommendation.' : `Your available knowledge evidence averages ${Math.round(average)}% across this pathway’s learning areas. This is not a probability of employment.`,
-      gaps, strengths: track.required.filter(d => scores[d] >= 75), preferred: Boolean(interest && String(interest).toLowerCase().includes(String(track.focus || track.title || '').split(' ')[0].toLowerCase())) };
+    const gaps = required.filter(d => scores[d] === null || scores[d] < 75);
+    const focusTerms = String(track.focus || track.title || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+    const preferred = focusTerms.some(word => word.length > 2 && !stopWords.has(word) && interestTerms.has(word));
+    const coverage = required.length ? Math.round(known.length / required.length * 100) : 0;
+    const rank = (known.length ? Math.round(average * 0.65 + coverage * 0.35) : 0) + (preferred ? 5 : 0);
+    const label = !sufficient ? 'More evidence needed' : average >= 85 && !gaps.length ? 'Strong learning alignment' : 'Developing alignment';
+    const explanation = !known.length
+      ? preferred ? 'This pathway matches your stated career interest. Your diagnostic and completed-course results have not assessed its required areas yet.' : 'Your diagnostic and completed-course results have not assessed this pathway’s required areas yet. Explore the connected courses to build evidence.'
+      : !sufficient ? `Your diagnostic and completed-course evidence covers ${known.length} of ${required.length} required areas, averaging ${Math.round(average)}% where assessed. The remaining areas are suggestions for your next learning steps.`
+        : `Your latest diagnostic and completed-course evidence averages ${Math.round(average)}% across this pathway’s learning areas. This is an evidence alignment score, not a probability of employment.`;
+    return { ...track, required, rank, coverage, assessedAreas: known.length, totalAreas: required.length, label, explanation,
+      gaps, strengths: required.filter(d => scores[d] >= 75), preferred };
   }).sort((a, b) => b.rank - a.rank) };
 }
 

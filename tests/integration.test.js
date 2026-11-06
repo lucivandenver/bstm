@@ -106,9 +106,9 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     download = await fetch(`${base}/student/credentials/${credential.id}/badge`, { headers: { cookie: student.cookie } });
     assert.equal(download.status, 200); assert.ok((await download.text()).includes('<svg'));
     response = await other.get(`/student/credentials/${credential.id}/certificate`); assert.equal(response.r.status, 404);
-    await student.get('/student/courses/1'); await student.post('/student/courses/1/enroll');
-    assert.equal(await CourseAttempt.count(), 2); assert.equal(await Credential.count(), 1);
-    assert.equal((await CourseAttempt.findOne({ where: { attemptNumber: 2 } })).completedLessons.length, 0);
+    await student.get('/student/courses/1'); response = await student.post('/student/courses/1/enroll');
+    assert.equal(response.status, 302); assert.match(response.headers.get('location'), /\/student\/learn\/1$/);
+    assert.equal(await CourseAttempt.count(), 1, 'a completed course must not create another attempt'); assert.equal(await Credential.count(), 1);
     await student.get('/student/assessment');
     const baseline = starterCourses.flatMap(c => c.questions.slice(0, 2));
     await student.post('/student/assessment', { challenge: issueChallenge(user.id, 'baseline'), ...Object.fromEntries(baseline.map(q => [`answers[${q.id}]`, String(q.answer)])) });

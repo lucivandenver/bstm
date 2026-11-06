@@ -13,7 +13,7 @@ import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notifica
 import { User } from '../models/userModel.js';
 import { text, email as normalizeEmail, profileInput } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
-import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, careerMatches } from '../services/learning.js';
+import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
 import { appUrl } from '../config/env.js';
@@ -22,6 +22,10 @@ const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 const render = (res, view, data = {}) => res.render(`student/${view}`, { nav: view, ...data });
 const fail = (res, message, status = 400) => res.status(status).render('student/message', { title: 'Unable to continue', message });
+async function activeCareerTracks() {
+  const configured = (await CareerPath.findAll({ where: { active: true } })).map(plain);
+  return configured.length ? configured : defaultCareerTracks.map(track => ({ ...track, qualifications: null, active: true }));
+}
 function localReturnPath(req, fallback) {
   const referer = req.get('referer');
   if (!referer) return fallback;
@@ -354,24 +358,43 @@ export const careers = async (req, res) => {
   const approvedFaculty = facultyIds.length ? await User.findAll({ where: { id: { [Op.in]: facultyIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
   const visibleIds = new Set(approvedFaculty.map(user => user.id));
   const eligibleCourses = courses.filter(course => visibleIds.has(course.ownerId));
-  const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
-  const learningContext = careerLearningContext(attempts, (await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+  const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, await activeCareerTracks());
+  const credentialRows = (await Credential.findAll({ where: { userId: req.user.id, revoked: false } })).map(plain);
+  const credentialAttemptIds = new Set(credentialRows.map(row => Number(row.attemptId)));
+  const learningContext = careerLearningContext(attempts, credentialRows);
   const fingerprint = careerFingerprint(evidence, learningContext);
   if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
-  const recommendations = eligibleCourses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(c => ({ ...plain(c), locked: c.prerequisites.some(id => !completedIds.has(Number(id))) }));
-  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => (course.competencyAreas || [course.domain]).some(area=>track.required.includes(area))).map(course => { const done = completedIds.has(course.id); const active = !done && attempts.some(a => a.courseId === course.id && a.status === 'ongoing'); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
-  render(res, 'careers', { evidenceDate: date(new Date()), evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore })), hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
+  const ongoingIds = new Set(attempts.filter(a => a.status === 'ongoing').map(a => a.courseId));
+  const recommendations = eligibleCourses.filter(course => !completedIds.has(course.id) && !ongoingIds.has(course.id)).map(row => {
+    const course = plain(row), areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
+    const gaps = areas.filter(area => !Number.isFinite(evidence.scores[area]) || evidence.scores[area] < 75);
+    const relatedPaths = evidence.tracks.filter(track => track.required.some(area => areas.includes(area)));
+    return { ...course, locked: (course.prerequisites || []).some(id => !completedIds.has(Number(id))), gapCount: gaps.length, relatedPathCount: relatedPaths.length };
+  }).filter(course => course.gapCount > 0).sort((a, b) => b.gapCount - a.gapCount || b.relatedPathCount - a.relatedPathCount || a.title.localeCompare(b.title)).slice(0, 6);
+  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => {
+    const areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
+    return areas.some(area => track.required.includes(area));
+  }).map(course => { const done = completedIds.has(course.id); const active = !done && ongoingIds.has(course.id); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
+  render(res, 'careers', { evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
+    evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore,
+      areas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas.join(', ') : a.snapshot.domain,
+      award: credentialAttemptIds.has(Number(a.id)) ? 'Certificate earned' : 'Course completed' })),
+    hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
     developingCourses:learningContext.developing, aiReady: aiConfiguration().ready, ai: req.session.careerAi || null });
 };
 export const generateGuidance = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
   if(req.body.consent!=='yes')return reject('Confirm permission to send your anonymised learning evidence to Gemini.');
-  const attempts=await attemptsFor(req.user.id),baseline=await Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]});
+  const [attempts,baseline,profile]=await Promise.all([
+    attemptsFor(req.user.id),
+    Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]}),
+    StudentProfile.findOne({where:{userId:req.user.id}}),
+  ]);
   if(!baseline&&!attempts.some(a=>a.status==='completed'||a.completedLessons?.length||Object.keys(a.quizScores||{}).length))return reject('Start learning and save some course progress, or complete an assessment, before finding career directions.');
   try{
-    const evidence=await buildEvidence(attempts,plain(baseline),'',(await CareerPath.findAll({where:{active:true}})).map(plain));
+    const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,await activeCareerTracks());
     if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
     const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
     const ai=await explainCareer(evidence,learning);
