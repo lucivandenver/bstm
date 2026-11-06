@@ -143,7 +143,7 @@ export async function generateBlueprint(source, options, onStatus) {
   return { title: text(options.courseTitle, 160) || text(raw.title, 160), description: text(raw.description, 2000), outcomes: raw.outcomes.map(o => text(o, 500)).filter(Boolean).slice(0, 12), competencyAreas: areas, modules };
 }
 const normalize = (s) =>
-  s
+  String(s || "")
     .normalize("NFKC")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
@@ -442,12 +442,16 @@ export async function generateCourse(userId, source, options) {
       ? (() => {
           const modules = options.blueprint.modules;
           if (modules.length > count) throw generationError("COURSE_INPUT", "The approved blueprint has more modules than requested assessment questions. Revise it and retry.");
-          return modules.map((module, i) => {
-            const maxChars = config.provider === "groq" ? 6000 : limits.chunkCharacters;
-            const cited = sections.filter(s => s.reference === module.sourceReference).map(s => ({ ...s, text: s.text.slice(0, maxChars) }));
-            if (!cited.length) throw generationError("COURSE_SOURCE_UNSUPPORTED");
-            return { sections: cited, blueprintModule: module, questionCount: Math.floor(count / modules.length) + (i < count % modules.length ? 1 : 0) };
+          const maxChars = config.provider === "groq" ? 6000 : limits.chunkCharacters;
+          const fallback = courseBatches(sections, 1, maxChars);
+          const fallbackByModule = modules.map((_, moduleIndex) => fallback.filter((_, batchIndex) => batchIndex % modules.length === moduleIndex));
+          const planned = modules.flatMap((module, moduleIndex) => {
+            const cited = sections.filter(section => section.reference === module.sourceReference);
+            const sourceBatches = cited.length ? courseBatches(cited, 1, maxChars) : fallbackByModule[moduleIndex];
+            const batches = sourceBatches.length ? sourceBatches : fallback.slice(moduleIndex % fallback.length, moduleIndex % fallback.length + 1);
+            return batches.map((batch, partIndex) => ({ ...batch, blueprintModule: { ...module, title: batches.length > 1 ? `${module.title} · Part ${partIndex + 1}` : module.title, sourceNeedsReview: !cited.length || module.sourceNeedsReview === true } }));
           });
+          return planned.map((batch, i) => ({ ...batch, questionCount: Math.max(1, Math.floor(count / planned.length) + (i < count % planned.length ? 1 : 0)) }));
         })()
       : courseBatches(sections, count, config.provider === "groq" ? 6000 : limits.chunkCharacters);
     const savedOptions = {

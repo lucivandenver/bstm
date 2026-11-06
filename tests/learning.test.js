@@ -65,11 +65,12 @@ test('signup validates identity fields, confirmation and bcrypt byte limits', ()
   assert.throws(() => registrationInput({ ...input, password: 'x' }), /password/);
   assert.throws(() => registrationInput({ ...input, password: '🙂'.repeat(30), confirm_password: '🙂'.repeat(30) }), /password/);
 });
-test('profile validates required academic details and bounded OJT hours', () => {
-  const input = { yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '300', careerInterest: 'Events', preferredLocation: 'Philippines' };
+test('profile validates only the academic details kept in the student profile', () => {
+  const input = { yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', bio: 'Tourism student' };
   assert.equal(profileInput(input).complete, true);
-  assert.equal(profileInput(input).ojtHours, 300);
-  assert.throws(() => profileInput({ ...input, ojtHours: '-1' }), /hours/);
+  assert.equal(profileInput(input).bio, 'Tourism student');
+  assert.equal(profileInput(input).ojtHours, undefined);
+  assert.throws(() => profileInput({ ...input, yearLevel: '1st year ' + 'x' }), /year level/);
   assert.throws(() => profileInput({ ...input, academicYear: '2026' }), /academic year/);
 });
 test('starter course references, question keys and baseline cover four areas', () => {

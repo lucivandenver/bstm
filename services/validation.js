@@ -25,15 +25,9 @@ export function registrationInput(body, google = null) {
   return data;
 }
 export function profileInput(body) {
-  const data = {};
-  const limits = { relocate: 30, targetRoles: 300, workPreferences: 300, ojtTasks: 1500, yearLevel: 30, academicYear: 30, graduationYear: 4, ojtStatus: 40, ojtCompany: 160, ojtArea: 100, careerInterest: 80, preferredLocation: 120, languages: 200, skills: 1500, qualifications: 1500, bio: 600 };
-  for (const [key, max] of Object.entries(limits)) data[key] = text(body[key], max);
-  if (!['4th year', 'Graduating'].includes(data.yearLevel)) throw new Error('Select your year level.');
+  const data = { yearLevel: text(body.yearLevel, 30), academicYear: text(body.academicYear, 30), graduationYear: text(body.graduationYear, 4), bio: text(body.bio, 600) };
+  if (!['1st year', '2nd year', '3rd year', '4th year', 'Graduating'].includes(data.yearLevel)) throw new Error('Select your year level.');
   if (!/^\d{4}-\d{4}$/.test(data.academicYear)) throw new Error('Use the academic year format 2026-2027.');
   if (!/^20\d{2}$/.test(data.graduationYear)) throw new Error('Enter a valid graduation year.');
-  if (!['Not yet started', 'Ongoing', 'Completed'].includes(data.ojtStatus)) throw new Error('Select your OJT status.');
-  if (!data.careerInterest || !data.preferredLocation) throw new Error('Enter your career interest and preferred work location.');
-  const hours = body.ojtHours === '' ? 0 : Number(body.ojtHours);
-  if (!Number.isInteger(hours) || hours < 0 || hours > 10000) throw new Error('OJT hours must be from 0 to 10,000.');
-  return { ...data, ojtHours: hours, complete: true };
+  return { ...data, complete: true };
 }

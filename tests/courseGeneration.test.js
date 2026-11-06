@@ -220,10 +220,11 @@ await test("save failure rolls back course and revision and job-log failure cann
   }
 });
 await test("admission failure before a job is created uses a safe diagnostic", async () => {
-  const count = AiJob.count;
+  const findAll = AiJob.findAll;
   try {
-    AiJob.count = async () => {
-      throw { original: { code: "ER_NO_SUCH_TABLE" }, sql: "do not disclose" };
+    AiJob.findAll = async (query) => {
+      if (query?.where?.status === "failed") throw { original: { code: "ER_NO_SUCH_TABLE" }, sql: "do not disclose" };
+      return findAll.call(AiJob, query);
     };
     await assert.rejects(
       () =>
@@ -236,7 +237,7 @@ await test("admission failure before a job is created uses a safe diagnostic", a
         !e.message.includes("do not disclose"),
     );
   } finally {
-    AiJob.count = count;
+    AiJob.findAll = findAll;
   }
   assert.equal(
     safeGenerationError({ original: { code: "ER_LOCK_DEADLOCK" } }, "quota")
@@ -244,7 +245,7 @@ await test("admission failure before a job is created uses a safe diagnostic", a
     "COURSE_STORAGE_BUSY",
   );
 });
-await test("duplicate running requests and daily quota are blocked for new generations", async () => {
+await test("duplicate jobs are blocked but application daily caps do not block generation", async () => {
   const job = await AiJob.create({
     userId: faculty.id,
     sourceId: source.id,
@@ -256,16 +257,18 @@ await test("duplicate running requests and daily quota are blocked for new gener
   });
   await job.update({ status: "failed" });
   await Setting.update({ value: "1" }, { where: { key: "aiDailyLimit" } });
-  await assert.rejects(
-    () =>
-      generateCourse(faculty.id, source, {
-        ...options,
-        outcomes: "A distinct new course request.",
-      }),
-    {
-      code: "COURSE_DAILY_LIMIT",
-    },
-  );
+  const originalFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = "test-key";
+  process.env.GEMINI_MODEL = "models/test-model";
+  globalThis.fetch = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(draft()) }] } }] }), { status: 200 });
+  try {
+    const result = await generateCourse(faculty.id, source, { ...options, outcomes: "A distinct new course request." });
+    assert.equal(result.job.status, "completed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_MODEL;
+  }
   await Setting.upsert({ key: "aiDailyLimit", value: "50" });
 });
 await test("Faculty source errors retain inputs and legacy manual submissions are rejected", async () => {
@@ -333,6 +336,7 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
       };
       publish = await f.post(`/faculty/courses/${courseId}`, {
         action: "publish",
+        confirmReview: "yes",
         courseData: JSON.stringify(reviewed),
       });
       assert.equal(publish.status, 302);
