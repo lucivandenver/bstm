@@ -1,4 +1,4 @@
-import { CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
+import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
 import { Setting } from '../models/adminModels.js';
 import { starsFor, canTakeFinal, grade } from './learning.js';
@@ -7,18 +7,19 @@ export const tasksFor = a => a.snapshot.tasks || [];
 export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction) {
   if (attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
-  const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : null;
+  const course = await Course.findByPk(attempt.courseId, { transaction });
+  const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
   const settings = await Setting.findAll({ where: { key: ['adminSignature', 'certificateSignatory', 'certificateSignatoryPosition'] }, transaction });
   const values = Object.fromEntries(settings.map(s => [s.key, s.value]));
   const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved' && values.adminSignature);
   const defaults = {
     userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion,
     score, stars: starsFor(score), issuedAt: attempt.completedAt || new Date(),
-    facultySignature: signed ? request.facultySignature : null, facultyName: signed ? faculty.name : null,
-    facultyPosition: signed ? faculty.facultyPosition || 'Course Faculty' : null,
+    facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
+    facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
     adminSignature: signed ? values.adminSignature : null,
-    adminName: signed ? values.certificateSignatory || null : 'CareerBridge Learning System',
-    adminPosition: signed ? values.certificateSignatoryPosition || 'Administrator' : 'System-issued completion record',
+    adminName: values.certificateSignatory || 'BSTM Administrator',
+    adminPosition: values.certificateSignatoryPosition || 'Campus Administrator',
     badgeLabel: signed ? request.badge?.label || 'Course completion' : 'Course completion',
   };
   const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults, transaction });

@@ -45,7 +45,11 @@ test('career evidence excludes ongoing / unlocked courses and uses latest comple
   assert.ok(evidence.tracks.every(t => t.label === 'More evidence needed'));
   const baseline = Object.fromEntries(domains.map(d => [d, 50]));
   assert.equal(careerMatches([a], { scores: baseline }).scores[domains[1]], 50);
-  assert.equal(careerMatches([a], { scores: baseline }).scores[domains[0]], 100);
+  assert.equal(careerMatches([a], { scores: baseline }).scores[domains[0]], 75, 'completed-course and diagnostic evidence are combined when both cover an area');
+  const interestMatch = careerMatches([], null, 'Travel');
+  assert.equal(interestMatch.tracks[0].title, 'Travel Consultant / Tour Operations Assistant');
+  assert.equal(interestMatch.tracks[0].preferred, true);
+  assert.equal(interestMatch.tracks[0].assessedAreas, 0, 'interest alone must not be presented as assessed knowledge');
 });
 test('signed assessment challenge binds user and scope and rejects tampering', () => {
   const token = issueChallenge(1, '5:final');
