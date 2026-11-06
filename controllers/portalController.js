@@ -5,7 +5,7 @@ import { Section } from '../models/adminModels.js';
 import { fail } from '../services/courseAuthoring.js';
 export const notificationCount = async (req, res) => res.json({ unread: await Notification.count({ where: { userId: req.user.id, readAt: null } }) });
 export const notificationFeed = async (req, res) => {
-  const rows = await Notification.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']], limit: 5, attributes: ['id','title','message','href','readAt','createdAt'] });
+  const rows = await Notification.findAll({ where: { userId: req.user.id, readAt: null }, order: [['createdAt', 'DESC']], limit: 5, attributes: ['id','title','message','href','readAt','createdAt'] });
   res.set('Cache-Control', 'no-store');
   res.json({ unread: await Notification.count({ where: { userId: req.user.id, readAt: null } }), notifications: rows.map(n => ({ ...n.get({ plain: true }), href: /^\/(student|faculty|admin)(\/|$)/.test(n.href || '') ? n.href : '/notifications' })) });
 };
@@ -15,7 +15,7 @@ export const notificationStream = (req, res) => {
   const send = async () => {
     if (closed || busy) return; busy = true;
     try {
-      const rows = await Notification.findAll({ where: { userId: req.user.id }, order: [['createdAt','DESC']], limit: 5, attributes: ['id','title','message','href','readAt','createdAt'] });
+      const rows = await Notification.findAll({ where: { userId: req.user.id, readAt: null }, order: [['createdAt','DESC']], limit: 5, attributes: ['id','title','message','href','readAt','createdAt'] });
       const unread = await Notification.count({ where: { userId: req.user.id, readAt: null } });
       const notifications = rows.map(n => { const item = n.get({ plain: true }); if (!/^\/(student|faculty|admin)(\/|$)/.test(item.href || '')) item.href = '/notifications'; return item; });
       res.write(`event: notifications\ndata: ${JSON.stringify({ unread, notifications })}\n\n`);
