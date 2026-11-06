@@ -11,12 +11,12 @@ import { setting, genders } from '../services/accounts.js';
 import PDFDocument from 'pdfkit';
 import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notification, SavedCourse, sequelize } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
-import { text, profileInput } from '../services/validation.js';
+import { text, email as normalizeEmail, profileInput } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, careerMatches } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
-import { googleReady, appUrl } from '../config/env.js';
+import { appUrl } from '../config/env.js';
 const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 const render = (res, view, data = {}) => res.render(`student/${view}`, { nav: view, ...data });
@@ -73,25 +73,29 @@ export const dashboard = async (req, res) => {
 };
 export const profilePage = async (req, res) => {
   const profile = plain(await StudentProfile.findOne({ where: { userId: req.user.id } })) || {};
-  render(res, 'profile', { title: 'My profile', profile, googleConnected: Boolean(req.user.googleId), googleReady: googleReady(), genders, corrections: (await ProfileCorrection.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] })).map(plain), files: (await StudentFile.findAll({ where: { userId: req.user.id }, attributes: ['id', 'filename', 'kind'] })).map(plain) });
+  const activeSections = await Section.findAll({ where: { active: true }, attributes: ['name'], order: [['name', 'ASC']] });
+  const sections = [...new Set([req.user.section, ...activeSections.map(section => section.name)].filter(Boolean))];
+  render(res, 'profile', { title: 'My profile', profile, genders, sections });
 };
 export const saveProfile = async (req, res) => {
-  let data, studentId, section, name;
+  let data, studentId, section, name, accountEmail, gender;
   try {
     data = profileInput(req.body);
-    if (!genders.includes(req.body.gender)) throw new Error('Select your gender.'); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100);
+    gender = text(req.body.gender, 30); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100); accountEmail = normalizeEmail(req.body.email);
+    if (!genders.includes(gender)) throw new Error('Select your gender.');
     if (!/^[\w-]{3,40}$/.test(studentId) || !section || name.length < 2) throw new Error('Enter your full name, Student ID and section.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) throw new Error('Enter a valid email address.');
+    if (section !== req.user.section && !await Section.findOne({ where: { name: section, active: true } })) throw new Error('Choose an active academic section.');
   } catch (err) { req.flash('error_msg', err.message); return res.redirect('/student/profile'); }
   try {
-    if (studentId !== req.user.studentId || section !== req.user.section) throw Object.assign(new Error('Request an academic record correction below instead of changing your ID or section directly.'), { status: 400 });
     await sequelize.transaction(async transaction => {
-      await req.user.update({ name, gender: req.body.gender }, { transaction });
+      await req.user.update({ name, email: accountEmail, studentId, section, gender, ...(accountEmail !== req.user.email ? { emailVerified: false } : {}) }, { transaction });
       const [profile] = await StudentProfile.findOrCreate({ where: { userId: req.user.id }, defaults: data, transaction });
       await profile.update(data, { transaction });
     });
   } catch (err) {
     if (err.name !== 'SequelizeUniqueConstraintError') throw err;
-    req.flash('error_msg', 'That Student ID is already in use.'); return res.redirect('/student/profile');
+    req.flash('error_msg', 'That email address or Student ID is already in use.'); return res.redirect('/student/profile');
   }
   req.flash('success_msg', 'Your profile has been saved.'); res.redirect('/student/profile');
 };
@@ -117,9 +121,10 @@ export const catalog = async (req, res) => {
     .filter(c => view !== 'enrolled' || enrolledIds.has(c.id))
     .filter(c => (!query || `${c.title} ${c.description}`.toLowerCase().includes(query)) && (!domain || (c.competencyAreas || [c.domain]).includes(domain)))
     .filter(c => !author || String(c.ownerId) === author)
-    .map(c => {
+    .map(row => {
+    const c = plain(row);
     const active = attempts.find(a => a.courseId === c.id && a.status === 'ongoing');
-    const locked = c.prerequisites.some(id => !completedIds.has(Number(id)));
+    const locked = (c.prerequisites || []).some(id => !completedIds.has(Number(id)));
     return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done: completedIds.has(c.id), moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
   });
   const visibleCourseIds = new Set(courses.filter(course => facultyById.has(course.ownerId)).map(course => course.id));

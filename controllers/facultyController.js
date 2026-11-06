@@ -38,7 +38,7 @@ export const dashboard = async (req, res) => {
 export const profile = (req, res) => render(res, 'profile', { title: 'My faculty profile', googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
 export const credentials = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
+  const courses = await Course.findAll({ where: { ownerId: req.user.id, published: true, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
   const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory','certificateSignatoryPosition'] } })).map(s => [s.key, s.value]));
   render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
@@ -56,9 +56,24 @@ export const submitCredential = async (req, res) => {
   });
   req.flash('success_msg','Transparent signature and credential configuration sent to Admin for review. Existing issued awards retain their original signatures.');res.redirect('/faculty/credentials');
 };
+export const deleteCredentialRequest = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    if (!course.published || !course.certificateEnabled) fail('Only a published course with certificates enabled can have an award configuration.');
+    const request = await CredentialRequest.findOne({ where: { courseId: course.id, facultyId: req.user.id }, transaction });
+    if (!request) fail('No certificate configuration was found for this course.', 404);
+    await request.destroy({ transaction });
+    await course.update({ awardsApproved: false }, { transaction });
+    const attempts = await CourseAttempt.findAll({ where: { courseId: course.id }, transaction });
+    for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction });
+    await audit(req.user.id, 'credential.configuration_removed', 'course', course.id, { requestId: request.id }, transaction);
+  });
+  req.flash('success_msg', 'Certificate signature configuration removed. Existing student certificates remain in their records. Turn off certificate issuance in course settings to stop future certificates.');
+  res.redirect('/faculty/credentials');
+};
 export const courses = async (req, res) => {
   let courses, databaseNotice='';
-  try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] }); }
+  try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['id', 'DESC']] }); }
   catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
   const ids = courses.map(c => c.id);
   let attempts=[],requests=[],assignments=[];
@@ -81,6 +96,10 @@ export const saveCourse = async (req, res) => {
   const approve=req.body.action==='approve-generated',publish=approve||req.body.action==='publish';
   let input,id;
   if(!approve){try{input=JSON.parse(req.body.courseData);}catch{fail('Invalid course form. Reload and try again.');}}
+  if (!approve && publish && req.body.confirmReview === 'yes') {
+    input.modules = (input.modules || []).map(module => ({ ...module, lessons: (module.lessons || []).map(lesson => ({ ...lesson, sourceReviewed: true })) }));
+    input.questions = (input.questions || []).map(question => ({ ...question, reviewed: true }));
+  }
   await sequelize.transaction(async transaction => {
     const c=await ownedCourse(req,transaction);
     if(approve){
@@ -131,7 +150,7 @@ export const saveCourse = async (req, res) => {
     await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: c.published ? 'published' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, c.published ? 'course.published' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', publish ? 'Course published and available to students. Completion certificates follow the published course rules.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? 'Course published and available to students. Completion certificates follow the published course rules.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
 export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
 export const deleteDraft = async (req, res) => {

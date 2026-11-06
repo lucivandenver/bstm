@@ -7,7 +7,10 @@ const active = new Map();
 export async function startBlueprintJob(userId, source, options) {
   const running = await AiJob.findOne({ where: { userId, status: "running", type: "course-draft" } });
   if (running) {
-    if (active.has(running.id)) throw generationError("COURSE_ALREADY_RUNNING");
+    if (active.has(running.id)) {
+      if (Number(running.sourceId) === Number(source.id)) return running;
+      throw generationError("COURSE_ALREADY_RUNNING");
+    }
     await running.update({ status: "failed", errorCode: "COURSE_JOB_INTERRUPTED" });
   }
   const config = await courseAiConfiguration();
