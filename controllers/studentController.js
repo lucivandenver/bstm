@@ -16,6 +16,7 @@ import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
+import { courseAiConfiguration } from '../services/courseAiProvider.js';
 import { appUrl } from '../config/env.js';
 import { readFile } from 'node:fs/promises';
 const plain = row => row?.get({ plain: true });
@@ -207,7 +208,7 @@ function resumeHref(attempt) {
     const available = moduleAvailable(attempt, attempt.snapshot.modules.indexOf(module));
     if (!available) continue;
     const unfinished = module.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
-    if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(attempt.lastLessonId && !attempt.completedLessons.includes(attempt.lastLessonId) ? attempt.lastLessonId : unfinished.id)}`;
+    if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(unfinished.id)}`;
     if (!(attempt.quizScores[module.id] >= attempt.snapshot.passingScore)) return `/student/learn/${attempt.id}/quiz/${module.id}`;
   }
   if (canTakeFinal(attempt)) return `/student/learn/${attempt.id}/final`;
@@ -222,9 +223,9 @@ async function ownedAttempt(req, transaction) {
 export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
   const attempt = plain(row); const course = attempt.snapshot;
-  const modules = course.modules.map((m, i) => ({ ...m, available: moduleAvailable(attempt, i),
+  const modules = course.modules.map((m, i) => ({ ...m, number: i + 1, available: moduleAvailable(attempt, i),
     passed: attempt.quizScores[m.id] >= course.passingScore, score: attempt.quizScores[m.id],
-    quizAvailable: canTakeQuiz(attempt, m.id), lessons: m.lessons.map(l => ({ ...l, completed: attempt.completedLessons.includes(l.id) })) }));
+    quizAvailable: scopeAllowed(attempt, m.id), lessons: m.lessons.map((l, j) => ({ ...l, number: `${i + 1}.${j + 1}`, completed: attempt.completedLessons.includes(l.id) })) }));
   let selected;
   if (req.query.lesson) {
     for (const m of modules) {
@@ -233,25 +234,35 @@ export const learn = async (req, res) => {
     }
     if (!selected) return fail(res, 'This lesson is locked or unavailable.', 403);
   } else {
-    const savedLesson = modules.find(m => m.available)?.lessons.find(l => l.id === attempt.lastLessonId && !l.completed);
+    const savedLesson = modules.filter(m => m.available).flatMap(m => m.lessons).find(l => l.id === attempt.lastLessonId && !l.completed);
     const m = savedLesson ? modules.find(m => m.lessons.some(l => l.id === savedLesson.id)) : modules.find(m => m.available && m.lessons.some(l => !l.completed)) || modules[0];
     selected = { ...(savedLesson || m.lessons.find(l => !l.completed) || m.lessons[0]), moduleTitle: m.title };
   }
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
   const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id } });
-  render(res, 'learn', { tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
+  const lessonChallenge = selected?.id && !selected.completed && attempt.status !== 'completed'
+    ? issueChallenge(req.user.id, `lesson:${attempt.id}:${selected.id}`) : null;
+  render(res, 'learn', { lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
 };
 export const completeLesson = async (req, res) => {
-  await sequelize.transaction(async transaction => {
+  const next = await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction);
     if (!attempt) { const err = new Error('Attempt not found.'); err.status = 404; throw err; }
-    if (attempt.status === 'completed') return;
+    if (attempt.status === 'completed') return resumeHref(attempt);
     if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(q => q.scope === 'pretest')) error('Complete the course pre-test first.',403);
     const index = attempt.snapshot.modules.findIndex(m => m.lessons.some(l => l.id === req.body.lessonId));
     if (index < 0 || !moduleAvailable(attempt, index)) { const err = new Error('Lesson is locked.'); err.status = 403; throw err; }
-    await attempt.update({ completedLessons: [...new Set([...attempt.completedLessons, req.body.lessonId])], lastActivityAt: new Date() }, { transaction });
+    if (!attempt.completedLessons.includes(req.body.lessonId)) {
+      try {
+        checkChallenge(req.body.lessonChallenge, req.user.id, `lesson:${attempt.id}:${req.body.lessonId}`);
+      } catch {
+        error('Open the lecture and reach the end before completing it. Reload the lesson if it has expired.', 400);
+      }
+      await attempt.update({ completedLessons: [...attempt.completedLessons, req.body.lessonId], lastActivityAt: new Date() }, { transaction });
+    }
+    return resumeHref(attempt);
   });
-  res.redirect(`/student/learn/${req.params.id}`);
+  res.redirect(next);
 };
 export const heartbeat = async (req, res) => {
   await sequelize.transaction(async transaction => {
@@ -349,6 +360,12 @@ export const results = async (req, res) => {
   render(res, 'results', { feedback: (await FacultyNote.findAll({ where: { studentId: req.user.id, visibility: 'student' }, order: [['createdAt', 'DESC']] })).map(n => ({ ...plain(n), date: date(n.createdAt) })), title: 'My results & skills gaps', domains: domains.map(name => ({ name, score: evidence.scores[name], knowledgeScore: evidence.knowledgeScores[name], practicalScore: evidence.practicalScores[name], hasPractical: evidence.practicalScores[name] !== null, known: evidence.scores[name] !== null, gap: evidence.scores[name] === null || evidence.scores[name] < 75 })),
     attempts: attempts.map(decorate), assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })) });
 };
+async function careerProvider() {
+  const course = await courseAiConfiguration();
+  const gemini = aiConfiguration();
+  if (course.ready && course.provider === 'groq') return course;
+  return { ...gemini, provider: 'gemini', label: 'Gemini' };
+}
 export const careers = async (req, res) => {
   if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
   const showCareerMatches = req.session.careerMatchSearchUserId === req.user.id;
@@ -378,17 +395,18 @@ export const careers = async (req, res) => {
     const areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
     return areas.some(area => track.required.includes(area));
   }).map(course => { const done = completedIds.has(course.id); const active = !done && ongoingIds.has(course.id); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
+  const provider = await careerProvider();
   render(res, 'careers', { showCareerMatches, evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
     evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore,
       areas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas.join(', ') : a.snapshot.domain,
       award: credentialAttemptIds.has(Number(a.id)) ? 'Certificate earned' : 'Course completed' })),
     hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
-    developingCourses:learningContext.developing, aiReady: aiConfiguration().ready, ai: req.session.careerAi || null });
+    developingCourses:learningContext.developing, aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi || null });
 };
 export const generateGuidance = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
-  if(req.body.consent!=='yes')return reject('Confirm permission to send your anonymised learning evidence to Gemini.');
+  if(req.body.consent!=='yes')return reject('Confirm permission to share your anonymised learning evidence.');
   const [attempts,baseline,profile]=await Promise.all([
     attemptsFor(req.user.id),
     Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]}),
@@ -399,7 +417,9 @@ export const generateGuidance = async (req, res) => {
     const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,await activeCareerTracks());
     if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
     const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
-    const ai=await explainCareer(evidence,learning);
+    const provider = await careerProvider();
+    if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
+    const ai=await explainCareer(evidence,learning,provider);
     if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
     req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
     req.session.careerMatchSearchUserId = req.user.id;
@@ -445,7 +465,7 @@ export const certificate = async (req, res) => {
   const footer = await setting('certificateFooter', 'BSTM CareerBridge · Verified course completion');
   const url = `${appUrl}/verify/${c.id}`;
   const qr = await QRCode.toBuffer(url, { width: 90, margin: 1 });
-  res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `attachment; filename="CareerBridge-${c.id}.pdf"`);
+  res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `${req.query.view === '1' ? 'inline' : 'attachment'}; filename="CareerBridge-${c.id}.pdf"`);
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
   doc.rect(25, 25, 792, 545).lineWidth(2).stroke('#007042');

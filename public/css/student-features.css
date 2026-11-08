@@ -37,3 +37,15 @@
 .award-tile small{font-size:10px;line-height:1.4;color:var(--muted)}
 .award-tile .stars{font-size:14px;color:#c58a00;letter-spacing:2px}
 @media(max-width:420px){.award-tile{padding:10px 5px}.award-badge,.award-certificate{width:60px;height:60px;font-size:34px}.award-tile small{font-size:9px}}
+.lesson-position{display:flex;align-items:center;gap:9px;margin:8px 0 12px;font-size:.875rem;color:var(--muted)}
+.lesson-outline .lesson-link{min-height:42px;overflow-wrap:anywhere}
+.lesson-outline .lesson-link[aria-current="step"]{outline:1px solid var(--green);outline-offset:-1px;border-radius:6px}
+.lesson-visual{margin:20px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lesson-visual img{display:block;width:100%;height:auto}
+.lesson-concepts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:10px;list-style:none;padding:0;margin:12px 0 0}
+.lesson-concepts li{padding:12px;background:white;border-inline-start:3px solid var(--green);border-radius:4px;overflow-wrap:anywhere}
+@media(max-width:800px){
+  .lesson-sidebar .lesson-outline[open]{max-height:42vh;overflow-y:auto}
+  .lesson-outline summary{position:sticky;top:0;background:white;z-index:1}
+  .lesson-position .check-circle,.lesson-outline .check-circle{width:22px;height:22px;flex-basis:22px}
+}

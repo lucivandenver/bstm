@@ -101,7 +101,13 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
     const token=scope=>issueChallenge(student.id,`${id}:${scope}`);
     const answer=scope=>s.post(`/student/learn/${id}/${scope==='final'?'final':'quiz/'+scope}`,{challenge:token(scope),'answers[q1]':'0'});
-    assert.equal((await answer('pretest')).status,302);await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});
+    assert.equal((await answer('pretest')).status,302);
+    r=await s.get(`/student/learn/${id}?lesson=l1`);
+    assert.match(r.html, /<button class="button" disabled>Complete/);
+    const lessonChallenge=r.html.match(/data-lesson-challenge="([^"]+)"/)[1];
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.status,400);
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}/quiz/m1`);
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`,'Continue from completed lesson opens pending quiz');
     await s.get(`/student/learn/${id}/quiz/m1`);
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'1'}})});assert.equal(r.status,409,'stale tab cannot overwrite');
@@ -122,6 +128,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await s.get(`/student/learn/${id}/activities`);assert.match(r.html,/Clear and accurate/);r=await s.post(`/student/learn/${id}/feedback`,{rating:'5',comment:'Useful practice.'});assert.equal(r.status,302);assert.equal((await CourseAttempt.findByPk(id)).status,'completed');assert.equal(await Credential.count(),1);
     const award=await Credential.findOne();r=await s.get(`/student/credentials/${award.id}/certificate`);assert.equal(r.status,200);assert.equal(r.response.headers.get('content-type'),'application/pdf');
     assert.equal((await o.get(`/student/credentials/${award.id}/certificate`)).status,404);
+    r=await s.get(`/student/credentials/${award.id}/certificate?view=1`);assert.match(r.response.headers.get('content-disposition'),/^inline;/);
+    assert.equal((await o.get(`/student/credentials/${award.id}/certificate?view=1`)).status,404);
     const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');
     await award.update({courseTitle:'Tourism operations and professional communication '.repeat(3).slice(0,160),recipientName:'Student With An Extended Full Name '.repeat(3).slice(0,100),facultySignature:null,adminSignature:null});
     await Setting.upsert({key:'adminSignature',value:''}); await CredentialRequest.update({status:'returned'},{where:{courseId:c.id}});

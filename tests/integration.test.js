@@ -74,7 +74,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     response = await other.post('/student/learn/1/complete', { lessonId: 'traveller' }); assert.equal(response.status, 404);
     const c = starterCourses[0];
     for (const module of c.modules) {
-      for (const lesson of module.lessons) { await student.get('/student/learn/1'); await student.post('/student/learn/1/complete', { lessonId: lesson.id }); }
+      for (const lesson of module.lessons) { const page = await student.get(`/student/learn/1?lesson=${lesson.id}`); const lessonChallenge = page.html.match(/data-lesson-challenge="([^"]+)"/)[1]; await student.post('/student/learn/1/complete', { lessonId: lesson.id, lessonChallenge }); }
       const quiz = await student.get(`/student/learn/1/quiz/${module.id}`);
       assert.equal(quiz.r.status, 200);
       assert.ok(!quiz.html.includes(c.questions[0].explanation));
