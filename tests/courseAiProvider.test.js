@@ -266,7 +266,7 @@ test('Render AI_PROVIDER selects Groq and administrator disable overrides config
 });
 
 test('Vertex Express Mode is selectable and sends course generation through Vertex', async () => {
-  const names = ['AI_PROVIDER','COURSE_AI_PROVIDER','VERTEX_AUTH_MODE','VERTEX_API_KEY','VERTEX_MODEL','VERTEX_PROJECT_ID','VERTEX_LOCATION','VERTEX_SERVICE_ACCOUNT_JSON','GOOGLE_APPLICATION_CREDENTIALS'];
+  const names = ['AI_PROVIDER','COURSE_AI_PROVIDER','VERTEX_AUTH_MODE','VERTEX_API_KEY','VERTEX_MODEL','VERTEX_PROJECT_ID','VERTEX_LOCATION','VERTEX_SERVICE_ACCOUNT_JSON','GOOGLE_APPLICATION_CREDENTIALS','GOOGLE_CLOUD_PROJECT','GOOGLE_CLOUD_LOCATION'];
   const previous = names.map(name => [name,process.env[name]]);
   const original = globalThis.fetch;
   try {
@@ -296,6 +296,17 @@ test('Vertex Express Mode is selectable and sends course generation through Vert
     process.env.VERTEX_LOCATION = 'us-central1';
     process.env.VERTEX_SERVICE_ACCOUNT_JSON = '{"type":"service_account","project_id":"sample-project"}';
     assert.equal((await courseAiConfiguration()).vertexConfigured,true);
+    delete process.env.VERTEX_PROJECT_ID;
+    delete process.env.VERTEX_LOCATION;
+    process.env.GOOGLE_CLOUD_PROJECT = 'sample-project';
+    process.env.GOOGLE_CLOUD_LOCATION = 'global';
+    assert.equal((await courseAiConfiguration()).vertexConfigured,true);
+    await assert.rejects(request(await courseAiConfiguration(), input), {
+      code: 'COURSE_AI_AUTH',
+    });
+    delete process.env.GOOGLE_CLOUD_LOCATION;
+    assert.equal((await courseAiConfiguration()).vertexMissingSettings, 'VERTEX_LOCATION');
+
   } finally {
     globalThis.fetch = original;
     await Setting.destroy({where:{key:['courseAiProvider','courseAiEnabled','courseVertexEnabled']}});

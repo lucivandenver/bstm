@@ -11,11 +11,17 @@
   const onLanding = () =>
     location.pathname === "/" && !document.querySelector(".workspace");
   const show = (value) => buttons.forEach((button) => (button.hidden = !value));
-  show(false);
+  const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const mac = /Macintosh|Mac OS X/.test(navigator.userAgent);
+  const installed = () => navigator.standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches;
+  const canInstall = () => onLanding() && !installed();
+  show(canInstall() && (appleMobile || mac));
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferred = event;
-    show(onLanding());
+    show(canInstall());
   });
   window.addEventListener("appinstalled", () => {
     deferred = null;
@@ -23,11 +29,23 @@
   });
   for (const button of buttons)
     button.addEventListener("click", async () => {
-      if (!deferred || !onLanding()) return;
+      if (!canInstall()) return;
+      if (!deferred) {
+        if (!appleMobile && !mac) return;
+        const dialog = document.querySelector("[data-pwa-help]");
+        dialog.querySelector("[data-pwa-steps]").textContent = appleMobile
+          ? "Open CareerBridge in Safari. Tap Share, choose Add to Home Screen, turn on Open as Web App if shown, then tap Add."
+          : "Open CareerBridge in Safari. Choose File → Add to Dock, then click Add.";
+        dialog.showModal();
+        return;
+      }
       const prompt = deferred;
       deferred = null;
-      await prompt.prompt();
-      await prompt.userChoice;
-      show(false);
+      try {
+        await prompt.prompt();
+        await prompt.userChoice;
+      } finally {
+        show(canInstall() && (appleMobile || mac));
+      }
     });
 })();

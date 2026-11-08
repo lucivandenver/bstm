@@ -464,7 +464,7 @@ export async function generateCourse(userId, source, options) {
       blueprint: options.blueprint || null,
       consent: options.consent === "yes",
       consentProviders: config.fallback
-        ? ["gemini", "groq"]
+        ? [config.provider, "groq"]
         : [config.provider],
     };
     const fingerprint = createHash("sha256")

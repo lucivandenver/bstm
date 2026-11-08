@@ -1,4 +1,4 @@
-import { courseAiConfiguration } from '../services/courseAiProvider.js';
+import { courseAiConfiguration, missingVertexSettings } from '../services/courseAiProvider.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
 import { summarizeLearning } from '../services/evidence.js';
 import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
@@ -317,9 +317,9 @@ export const saveCourseAiSettings = async (req, res) => {
   const gemini = req.body.geminiEnabled === 'true';
   const groq = req.body.groqEnabled === 'true';
     const vertex = req.body.vertexEnabled === 'true';
-    const vertexConfigured = process.env.VERTEX_AUTH_MODE?.trim().toLowerCase() === 'api_key'
-      ? Boolean(process.env.VERTEX_API_KEY?.trim())
-      : Boolean(process.env.VERTEX_PROJECT_ID?.trim() && process.env.VERTEX_LOCATION?.trim() && (process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()));
+    const missingVertex = missingVertexSettings();
+    if (enabled && provider === 'vertex' && vertex && missingVertex.length) fail(`Configure these Render variables for Vertex AI: ${missingVertex.join(', ')}.`);
+    const vertexConfigured = missingVertex.length === 0;
     if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : provider === 'vertex' ? vertex && vertexConfigured : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its credentials in Render first.');
     const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq),courseVertexEnabled:String(vertex)};
   await sequelize.transaction(async transaction => {
