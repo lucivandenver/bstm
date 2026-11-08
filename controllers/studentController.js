@@ -16,6 +16,7 @@ import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, careerMatches } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
+import { courseAiConfiguration } from '../services/courseAiProvider.js';
 import { googleReady, appUrl } from '../config/env.js';
 const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -190,7 +191,7 @@ function resumeHref(attempt) {
     const available = moduleAvailable(attempt, attempt.snapshot.modules.indexOf(module));
     if (!available) continue;
     const unfinished = module.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
-    if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(attempt.lastLessonId && !attempt.completedLessons.includes(attempt.lastLessonId) ? attempt.lastLessonId : unfinished.id)}`;
+    if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(unfinished.id)}`;
     if (!(attempt.quizScores[module.id] >= attempt.snapshot.passingScore)) return `/student/learn/${attempt.id}/quiz/${module.id}`;
   }
   if (canTakeFinal(attempt)) return `/student/learn/${attempt.id}/final`;
@@ -202,9 +203,9 @@ async function ownedAttempt(req, transaction) {
 export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
   const attempt = plain(row); const course = attempt.snapshot;
-  const modules = course.modules.map((m, i) => ({ ...m, available: moduleAvailable(attempt, i),
+  const modules = course.modules.map((m, i) => ({ ...m, number: i + 1, available: moduleAvailable(attempt, i),
     passed: attempt.quizScores[m.id] >= course.passingScore, score: attempt.quizScores[m.id],
-    quizAvailable: canTakeQuiz(attempt, m.id), lessons: m.lessons.map(l => ({ ...l, completed: attempt.completedLessons.includes(l.id) })) }));
+    quizAvailable: scopeAllowed(attempt, m.id), lessons: m.lessons.map((l, j) => ({ ...l, number: `${i + 1}.${j + 1}`, completed: attempt.completedLessons.includes(l.id) })) }));
   let selected;
   if (req.query.lesson) {
     for (const m of modules) {
@@ -213,25 +214,26 @@ export const learn = async (req, res) => {
     }
     if (!selected) return fail(res, 'This lesson is locked or unavailable.', 403);
   } else {
-    const savedLesson = modules.find(m => m.available)?.lessons.find(l => l.id === attempt.lastLessonId && !l.completed);
+    const savedLesson = modules.filter(m => m.available).flatMap(m => m.lessons).find(l => l.id === attempt.lastLessonId && !l.completed);
     const m = savedLesson ? modules.find(m => m.lessons.some(l => l.id === savedLesson.id)) : modules.find(m => m.available && m.lessons.some(l => !l.completed)) || modules[0];
     selected = { ...(savedLesson || m.lessons.find(l => !l.completed) || m.lessons[0]), moduleTitle: m.title };
   }
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
   const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id } });
-  render(res, 'learn', { tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
+  render(res, 'learn', { tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
 };
 export const completeLesson = async (req, res) => {
-  await sequelize.transaction(async transaction => {
+  const next = await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction);
     if (!attempt) { const err = new Error('Attempt not found.'); err.status = 404; throw err; }
-    if (attempt.status === 'completed') return;
+    if (attempt.status === 'completed') return resumeHref(attempt);
     if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(q => q.scope === 'pretest')) error('Complete the course pre-test first.',403);
     const index = attempt.snapshot.modules.findIndex(m => m.lessons.some(l => l.id === req.body.lessonId));
     if (index < 0 || !moduleAvailable(attempt, index)) { const err = new Error('Lesson is locked.'); err.status = 403; throw err; }
     await attempt.update({ completedLessons: [...new Set([...attempt.completedLessons, req.body.lessonId])], lastActivityAt: new Date() }, { transaction });
+    return resumeHref(attempt);
   });
-  res.redirect(`/student/learn/${req.params.id}`);
+  res.redirect(next);
 };
 export const heartbeat = async (req, res) => {
   await sequelize.transaction(async transaction => {
@@ -256,7 +258,7 @@ export const quizPage = async (req, res) => {
   if (attempt.snapshot.policy?.randomize) { const rank = q => createHash('sha256').update(`${attempt.id}:${scope}:${attempt.quizAttempts.length}:${q.id}`).digest('hex'); questions = [...questions].sort((a,b) => rank(a).localeCompare(rank(b))); }
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
   const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && attempt.quizAttempts.filter(q => q.scope === scope).length >= attempt.snapshot.policy.attemptLimit;
-  render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : 'Module quiz', questions: publicQuestions(questions).map(q => ({ ...q, options: q.options.map((label, index) => ({ label, index, checked: String(draft.answers[q.id]) === String(index) })) })), attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
+  render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : `Module quiz · ${attempt.snapshot.modules.find(m => m.id === scope)?.title || ''}`, questions: publicQuestions(questions).map(q => ({ ...q, options: q.options.map((label, index) => ({ label, index, checked: String(draft.answers[q.id]) === String(index) })) })), attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
 };
 export const saveDraft = async (req, res) => {
   let saved;
@@ -282,7 +284,7 @@ export const restartQuiz = async (req, res) => {
 export const submitQuiz = async (req, res) => {
   const scope = req.params.moduleId || 'final', final = scope === 'final', pretest = scope === 'pretest';
   const nonce = checkChallenge(req.body.challenge, req.user.id, `${req.params.id}:${scope}`);
-  await sequelize.transaction(async transaction => {
+  const next = await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction); if (!attempt) error('Attempt not found.', 404);
     if (attempt.status === 'completed' || attempt.quizAttempts.some(a => a.nonce === nonce)) return;
     if (!scopeAllowed(attempt, scope)) error('Requirements are incomplete.', 403);
@@ -295,7 +297,10 @@ export const submitQuiz = async (req, res) => {
     await draft.update({ answers: {}, startedAt: new Date(), revision: draft.revision + 1 }, { transaction });
     const completed = final && passed ? await finalizeAttempt(attempt, req.user, transaction) : false;
     req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}%. ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. The next module is available.' : 'Review the lessons, then try again.'}`);
-  }); delete req.session.careerAi; res.redirect(`/student/learn/${req.params.id}`);
+    if (pretest || (!final && passed)) return resumeHref(attempt);
+  });
+  delete req.session.careerAi;
+  res.redirect(next || `/student/learn/${req.params.id}`);
 };
 export const assessmentPage = async (req, res) => {
   if (!await requireProfile(req, res)) return;
@@ -327,6 +332,12 @@ export const results = async (req, res) => {
   render(res, 'results', { feedback: (await FacultyNote.findAll({ where: { studentId: req.user.id, visibility: 'student' }, order: [['createdAt', 'DESC']] })).map(n => ({ ...plain(n), date: date(n.createdAt) })), title: 'My results & skills gaps', domains: domains.map(name => ({ name, score: evidence.scores[name], knowledgeScore: evidence.knowledgeScores[name], practicalScore: evidence.practicalScores[name], hasPractical: evidence.practicalScores[name] !== null, known: evidence.scores[name] !== null, gap: evidence.scores[name] === null || evidence.scores[name] < 75 })),
     attempts: attempts.map(decorate), assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })) });
 };
+async function careerProvider() {
+  const course = await courseAiConfiguration();
+  const gemini = aiConfiguration();
+  if (course.ready && course.provider === 'groq') return course;
+  return { ...gemini, provider: 'gemini', label: 'Gemini' };
+}
 export const careers = async (req, res) => {
   const [attempts, baseline, profile, courses] = await Promise.all([
     attemptsFor(req.user.id), Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
@@ -343,20 +354,24 @@ export const careers = async (req, res) => {
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
   const recommendations = eligibleCourses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(c => ({ ...plain(c), locked: c.prerequisites.some(id => !completedIds.has(Number(id))) }));
   const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => (course.competencyAreas || [course.domain]).some(area=>track.required.includes(area))).map(course => ({ ...plain(course), learningStatus: completedIds.has(course.id) ? 'Completed' : attempts.some(a => a.courseId === course.id && a.status === 'ongoing') ? 'In progress' : 'Available', done: completedIds.has(course.id), active: attempts.some(a => a.courseId === course.id && a.status === 'ongoing') })) }));
+  const provider = await careerProvider();
   render(res, 'careers', { evidenceDate: date(new Date()), evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore })), hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
-    developingCourses:learningContext.developing, aiReady: aiConfiguration().ready, ai: req.session.careerAi || null });
+    developingCourses:learningContext.developing, aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi || null });
 };
 export const generateGuidance = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
-  if(req.body.consent!=='yes')return reject('Confirm permission to send your anonymised learning evidence to Gemini.');
+  if(req.body.consent!=='yes')return reject('Confirm permission to share your anonymised learning evidence.');
   const attempts=await attemptsFor(req.user.id),baseline=await Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]});
   if(!baseline&&!attempts.some(a=>a.status==='completed'||a.completedLessons?.length||Object.keys(a.quizScores||{}).length))return reject('Start learning and save some course progress, or complete an assessment, before finding career directions.');
   try{
-    const evidence=await buildEvidence(attempts,plain(baseline),'',(await CareerPath.findAll({where:{active:true}})).map(plain));
+    const provider = await careerProvider();
+    if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
+    const profile = await StudentProfile.findOne({ where: { userId: req.user.id } });
+    const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,(await CareerPath.findAll({where:{active:true}})).map(plain));
     if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
     const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
-    const ai=await explainCareer(evidence,learning);
+    const ai=await explainCareer(evidence,learning,provider);
     if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
     req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
     req.flash('success_msg','Career recommendations generated from your learning evidence.');
@@ -377,7 +392,8 @@ async function ownedCredential(req) {
 }
 export const certificate = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Certificate not found.', 404);
-  res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `attachment; filename="CareerBridge-${c.id}.pdf"`);
+  res.set('Cache-Control', 'private, no-store');
+  res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `${req.query.view === '1' ? 'inline' : 'attachment'}; filename="CareerBridge-${c.id}.pdf"`);
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
     const request = await CredentialRequest.findOne({ where: { courseId: (await CourseAttempt.findByPk(c.attemptId))?.courseId, status: 'approved' } });

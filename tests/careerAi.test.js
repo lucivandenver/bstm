@@ -40,3 +40,34 @@ test('career context separates unfinished learning and uses the latest completed
  assert.notEqual(careerFingerprint(evidence,result),careerFingerprint(evidence,{...result,developing:[]}));
  assert.equal(careerLearningContext([recent],[{attemptId:2,revoked:true}]).completed[0].certificateEarned,false);
 });
+
+test('career guidance parses Groq responses and retains rule-ranked titles', async () => {
+  const fetchBefore = globalThis.fetch;
+  const keyBefore = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  try {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
+      assert.equal(options.headers.Authorization, 'Bearer test-groq-key');
+      const payload = JSON.parse(JSON.parse(options.body).messages[1].content);
+      assert.equal(payload.pathways[0].title, 'Guest services');
+      return Response.json({ choices: [{ finish_reason: 'stop', message: {
+        content: JSON.stringify({
+          summary: 'Build your guest service experience.',
+          nextSteps: ['Study', 'Practise', 'Review'],
+          matches: [{ pathwayIndex: 0, reason: 'Aligned with your course.', nextStep: 'Review the module.' }],
+        }),
+      } }] });
+    };
+    const result = await explainCareer(
+      { scores: {}, tracks: [{ title: 'Guest services', label: 'Developing' }] },
+      undefined,
+      { provider: 'groq', model: 'openai/gpt-oss-20b', ready: true },
+    );
+    assert.equal(result.matches[0].title, 'Guest services');
+  } finally {
+    globalThis.fetch = fetchBefore;
+    if (keyBefore === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = keyBefore;
+  }
+});
