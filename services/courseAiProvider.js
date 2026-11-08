@@ -3,9 +3,21 @@ import { generationError } from "./courseGenerationErrors.js";
 import { GoogleAuth } from "google-auth-library";
 
 const vertexMode = () => process.env.VERTEX_AUTH_MODE?.trim().toLowerCase() === "api_key" ? "api_key" : "service_account";
-const vertexReady = () => vertexMode() === "api_key"
-  ? Boolean(process.env.VERTEX_API_KEY?.trim())
-  : Boolean(process.env.VERTEX_PROJECT_ID?.trim() && process.env.VERTEX_LOCATION?.trim() && (process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()));
+const vertexProject = () => process.env.VERTEX_PROJECT_ID?.trim() || process.env.GOOGLE_CLOUD_PROJECT?.trim();
+const vertexLocation = () => process.env.VERTEX_LOCATION?.trim() || process.env.GOOGLE_CLOUD_LOCATION?.trim();
+
+export function missingVertexSettings() {
+  if (vertexMode() === "api_key") return process.env.VERTEX_API_KEY?.trim() ? [] : ["VERTEX_API_KEY"];
+  const missing = [];
+  if (!vertexProject()) missing.push("VERTEX_PROJECT_ID");
+  if (!vertexLocation()) missing.push("VERTEX_LOCATION");
+  if (!process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() && !process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
+    missing.push("GOOGLE_APPLICATION_CREDENTIALS");
+  }
+  return missing;
+}
+
+const vertexReady = () => missingVertexSettings().length === 0;
 
 export async function courseAiConfiguration() {
   const settings = Object.fromEntries((await Setting.findAll({where:{key:['courseAiProvider','courseAiEnabled','courseGeminiEnabled','courseGroqEnabled','courseVertexEnabled']}})).map(row => [row.key,row.value]));
@@ -41,8 +53,9 @@ export async function courseAiConfiguration() {
     vertexEnabled: allowed("vertex"),
     vertexConfigured: vertexReady(),
     vertexAuthMode: vertexMode(),
+    vertexMissingSettings: missingVertexSettings().join(", "),
     label: fallback
-      ? "Gemini and Groq"
+      ? `${provider === "vertex" ? "Vertex AI" : "Gemini"} and Groq`
       : provider === "groq"
         ? "Groq"
         : provider === "vertex" ? "Vertex AI" : "Gemini",
@@ -124,20 +137,26 @@ export function createCourseTransport({
     let url = groq
       ? "https://api.groq.com/openai/v1/chat/completions"
       : `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
-    const headers = groq ? { "Content-Type": "application/json", Authorization: `Bearer ${key}` } : { "Content-Type": "application/json" };
+    const headers = groq ? { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "User-Agent": "CareerBridge/1.0" } : { "Content-Type": "application/json" };
     if (vertex) {
       if (vertexMode() === "api_key") {
         url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${encodeURIComponent(config.model)}:generateContent`;
         headers["x-goog-api-key"] = key;
       } else {
-        const json = process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim();
-        const auth = json ? new GoogleAuth({ credentials: JSON.parse(json), scopes: ["https://www.googleapis.com/auth/cloud-platform"] }) : new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
-        const client = await auth.getClient();
-        const token = await client.getAccessToken();
-        if (!token?.token) throw generationError("COURSE_AI_AUTH");
-        const project = process.env.VERTEX_PROJECT_ID.trim(), location = process.env.VERTEX_LOCATION.trim();
-        url = `https://${location}-aiplatform.googleapis.com/v1/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(config.model)}:generateContent`;
-        headers.Authorization = `Bearer ${token.token}`;
+        try {
+          const json = process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim();
+          const scopes = ["https://www.googleapis.com/auth/cloud-platform"];
+          const auth = new GoogleAuth(json ? { credentials: JSON.parse(json), scopes } : { scopes });
+          const client = await auth.getClient();
+          const token = await client.getAccessToken();
+          if (!token?.token) throw generationError("COURSE_AI_AUTH");
+          headers.Authorization = `Bearer ${token.token}`;
+        } catch {
+          throw generationError("COURSE_AI_AUTH", "Vertex AI could not authenticate. Ask Admin to check the Render Secret File, credential path, and service account access.");
+        }
+        const project = vertexProject(), location = vertexLocation();
+        const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+        url = `https://${host}/v1/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(config.model)}:generateContent`;
       }
     } else if (!groq) headers["x-goog-api-key"] = key;
     const body = groq
@@ -215,6 +234,7 @@ export function createCourseTransport({
         return { text, provider: config.provider, model: config.model };
       }
       const status = response?.status;
+      if (status === 403 && Object.keys(data).length === 0) throw generationError("COURSE_AI_UNAVAILABLE");
       if (status && ![408, 429, 500, 502, 503, 504].includes(status))
         throw generationError(
           [401, 403].includes(status)

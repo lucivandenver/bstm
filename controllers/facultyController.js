@@ -228,7 +228,7 @@ export const resumeGeneration = async (req,res) => {
     const previous=await AiJob.findOne({where:{id:req.params.id,userId:req.user.id,type:'course-draft'}});
     if(!previous)return invalid('Generation request not found.',404);
     if(previous.status==='completed'&&previous.courseId)return res.json({ok:true,redirect:`/faculty/generation/${previous.id}`});
-    const config=await aiConfiguration(),providers=config.fallback?['gemini','groq']:[config.provider];
+    const config=await aiConfiguration(),providers=config.fallback?[config.provider,'groq']:[config.provider];
     if(!previous.state?.options?.consent||!providers.every(provider=>previous.state.options.consentProviders?.includes(provider)))return invalid('Provider configuration changed or permission is missing. Open the saved source and confirm the current providers before generating again.');
     const source=await SourceDocument.findOne({where:{id:previous.sourceId,ownerId:req.user.id}});if(!source)return invalid('Source collection not found.',404);
     if(previous.state.retryAt&&Date.parse(previous.state.retryAt)>Date.now())return res.status(429).json({ok:false,message:'The provider waiting period has not ended. Your saved sections remain available.',retryAt:previous.state.retryAt});

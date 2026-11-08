@@ -18,7 +18,7 @@ export async function startBlueprintJob(userId, source, options) {
   const savedOptions = {
     competencyAreas: options.competencyAreas, domain: options.domain, level: options.level || "Foundation",
     outcomes: options.outcomes, questionCount: Number(options.questionCount), courseTitle: options.courseTitle || "",
-    consent: options.consent === "yes", consentProviders: config.fallback ? ["gemini", "groq"] : [config.provider],
+    consent: options.consent === "yes", consentProviders: config.fallback ? [config.provider, "groq"] : [config.provider],
   };
   const job = await AiJob.create({ userId, sourceId: source.id, type: "course-draft", status: "running", state: { phase: "blueprint", options: savedOptions, total: 1, batches: [], provider: config.provider, model: config.model } });
   active.set(job.id, { completed: 0, total: 1, message: "Preparing a course blueprint for faculty review…" });
@@ -101,7 +101,7 @@ export async function courseJobStatus(userId, id) {
   }
   const progress = active.get(job.id);
   const config = await courseAiConfiguration(),
-    providers = config.fallback ? ["gemini", "groq"] : [config.provider];
+    providers = config.fallback ? [config.provider, "groq"] : [config.provider];
   return {
     id: job.id,
     status: job.status,
