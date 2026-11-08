@@ -38,7 +38,7 @@ await test('completed practical evidence blends once with the matching latest co
   const retake={...a,id:2,completedAt:'2026-10-02',finalScore:90};result=careerMatches([a,retake],null,'',undefined,[{attemptId:1,taskId:'t1',grade:100}]);assert.equal(result.scores[domains[0]],90,'old rubric must not stack into latest retake');
   result=careerMatches([{...a,status:'ongoing'}],null,'',undefined,[{attemptId:1,taskId:'t1',grade:100}]);assert.equal(result.scores[domains[0]],null);
 });
-await test('PDF, DOCX and PPTX extraction preserves source references and rejects unsupported or scanned sources',async()=>{
+await test('PDF, DOCX and PPTX extraction preserves references and keeps low-text files available for manual review',async()=>{
   const sentence='Confirm the guest requirements before making a recommendation. Check safety, accessibility, reservation details and communicate clearly. '.repeat(4);
   const zip=new JSZip();zip.file('[Content_Types].xml','<Types/>');zip.file('word/document.xml',`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${sentence}</w:t></w:r></w:p></w:body></w:document>`);
   const docx=await zip.generateAsync({type:'nodebuffer'});let result=await extractSource({originalname:'source.docx',buffer:docx});assert.equal(result[0].reference,'Paragraph 1');assert.ok(result[0].text.includes('accessibility'));
@@ -46,7 +46,7 @@ await test('PDF, DOCX and PPTX extraction preserves source references and reject
   const pdf=new PDFDocument();const chunks=[];const ready=new Promise(resolve=>{pdf.on('data',c=>chunks.push(c));pdf.on('end',()=>resolve(Buffer.concat(chunks)));});pdf.text(sentence);pdf.end();result=await extractSource({originalname:'source.pdf',buffer:await ready});assert.equal(result[0].reference,'Page 1');
   await assert.rejects(()=>extractSource({originalname:'fake.pdf',buffer:Buffer.from('not a pdf')}));
   const blank=new JSZip();blank.file('ppt/slides/slide1.xml','<a:t>Hi</a:t>');await assert.rejects(()=>extractSource({originalname:'scan.pptx',buffer:Buffer.from('PK')}));
-  const blankBytes=await blank.generateAsync({type:'nodebuffer'});await assert.rejects(()=>extractSource({originalname:'short.pptx',buffer:blankBytes}),/Not enough/);
+  const blankBytes=await blank.generateAsync({type:'nodebuffer'});result=await extractSource({originalname:'short.pptx',buffer:blankBytes});assert.equal(result[0].text,'Hi','low-text files stay available for faculty review instead of failing extraction');
 });
 await test('complete Faculty→Student→rubric→award workflow, scopes, versioning, drafts, assignments and academic corrections',async()=>{
   await sequelize.sync({force:true});await seedAdministration();const hash=await bcrypt.hash('TestingPassword-2026!',4);
@@ -91,7 +91,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal(legacyEditor.status,200);
     assert.match(legacyEditor.html,/&quot;modules&quot;:\s*\[/);
     assert.equal((await f.get('/faculty/courses')).status,200);
-    assert.equal((await f.get('/faculty/credentials')).status,200);
+    r=await f.get('/faculty/credentials');assert.equal(r.status,200);
+    for(const logo of ['/images/certificates/minsu-seal.png','/images/certificates/cbm-logo.png','/images/certificates/cts-logo.png'])assert.ok(r.html.includes(logo),`faculty certificate preview includes ${logo}`);
     await c.update({modules:draft.modules});
     assert.equal((await f2.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify(draft),action:'publish'})).status,404);
     assert.equal((await s.get(`/faculty/courses/${c.id}/edit`)).status,403);
@@ -100,7 +101,12 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
     const token=scope=>issueChallenge(student.id,`${id}:${scope}`);
     const answer=scope=>s.post(`/student/learn/${id}/${scope==='final'?'final':'quiz/'+scope}`,{challenge:token(scope),'answers[q1]':'0'});
-    assert.equal((await answer('pretest')).status,302);r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`);
+    assert.equal((await answer('pretest')).status,302);
+    r=await s.get(`/student/learn/${id}?lesson=l1`);
+    assert.match(r.html, /<button class="button" disabled>Complete/);
+    const lessonChallenge=r.html.match(/data-lesson-challenge="([^"]+)"/)[1];
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.status,400);
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}/quiz/m1`);
     r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`,'Continue from completed lesson opens pending quiz');
     await s.get(`/student/learn/${id}/quiz/m1`);
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
@@ -133,7 +139,21 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await f.get('/faculty/students/'+student.id);await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Keep practicing itinerary explanations.',remediation:'Review digital tools.',visibility:'student'});r=await s.get('/student/results');assert.match(r.html,/Keep practicing/);
     await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Private intervention note.',visibility:'internal'});r=await s.get('/student/results');assert.ok(!r.html.includes('Private intervention note'));
     await f.get('/faculty/announcements');await f.post('/faculty/announcements',{title:'Assigned update',body:'Your next learning task is ready.'});assert.ok(await Notification.count({where:{userId:student.id,title:'Assigned update'}}));assert.equal(await Notification.count({where:{userId:outsider.id,title:'Assigned update'}}),0);
-    r=await s.get('/notifications/count');assert.ok(JSON.parse(r.html).unread>0);const notification=await Notification.findOne({where:{userId:student.id}});assert.equal((await o.post(`/notifications/${notification.id}/open`)).status,404);assert.equal((await s.post(`/notifications/${notification.id}/open`)).status,302);
+    r=await s.get('/notifications/count');assert.ok(JSON.parse(r.html).unread>0);
+    const notification=await Notification.create({userId:student.id,title:'Read one notice',message:'A single notification should update this account count.',href:'/student'});
+    await new Promise(resolve=>setTimeout(resolve,3));
+    const remainingNotice=await Notification.create({userId:student.id,title:'Keep this unread notice',message:'Opening another notification should leave this one visible.',href:'/student'});
+    const outsiderNotice=await Notification.create({userId:outsider.id,title:'Private notice',message:'This belongs to another account.',href:'/student'});
+    r=await s.get('/notifications/feed');let feed=JSON.parse(r.html);assert.ok(feed.notifications.some(item=>item.id===notification.id));assert.ok(feed.notifications.some(item=>item.id===remainingNotice.id));
+    assert.equal((await o.post(`/notifications/${notification.id}/open`)).status,404);
+    const beforeOpen=await Notification.count({where:{userId:student.id,readAt:null}});
+    assert.equal((await s.post(`/notifications/${notification.id}/open`)).status,302);
+    assert.equal(await Notification.count({where:{userId:student.id,readAt:null}}),beforeOpen-1);
+    r=await s.get('/notifications/feed');feed=JSON.parse(r.html);assert.ok(!feed.notifications.some(item=>item.id===notification.id),'read notification disappears from dropdown feed');assert.ok(feed.notifications.some(item=>item.id===remainingNotice.id),'other unread notifications stay in dropdown');
+    r=await s.request('/notifications/read',{method:'POST',headers:{Accept:'application/json','X-CSRF-Token':s.csrf}});
+    assert.equal(r.status,200);assert.equal(JSON.parse(r.html).unread,0);
+    r=await s.get('/notifications/feed');feed=JSON.parse(r.html);assert.equal(feed.unread,0);assert.equal(feed.notifications.length,0,'mark all clears all dropdown notification content');
+    assert.equal((await Notification.findByPk(outsiderNotice.id)).readAt,null,'mark all as read must only update the current user');
     await f.get('/faculty/upload');const zip=new JSZip();zip.file('word/document.xml',`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${draft.questions[0].sourceQuote.repeat(8)}</w:t></w:r></w:p></w:body></w:document>`);const form=new FormData();form.append('sources',new Blob([await zip.generateAsync({type:'nodebuffer'})]),'teaching.docx');r=await f.request('/faculty/upload',{method:'POST',headers:{'X-CSRF-Token':f.csrf},body:form});assert.equal(r.status,302);const uploaded=await SourceDocument.findOne({where:{filename:'teaching.docx'}});assert.ok(uploaded.sections[0].text);assert.equal((await f2.get(`/faculty/sources/${uploaded.id}`)).status,404);
     await s.get('/student/profile');const photo=new FormData();photo.append('kind','photo');photo.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7S8AAAAASUVORK5CYII=','base64')]),'profile.png');r=await s.request('/student/profile/files',{method:'POST',headers:{'X-CSRF-Token':s.csrf},body:photo});assert.equal(r.status,302);const {StudentFile}=await import('../models/portalModels.js');const file=await StudentFile.findOne();assert.equal((await o.get('/files/'+file.id)).status,404);assert.equal((await f.get('/files/'+file.id)).status,200);assert.equal((await s.get('/files/'+file.id)).status,200);
     await f.get('/faculty/questions');r=await f.post('/faculty/questions',{prompt:'What must you confirm before recommending?',options:JSON.stringify(['Guest requirements','Nothing']),answer:'0',explanation:'Confirm the guest requirements.',domain:domains[0],reviewed:'true'});assert.equal(r.status,302);r=await f.get('/faculty/questions');assert.match(r.html,/What must you confirm/);
@@ -143,7 +163,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
     process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
     try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');
-      globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n,sourceQuote:'An invented quote that is not in the material.'})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1);await assert.rejects(()=>generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'}),/unsupported source/);assert.equal(await AiJob.count({where:{status:'failed'}}),1,'failed retries reuse the admitted job');
+      globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n,sourceQuote:'An invented quote that is not in the material.'})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const unsupported=await generateCourse(otherFaculty.id,source,{domain:domains[0],questionCount:3,outcomes:'Apply the source.'});assert.equal(unsupported.job.status,'completed');assert.equal(unsupported.draft.questions[0].sourceNeedsReview,true,'unverified quotes are retained for one course-wide faculty review before publishing');
     }finally{globalThis.fetch=original;delete process.env.GEMINI_API_KEY;delete process.env.GEMINI_MODEL;}
   }finally{await new Promise(resolve=>server.close(resolve));await closeResources();}
 });

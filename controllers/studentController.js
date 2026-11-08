@@ -4,24 +4,29 @@ import QRCode from 'qrcode';
 import { Op } from 'sequelize';
 import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
-import { finalizeAttempt, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
+import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
 import { CareerPath } from '../models/adminModels.js';
 import { setting, genders } from '../services/accounts.js';
 import PDFDocument from 'pdfkit';
 import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notification, SavedCourse, sequelize } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
-import { text, profileInput } from '../services/validation.js';
+import { text, email as normalizeEmail, profileInput } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
-import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, careerMatches } from '../services/learning.js';
+import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
-import { googleReady, appUrl } from '../config/env.js';
+import { appUrl } from '../config/env.js';
+import { readFile } from 'node:fs/promises';
 const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 const render = (res, view, data = {}) => res.render(`student/${view}`, { nav: view, ...data });
 const fail = (res, message, status = 400) => res.status(status).render('student/message', { title: 'Unable to continue', message });
+async function activeCareerTracks() {
+  const configured = (await CareerPath.findAll({ where: { active: true } })).map(plain);
+  return configured.length ? configured : defaultCareerTracks.map(track => ({ ...track, qualifications: null, active: true }));
+}
 function localReturnPath(req, fallback) {
   const referer = req.get('referer');
   if (!referer) return fallback;
@@ -62,8 +67,9 @@ export const dashboard = async (req, res) => {
   const ownerIds = [...new Set([...courses, ...requiredCourses].map(course => course.ownerId).filter(Boolean))];
   const approvedOwners = ownerIds.length ? await User.findAll({ where: { id: { [Op.in]: ownerIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
   const approvedOwnerIds = new Set(approvedOwners.map(user => user.id));
-  const ongoing = attempts.filter(a => a.status === 'ongoing').map(decorate);
   const completed = attempts.filter(a => a.status === 'completed');
+  const completedCourseIds = new Set(completed.map(a => a.courseId));
+  const ongoing = attempts.filter(a => a.status === 'ongoing' && !completedCourseIds.has(a.courseId)).map(decorate);
   const evidence = await buildEvidence(attempts, plain(baseline));
   render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
     requiredCourses: requiredCourses.filter(c => approvedOwnerIds.has(c.ownerId)).map(c => ({ ...plain(c), done: attempts.some(a => a.courseId === c.id && a.status === 'completed'), due: date(required.find(r => r.courseId === c.id)?.dueAt) })), ongoing, completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
@@ -74,25 +80,29 @@ export const dashboard = async (req, res) => {
 };
 export const profilePage = async (req, res) => {
   const profile = plain(await StudentProfile.findOne({ where: { userId: req.user.id } })) || {};
-  render(res, 'profile', { title: 'My profile', profile, googleConnected: Boolean(req.user.googleId), googleReady: googleReady(), genders, corrections: (await ProfileCorrection.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] })).map(plain), files: (await StudentFile.findAll({ where: { userId: req.user.id }, attributes: ['id', 'filename', 'kind'] })).map(plain) });
+  const activeSections = await Section.findAll({ where: { active: true }, attributes: ['name'], order: [['name', 'ASC']] });
+  const sections = [...new Set([req.user.section, ...activeSections.map(section => section.name)].filter(Boolean))];
+  render(res, 'profile', { title: 'My profile', profile, genders, sections });
 };
 export const saveProfile = async (req, res) => {
-  let data, studentId, section, name;
+  let data, studentId, section, name, accountEmail, gender;
   try {
     data = profileInput(req.body);
-    if (!genders.includes(req.body.gender)) throw new Error('Select your gender.'); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100);
+    gender = text(req.body.gender, 30); studentId = text(req.body.studentId, 40); section = text(req.body.section, 60); name = text(req.body.name, 100); accountEmail = normalizeEmail(req.body.email);
+    if (!genders.includes(gender)) throw new Error('Select your gender.');
     if (!/^[\w-]{3,40}$/.test(studentId) || !section || name.length < 2) throw new Error('Enter your full name, Student ID and section.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) throw new Error('Enter a valid email address.');
+    if (section !== req.user.section && !await Section.findOne({ where: { name: section, active: true } })) throw new Error('Choose an active academic section.');
   } catch (err) { req.flash('error_msg', err.message); return res.redirect('/student/profile'); }
   try {
-    if (studentId !== req.user.studentId || section !== req.user.section) throw Object.assign(new Error('Request an academic record correction below instead of changing your ID or section directly.'), { status: 400 });
     await sequelize.transaction(async transaction => {
-      await req.user.update({ name, gender: req.body.gender }, { transaction });
+      await req.user.update({ name, email: accountEmail, studentId, section, gender, ...(accountEmail !== req.user.email ? { emailVerified: false } : {}) }, { transaction });
       const [profile] = await StudentProfile.findOrCreate({ where: { userId: req.user.id }, defaults: data, transaction });
       await profile.update(data, { transaction });
     });
   } catch (err) {
     if (err.name !== 'SequelizeUniqueConstraintError') throw err;
-    req.flash('error_msg', 'That Student ID is already in use.'); return res.redirect('/student/profile');
+    req.flash('error_msg', 'That email address or Student ID is already in use.'); return res.redirect('/student/profile');
   }
   req.flash('success_msg', 'Your profile has been saved.'); res.redirect('/student/profile');
 };
@@ -118,10 +128,12 @@ export const catalog = async (req, res) => {
     .filter(c => view !== 'enrolled' || enrolledIds.has(c.id))
     .filter(c => (!query || `${c.title} ${c.description}`.toLowerCase().includes(query)) && (!domain || (c.competencyAreas || [c.domain]).includes(domain)))
     .filter(c => !author || String(c.ownerId) === author)
-    .map(c => {
-    const active = attempts.find(a => a.courseId === c.id && a.status === 'ongoing');
-    const locked = c.prerequisites.some(id => !completedIds.has(Number(id)));
-    return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done: completedIds.has(c.id), moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
+    .map(row => {
+    const c = plain(row);
+    const done = completedIds.has(c.id);
+    const active = done ? null : attempts.find(a => a.courseId === c.id && a.status === 'ongoing');
+    const locked = (c.prerequisites || []).some(id => !completedIds.has(Number(id)));
+    return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done, moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
   });
   const visibleCourseIds = new Set(courses.filter(course => facultyById.has(course.ownerId)).map(course => course.id));
   render(res, 'catalog', { title: 'Explore courses', courses: cards, hasRequired: cards.some(course => course.required), domains, query: text(req.query.q, 100), selectedDomain: domain, faculty: facultyRows.map(user => ({ ...plain(user), id: String(user.id) })), selectedAuthor: author, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
@@ -148,8 +160,9 @@ export const courseDetail = async (req, res) => {
     SavedCourse.findOne({ where: { userId: req.user.id, courseId: course.id } })
   ]);
   const attempts = attemptRows.map(plain);
-  const active = attempts.find(a => a.status === 'ongoing');
-  render(res, 'course', { title: course.title, course, active, saved: Boolean(savedCourse), attempts: attempts.map(decorate),
+  const completed = attempts.find(a => a.status === 'completed');
+  const active = completed ? null : attempts.find(a => a.status === 'ongoing');
+  render(res, 'course', { title: course.title, course, active, completed, saved: Boolean(savedCourse), attempts: attempts.map(decorate),
     author: owner.name || 'CareerBridge faculty', prerequisites: (await Course.findAll({ where: { id: { [Op.in]: course.prerequisites } }, attributes: ['id', 'title'] })).map(plain),
     modules: course.modules.map(m => ({ title: m.title, lessons: m.lessons.map(l => ({ title: l.title })) })) });
 };
@@ -166,6 +179,8 @@ export const enroll = async (req, res) => {
     // Lock the student row to serialize enrollment/retake requests for this user.
     await User.findByPk(req.user.id, { transaction, lock: transaction.LOCK.UPDATE });
     const previous = await CourseAttempt.findAll({ where: { userId: req.user.id, courseId: course.id }, order: [['attemptNumber', 'DESC']], transaction });
+    const completed = previous.find(a => a.status === 'completed');
+    if (completed) { attempt = completed; return; }
     attempt = previous.find(a => a.status === 'ongoing');
     if (attempt) return;
     for (const prerequisite of course.prerequisites) {
@@ -177,11 +192,13 @@ export const enroll = async (req, res) => {
       courseVersion: course.version, snapshot: plain(course), completedLessons: [], quizScores: {}, quizAttempts: [], lastActivityAt: new Date() }, { transaction });
     await Notification.create({ userId: req.user.id, title: 'Your course is ready', message: `You started ${course.title}, attempt ${attempt.attemptNumber}.`, href: `/student/learn/${attempt.id}` }, { transaction });
   });
+  if (attempt.status === 'completed') req.flash('success_msg', 'You have already completed this course. You can review your lessons and results, but a new attempt is not available.');
   res.redirect(`/student/learn/${attempt.id}`);
 };
 export const myLearning = async (req, res) => {
   const attempts = (await attemptsFor(req.user.id)).map(decorate);
-  render(res, 'learning', { title: 'My learning', ongoing: attempts.filter(a => !a.completed).map(a => ({ ...a, resumeHref: resumeHref(a) })), completed: attempts.filter(a => a.completed),
+  const completedCourseIds = new Set(attempts.filter(a => a.completed).map(a => a.courseId));
+  render(res, 'learning', { title: 'My learning', ongoing: attempts.filter(a => !a.completed && !completedCourseIds.has(a.courseId)).map(a => ({ ...a, resumeHref: resumeHref(a) })), completed: attempts.filter(a => a.completed),
     learningHistory: attempts.flatMap(a => a.quizAttempts.map(result => ({ title: a.title, attemptNumber: a.attemptNumber, scope: result.scope === 'final' ? 'Final assessment' : result.scope === 'pretest' ? 'Course pre-test' : `Module quiz · ${a.snapshot.modules.find(m => m.id === result.scope)?.title || result.scope}`, score: result.score, passed: result.score >= a.snapshot.passingScore, date: date(result.at) }))).slice(0, 30) });
 };
 function resumeHref(attempt) {
@@ -198,7 +215,10 @@ function resumeHref(attempt) {
   return `/student/learn/${attempt.id}`;
 }
 async function ownedAttempt(req, transaction) {
-  return CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id }, ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {}) });
+  const options = transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {};
+  const attempt = await CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id }, ...options });
+  if (!attempt || attempt.status === 'completed') return attempt;
+  return await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: attempt.courseId, status: 'completed' }, order: [['completedAt', 'DESC']], ...options }) || attempt;
 }
 export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
@@ -220,7 +240,9 @@ export const learn = async (req, res) => {
   }
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
   const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id } });
-  render(res, 'learn', { tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
+  const lessonChallenge = selected?.id && !selected.completed && attempt.status !== 'completed'
+    ? issueChallenge(req.user.id, `lesson:${attempt.id}:${selected.id}`) : null;
+  render(res, 'learn', { lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
 };
 export const completeLesson = async (req, res) => {
   const next = await sequelize.transaction(async transaction => {
@@ -230,7 +252,14 @@ export const completeLesson = async (req, res) => {
     if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(q => q.scope === 'pretest')) error('Complete the course pre-test first.',403);
     const index = attempt.snapshot.modules.findIndex(m => m.lessons.some(l => l.id === req.body.lessonId));
     if (index < 0 || !moduleAvailable(attempt, index)) { const err = new Error('Lesson is locked.'); err.status = 403; throw err; }
-    await attempt.update({ completedLessons: [...new Set([...attempt.completedLessons, req.body.lessonId])], lastActivityAt: new Date() }, { transaction });
+    if (!attempt.completedLessons.includes(req.body.lessonId)) {
+      try {
+        checkChallenge(req.body.lessonChallenge, req.user.id, `lesson:${attempt.id}:${req.body.lessonId}`);
+      } catch {
+        error('Open the lecture and reach the end before completing it. Reload the lesson if it has expired.', 400);
+      }
+      await attempt.update({ completedLessons: [...attempt.completedLessons, req.body.lessonId], lastActivityAt: new Date() }, { transaction });
+    }
     return resumeHref(attempt);
   });
   res.redirect(next);
@@ -258,7 +287,7 @@ export const quizPage = async (req, res) => {
   if (attempt.snapshot.policy?.randomize) { const rank = q => createHash('sha256').update(`${attempt.id}:${scope}:${attempt.quizAttempts.length}:${q.id}`).digest('hex'); questions = [...questions].sort((a,b) => rank(a).localeCompare(rank(b))); }
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
   const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && attempt.quizAttempts.filter(q => q.scope === scope).length >= attempt.snapshot.policy.attemptLimit;
-  render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : `Module quiz · ${attempt.snapshot.modules.find(m => m.id === scope)?.title || ''}`, questions: publicQuestions(questions).map(q => ({ ...q, options: q.options.map((label, index) => ({ label, index, checked: String(draft.answers[q.id]) === String(index) })) })), attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
+  render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : 'Module quiz', questions: publicQuestions(questions).map(q => ({ ...q, options: q.options.map((label, index) => ({ label, index, checked: String(draft.answers[q.id]) === String(index) })) })), attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
 };
 export const saveDraft = async (req, res) => {
   let saved;
@@ -284,7 +313,8 @@ export const restartQuiz = async (req, res) => {
 export const submitQuiz = async (req, res) => {
   const scope = req.params.moduleId || 'final', final = scope === 'final', pretest = scope === 'pretest';
   const nonce = checkChallenge(req.body.challenge, req.user.id, `${req.params.id}:${scope}`);
-  const next = await sequelize.transaction(async transaction => {
+  let continuation = null;
+  await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction); if (!attempt) error('Attempt not found.', 404);
     if (attempt.status === 'completed' || attempt.quizAttempts.some(a => a.nonce === nonce)) return;
     if (!scopeAllowed(attempt, scope)) error('Requirements are incomplete.', 403);
@@ -296,11 +326,9 @@ export const submitQuiz = async (req, res) => {
     await attempt.update(update, { transaction });
     await draft.update({ answers: {}, startedAt: new Date(), revision: draft.revision + 1 }, { transaction });
     const completed = final && passed ? await finalizeAttempt(attempt, req.user, transaction) : false;
-    req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}%. ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. The next module is available.' : 'Review the lessons, then try again.'}`);
-    if (pretest || (!final && passed)) return resumeHref(attempt);
-  });
-  delete req.session.careerAi;
-  res.redirect(next || `/student/learn/${req.params.id}`);
+    if (passed && (pretest || !final)) continuation = resumeHref(plain(attempt));
+    req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}%. ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. Moving to your next lesson or quiz.' : 'Review the lessons, then try again.'}`);
+  }); delete req.session.careerAi; res.redirect(continuation || `/student/learn/${req.params.id}`);
 };
 export const assessmentPage = async (req, res) => {
   if (!await requireProfile(req, res)) return;
@@ -339,6 +367,8 @@ async function careerProvider() {
   return { ...gemini, provider: 'gemini', label: 'Gemini' };
 }
 export const careers = async (req, res) => {
+  if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
+  const showCareerMatches = req.session.careerMatchSearchUserId === req.user.id;
   const [attempts, baseline, profile, courses] = await Promise.all([
     attemptsFor(req.user.id), Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
     StudentProfile.findOne({ where: { userId: req.user.id } }), Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } } })
@@ -347,44 +377,66 @@ export const careers = async (req, res) => {
   const approvedFaculty = facultyIds.length ? await User.findAll({ where: { id: { [Op.in]: facultyIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
   const visibleIds = new Set(approvedFaculty.map(user => user.id));
   const eligibleCourses = courses.filter(course => visibleIds.has(course.ownerId));
-  const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, (await CareerPath.findAll({ where: { active: true } })).map(p => p.get({ plain: true })));
-  const learningContext = careerLearningContext(attempts, (await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+  const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, await activeCareerTracks());
+  const credentialRows = (await Credential.findAll({ where: { userId: req.user.id, revoked: false } })).map(plain);
+  const credentialAttemptIds = new Set(credentialRows.map(row => Number(row.attemptId)));
+  const learningContext = careerLearningContext(attempts, credentialRows);
   const fingerprint = careerFingerprint(evidence, learningContext);
   if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
-  const recommendations = eligibleCourses.filter(c => evidence.scores[c.domain] === null || evidence.scores[c.domain] < 75).map(c => ({ ...plain(c), locked: c.prerequisites.some(id => !completedIds.has(Number(id))) }));
-  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => (course.competencyAreas || [course.domain]).some(area=>track.required.includes(area))).map(course => ({ ...plain(course), learningStatus: completedIds.has(course.id) ? 'Completed' : attempts.some(a => a.courseId === course.id && a.status === 'ongoing') ? 'In progress' : 'Available', done: completedIds.has(course.id), active: attempts.some(a => a.courseId === course.id && a.status === 'ongoing') })) }));
+  const ongoingIds = new Set(attempts.filter(a => a.status === 'ongoing').map(a => a.courseId));
+  const recommendations = eligibleCourses.filter(course => !completedIds.has(course.id) && !ongoingIds.has(course.id)).map(row => {
+    const course = plain(row), areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
+    const gaps = areas.filter(area => !Number.isFinite(evidence.scores[area]) || evidence.scores[area] < 75);
+    const relatedPaths = evidence.tracks.filter(track => track.required.some(area => areas.includes(area)));
+    return { ...course, locked: (course.prerequisites || []).some(id => !completedIds.has(Number(id))), gapCount: gaps.length, relatedPathCount: relatedPaths.length };
+  }).filter(course => course.gapCount > 0).sort((a, b) => b.gapCount - a.gapCount || b.relatedPathCount - a.relatedPathCount || a.title.localeCompare(b.title)).slice(0, 6);
+  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => {
+    const areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
+    return areas.some(area => track.required.includes(area));
+  }).map(course => { const done = completedIds.has(course.id); const active = !done && ongoingIds.has(course.id); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
   const provider = await careerProvider();
-  render(res, 'careers', { evidenceDate: date(new Date()), evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore })), hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
+  render(res, 'careers', { showCareerMatches, evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
+    evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore,
+      areas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas.join(', ') : a.snapshot.domain,
+      award: credentialAttemptIds.has(Number(a.id)) ? 'Certificate earned' : 'Course completed' })),
+    hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
     developingCourses:learningContext.developing, aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi || null });
 };
 export const generateGuidance = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
   if(req.body.consent!=='yes')return reject('Confirm permission to share your anonymised learning evidence.');
-  const attempts=await attemptsFor(req.user.id),baseline=await Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]});
+  const [attempts,baseline,profile]=await Promise.all([
+    attemptsFor(req.user.id),
+    Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]}),
+    StudentProfile.findOne({where:{userId:req.user.id}}),
+  ]);
   if(!baseline&&!attempts.some(a=>a.status==='completed'||a.completedLessons?.length||Object.keys(a.quizScores||{}).length))return reject('Start learning and save some course progress, or complete an assessment, before finding career directions.');
   try{
-    const provider = await careerProvider();
-    if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
-    const profile = await StudentProfile.findOne({ where: { userId: req.user.id } });
-    const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,(await CareerPath.findAll({where:{active:true}})).map(plain));
+    const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,await activeCareerTracks());
     if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
     const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+    const provider = await careerProvider();
+    if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
     const ai=await explainCareer(evidence,learning,provider);
     if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
     req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
+    req.session.careerMatchSearchUserId = req.user.id;
     req.flash('success_msg','Career recommendations generated from your learning evidence.');
     if(json)return res.json({ok:true,redirect:'/student/careers#ai-results'});
     res.redirect('/student/careers#ai-results');
   }catch(error){return reject(error.code?error.message:'AI guidance is temporarily unavailable. Your previous results and rule-based pathways remain available.',error.status||503);}
 };
 export const achievements = async (req, res) => {
-  const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const allAttempts = await attemptsFor(req.user.id);
   const completed = allAttempts.filter(a => a.status === 'completed').sort((a,b) => new Date(a.completedAt) - new Date(b.completedAt));
+  const existing = await Credential.findAll({ where: { userId: req.user.id }, attributes: ['attemptId'] });
+  const issuedAttempts = new Set(existing.map(row => Number(row.attemptId)));
+  for (const attempt of completed) if (attempt.snapshot.certificateEnabled !== false && !issuedAttempts.has(Number(attempt.id))) await ensureCompletionCredential(attempt, req.user);
+  const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
-  const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved !== true && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
+  const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
   render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), starsText: '★'.repeat(c.stars) })) });
 };
 async function ownedCredential(req) {
@@ -392,35 +444,52 @@ async function ownedCredential(req) {
 }
 export const certificate = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Certificate not found.', 404);
-  res.set('Cache-Control', 'private, no-store');
+  const attempt = await CourseAttempt.findByPk(c.attemptId);
+  const request = attempt && await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' } });
+  const facultyAccount = await User.findByPk(request?.facultyId || attempt?.snapshot?.ownerId || (await Course.findByPk(attempt?.courseId))?.ownerId);
+  const configuredAdminName = await setting('certificateSignatory', 'BSTM Administrator');
+  const configuredAdminPosition = await setting('certificateSignatoryPosition', 'Campus Administrator');
+  const configuredAdminSignature = await setting('adminSignature', '');
+  const signatory = c.adminName && c.adminName !== 'CareerBridge Learning System' ? c.adminName : configuredAdminName || 'BSTM Administrator';
+  const adminPosition = c.adminPosition && c.adminPosition !== 'System-issued completion record' ? c.adminPosition : configuredAdminPosition || 'Campus Administrator';
+  const adminSignature = c.adminSignature || configuredAdminSignature;
+  const facultySignature = c.facultySignature || request?.facultySignature || '';
+  const facultyName = c.facultyName || facultyAccount?.name || 'Course Faculty';
+  const facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
+  const logos = await Promise.all([
+    readFile(new URL('../public/images/certificates/minsu-seal.png', import.meta.url)),
+    readFile(new URL('../public/images/certificates/cbm-logo.png', import.meta.url)),
+    readFile(new URL('../public/images/certificates/cts-logo.png', import.meta.url)),
+  ]);
+  const institution = await setting('institutionName', 'MinSU Bongabong Campus');
+  const footer = await setting('certificateFooter', 'BSTM CareerBridge · Verified course completion');
+  const url = `${appUrl}/verify/${c.id}`;
+  const qr = await QRCode.toBuffer(url, { width: 90, margin: 1 });
   res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `${req.query.view === '1' ? 'inline' : 'attachment'}; filename="CareerBridge-${c.id}.pdf"`);
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
-    const request = await CredentialRequest.findOne({ where: { courseId: (await CourseAttempt.findByPk(c.attemptId))?.courseId, status: 'approved' } });
-    const modern = false;
-  doc.rect(25, 25, 792, 545).lineWidth(2).stroke(modern ? '#182c3d' : '#007042');
-  if (modern) doc.rect(25,25,792,68).fill('#182c3d');
-  doc.fillColor(modern ? '#ffffff' : '#007042').fontSize(17).text('BSTM CAREERBRIDGE',55,43,{width:730,align:'center'});
-  doc.fontSize(9).text(await setting('institutionName','MinSU Bongabong Campus'),55,68,{width:730,height:22,align:'center'});
-  doc.fillColor('#172533').fontSize(29).text('Certificate of Completion',55,112,{width:730,align:'center'});
-  doc.fontSize(12).text('This certifies that',55,168,{width:730,align:'center'});
-  const fitted = (value,y,size,min,height) => { while(size>min && doc.widthOfString(value,{fontSize:size})>690)size--;let fittedValue=String(value);while(fittedValue.length>1&&doc.widthOfString(fittedValue,{fontSize:size})>690)fittedValue=fittedValue.slice(0,-2)+'…';doc.fontSize(size).text(fittedValue,75,y,{width:690,height,align:'center',lineBreak:false}); };
-  fitted(c.recipientName,198,26,16,65);
-  doc.fontSize(12).text('successfully completed the learning requirements for',55,280,{width:730,align:'center'});
-  fitted(c.courseTitle,314,23,15,66);
-  doc.fontSize(11).text(`Version ${c.courseVersion}  |  Award grade: ${c.score}%  |  Issued: ${date(c.issuedAt)}`,55,402,{width:730,align:'center'});
-  doc.fontSize(9).text(await setting('certificateFooter','Platform course completion record. Not a professional licence.'),75,431,{width:690,height:30,align:'center'});
-  const url = `${appUrl}/verify/${c.id}`;
-  doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`,75,477,{width:610,align:'center',link:url});
-  doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`,75,499,{width:610,align:'center'});
-    const signatory = c.adminName || await setting('certificateSignatory',''), adminPosition = c.adminPosition || await setting('certificateSignatoryPosition','Administrator'), adminSignature = c.adminSignature || await setting('adminSignature',''), facultySignature = c.facultySignature || request?.facultySignature || '', facultyAccount = request ? await User.findByPk(request.facultyId) : null, facultyName = c.facultyName || facultyAccount?.name || '', facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
-    if (facultySignature) { const raw = Buffer.from(facultySignature.split(',')[1], 'base64'); doc.image(raw,175,455,{fit:[150,54],align:'center'}); }
-    if (adminSignature) { const raw = Buffer.from(adminSignature.split(',')[1], 'base64'); doc.image(raw,535,455,{fit:[150,54],align:'center'}); }
-    if (facultyName) doc.fillColor('#172533').fontSize(9).text(facultyName,175,510,{width:150,height:18,align:'center'});
-    if (signatory) doc.fillColor('#172533').fontSize(9).text(signatory,535,510,{width:150,height:18,align:'center'});
-    doc.fillColor('#64748b').fontSize(8).text(facultyPosition,175,530,{width:150,height:20,align:'center'});
-    doc.text(adminPosition,535,530,{width:150,height:20,align:'center'});
-  const qr = await QRCode.toBuffer(url,{width:90,margin:1});doc.image(qr,728,478,{width:66});doc.end();
+  doc.rect(25, 25, 792, 545).lineWidth(2).stroke('#007042');
+  const logoX = [310, 391, 472];
+  logos.forEach((logo, i) => doc.image(logo, logoX[i], 37, { fit: [58, 58], align: 'center', valign: 'center' }));
+  doc.fillColor('#172533').fontSize(11).text(institution, 55, 99, { width: 730, align: 'center' });
+  doc.fillColor('#007042').fontSize(28).text('Certificate of Completion', 55, 127, { width: 730, align: 'center' });
+  doc.fillColor('#172533').fontSize(12).text('This certifies that', 55, 181, { width: 730, align: 'center' });
+  const fitted = (value, y, size, min, height) => { value = String(value || ''); while (size > min && doc.widthOfString(value, { fontSize: size }) > 700) size--; let fittedValue = value; while (fittedValue.length > 1 && doc.widthOfString(fittedValue, { fontSize: size }) > 700) fittedValue = `${fittedValue.slice(0, -2)}…`; doc.fontSize(size).text(fittedValue, 70, y, { width: 702, height, align: 'center', lineBreak: false }); };
+  fitted(c.recipientName, 207, 26, 16, 46);
+  doc.fontSize(12).text('for successfully completing the course', 55, 267, { width: 730, align: 'center' });
+  fitted(c.courseTitle, 291, 23, 15, 48);
+  doc.fontSize(10).text(`Course version ${c.courseVersion}  ·  Final grade ${c.score}%  ·  Issued ${date(c.issuedAt)}`, 55, 349, { width: 730, align: 'center' });
+  doc.fillColor('#64748b').fontSize(8).text(footer, 75, 378, { width: 690, height: 22, align: 'center' });
+  doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`, 75, 403, { width: 690, align: 'center', link: url });
+  doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`, 75, 417, { width: 690, align: 'center' });
+  const addSignature = (value, x) => { if (!value) return; try { const raw = Buffer.from(String(value).split(',').pop(), 'base64'); doc.image(raw, x, 446, { fit: [160, 45], align: 'center', valign: 'center' }); } catch { /* Keep the certificate readable if an older signature image is malformed. */ } };
+  addSignature(facultySignature, 185); addSignature(adminSignature, 515);
+  doc.fillColor('#172533').fontSize(10).text(facultyName, 155, 495, { width: 220, height: 18, align: 'center', ellipsis: true });
+  doc.fillColor('#64748b').fontSize(8).text(facultyPosition, 155, 515, { width: 220, height: 18, align: 'center', ellipsis: true });
+  doc.fillColor('#172533').fontSize(10).text(signatory, 485, 495, { width: 220, height: 18, align: 'center', ellipsis: true });
+  doc.fillColor('#64748b').fontSize(8).text(adminPosition, 485, 515, { width: 220, height: 18, align: 'center', ellipsis: true });
+  doc.image(qr, 735, 475, { width: 64 });
+  doc.end();
 };
 export const badge = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Badge not found.', 404);
@@ -519,3 +588,4 @@ export const reviewAnswers = async (req,res) => {
   if (a.snapshot.policy?.feedbackTiming === 'after-completion' && a.status !== 'completed') return fail(res,'Answer explanations are released after course completion.',403);
   render(res,'review',{ title:'Assessment feedback', attempt: decorate(plain(a)), questions: scopeQuestions(a,scope).map(q => ({ prompt:q.prompt, answer:q.options[q.answer], explanation:q.explanation, sourceReference:q.sourceReference })) });
 };
+

@@ -212,7 +212,8 @@ export const reviewCredential = async (req, res) => {
         const quizAverage = modules.length ? modules.reduce((sum, module) => sum + (attempt.quizScores?.[module.id] || 0), 0) / modules.length : attempt.finalScore;
         const practicalAverage = tasks.length ? practicals.filter(submission => tasks.some(task => task.id === submission.taskId)).reduce((sum, submission) => sum + (submission.grade || 0), 0) / tasks.length : 0;
         const weighted = Math.round(quizAverage * (policy.quizWeight ?? 0) / 100 + attempt.finalScore * (policy.finalWeight ?? 100) / 100 + practicalAverage * (policy.practicalWeight ?? 0) / 100);
-        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', adminSignature: signatures.adminSignature || null, adminName: signatures.certificateSignatory || null, adminPosition: signatures.certificateSignatoryPosition || 'Administrator', badgeLabel: request.badge?.label || 'Course completion' }, transaction });
+        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: attempt.completedAt || new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', adminSignature: signatures.adminSignature || null, adminName: signatures.certificateSignatory || 'CareerBridge Learning System', adminPosition: signatures.certificateSignatoryPosition || 'Administrator', badgeLabel: request.badge?.label || 'Course completion' }, transaction });
+        if (!created && !credential.revoked) await credential.update({ facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', adminSignature: signatures.adminSignature, adminName: signatures.certificateSignatory || 'CareerBridge Learning System', adminPosition: signatures.certificateSignatoryPosition || 'Administrator', badgeLabel: request.badge?.label || credential.badgeLabel || 'Course completion' }, { transaction });
         if (created) await Notification.create({ userId: attempt.userId, title: 'Certificate and badge approved', message: `Your completion of ${course.title} now qualifies for its approved certificate and badge.`, href: '/student/achievements' }, { transaction });
       }
     }
@@ -311,12 +312,16 @@ export const changePassword = async (req, res) => {
 
 export const saveCourseAiSettings = async (req, res) => {
   const provider = req.body.provider;
-  if (!['gemini','groq'].includes(provider)) fail('Select Gemini or Groq.');
+    if (!['gemini','groq','vertex'].includes(provider)) fail('Select Gemini, Groq, or Vertex AI.');
   const enabled = req.body.enabled === 'true';
   const gemini = req.body.geminiEnabled === 'true';
   const groq = req.body.groqEnabled === 'true';
-  if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its API key in Render first.');
-  const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq)};
+    const vertex = req.body.vertexEnabled === 'true';
+    const vertexConfigured = process.env.VERTEX_AUTH_MODE?.trim().toLowerCase() === 'api_key'
+      ? Boolean(process.env.VERTEX_API_KEY?.trim())
+      : Boolean(process.env.VERTEX_PROJECT_ID?.trim() && process.env.VERTEX_LOCATION?.trim() && (process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()));
+    if (enabled && !(provider === 'groq' ? groq && process.env.GROQ_API_KEY?.trim() : provider === 'vertex' ? vertex && vertexConfigured : gemini && (process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()))) fail('Enable the selected provider and configure its credentials in Render first.');
+    const values = {courseAiProvider:provider,courseAiEnabled:String(enabled),courseGeminiEnabled:String(gemini),courseGroqEnabled:String(groq),courseVertexEnabled:String(vertex)};
   await sequelize.transaction(async transaction => {
     for (const [key,value] of Object.entries(values)) await Setting.upsert({key,value},{transaction});
     await audit(req.user.id,'course-ai.settings.updated','system','course-ai',values,transaction);
@@ -324,3 +329,4 @@ export const saveCourseAiSettings = async (req, res) => {
   req.flash('success_msg','Course AI settings saved. New AI requests use the selected enabled provider.');
   res.redirect('/admin/settings');
 };
+

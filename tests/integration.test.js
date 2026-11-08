@@ -53,7 +53,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     await student.get('/student/profile');
     response = await student.post('/student/courses/1/enroll');
     assert.equal(response.headers.get('location'), '/student/profile');
-    const profile = { name: 'Student One', studentId: '2026-001', section: 'BSTM 4-1', gender: 'Male', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '300', careerInterest: 'Travel and tour operations', preferredLocation: 'Philippines' };
+    const profile = { name: 'Student One', email: 'one@example.com', studentId: '2026-001', section: 'BSTM 4-1', gender: 'Male', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027' };
     await student.post('/student/profile', profile);
     assert.equal((await StudentProfile.findOne({ where: { userId: user.id } })).complete, true);
     for (const route of ['/student', '/student/profile', '/student/courses', '/student/courses/1', '/student/learning', '/student/assessment', '/student/results', '/student/careers', '/student/achievements', '/student/notifications']) {
@@ -68,13 +68,13 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     const other = new Browser(); await other.get('/register');
     await other.post('/register', { ...signup, name: 'Student Two', email: 'two@example.com', student_id: '2026-002' });
     await other.get('/student/profile');
-    await other.post('/student/profile', { name: 'Student Two', studentId: '2026-002', section: 'BSTM 4-1', gender: 'Female', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '100', careerInterest: 'Travel', preferredLocation: 'Philippines' });
+    await other.post('/student/profile', { name: 'Student Two', email: 'two@example.com', studentId: '2026-002', section: 'BSTM 4-1', gender: 'Female', yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027' });
     response = await other.get('/student/learn/1'); assert.equal(response.r.status, 404);
     await other.get('/student/profile');
     response = await other.post('/student/learn/1/complete', { lessonId: 'traveller' }); assert.equal(response.status, 404);
     const c = starterCourses[0];
     for (const module of c.modules) {
-      for (const lesson of module.lessons) { await student.get('/student/learn/1'); await student.post('/student/learn/1/complete', { lessonId: lesson.id }); }
+      for (const lesson of module.lessons) { const page = await student.get(`/student/learn/1?lesson=${lesson.id}`); const lessonChallenge = page.html.match(/data-lesson-challenge="([^"]+)"/)[1]; await student.post('/student/learn/1/complete', { lessonId: lesson.id, lessonChallenge }); }
       const quiz = await student.get(`/student/learn/1/quiz/${module.id}`);
       assert.equal(quiz.r.status, 200);
       assert.ok(!quiz.html.includes(c.questions[0].explanation));
@@ -106,9 +106,9 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     download = await fetch(`${base}/student/credentials/${credential.id}/badge`, { headers: { cookie: student.cookie } });
     assert.equal(download.status, 200); assert.ok((await download.text()).includes('<svg'));
     response = await other.get(`/student/credentials/${credential.id}/certificate`); assert.equal(response.r.status, 404);
-    await student.get('/student/courses/1'); await student.post('/student/courses/1/enroll');
-    assert.equal(await CourseAttempt.count(), 2); assert.equal(await Credential.count(), 1);
-    assert.equal((await CourseAttempt.findOne({ where: { attemptNumber: 2 } })).completedLessons.length, 0);
+    await student.get('/student/courses/1'); response = await student.post('/student/courses/1/enroll');
+    assert.equal(response.status, 302); assert.match(response.headers.get('location'), /\/student\/learn\/1$/);
+    assert.equal(await CourseAttempt.count(), 1, 'a completed course must not create another attempt'); assert.equal(await Credential.count(), 1);
     await student.get('/student/assessment');
     const baseline = starterCourses.flatMap(c => c.questions.slice(0, 2));
     await student.post('/student/assessment', { challenge: issueChallenge(user.id, 'baseline'), ...Object.fromEntries(baseline.map(q => [`answers[${q.id}]`, String(q.answer)])) });

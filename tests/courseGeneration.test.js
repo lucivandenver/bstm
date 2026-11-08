@@ -85,9 +85,9 @@ await test("AI responses are grounded, mapped to server IDs and always require r
   assert.equal(result.domain, domains[0]);
   const bad = draft();
   bad.questions[0].sourceQuote = "A completely invented source statement.";
-  assert.throws(() => validateGeneratedDraft(bad, sections, options), {
-    code: "COURSE_SOURCE_UNSUPPORTED",
-  });
+  const reviewedWithoutQuote = validateGeneratedDraft(bad, sections, options);
+  assert.equal(reviewedWithoutQuote.questions[0].sourceQuote, "");
+  assert.equal(reviewedWithoutQuote.questions[0].sourceNeedsReview, true);
   assert.throws(
     () =>
       validateGeneratedDraft({ ...draft(), questions: [] }, sections, options),
@@ -101,6 +101,7 @@ await test("AI responses are grounded, mapped to server IDs and always require r
     sourceSections({ sections: JSON.stringify(sections) }),
     sections,
   );
+  assert.equal(sourceSections({ sections: [{ reference: "Page 1", text: " " }] })[0].text, "");
 });
 await test("missing provider configuration leaves the saved source available", async () => {
   delete process.env.GEMINI_API_KEY;
@@ -219,10 +220,11 @@ await test("save failure rolls back course and revision and job-log failure cann
   }
 });
 await test("admission failure before a job is created uses a safe diagnostic", async () => {
-  const count = AiJob.count;
+  const findAll = AiJob.findAll;
   try {
-    AiJob.count = async () => {
-      throw { original: { code: "ER_NO_SUCH_TABLE" }, sql: "do not disclose" };
+    AiJob.findAll = async (query) => {
+      if (query?.where?.status === "failed") throw { original: { code: "ER_NO_SUCH_TABLE" }, sql: "do not disclose" };
+      return findAll.call(AiJob, query);
     };
     await assert.rejects(
       () =>
@@ -235,7 +237,7 @@ await test("admission failure before a job is created uses a safe diagnostic", a
         !e.message.includes("do not disclose"),
     );
   } finally {
-    AiJob.count = count;
+    AiJob.findAll = findAll;
   }
   assert.equal(
     safeGenerationError({ original: { code: "ER_LOCK_DEADLOCK" } }, "quota")
@@ -243,7 +245,7 @@ await test("admission failure before a job is created uses a safe diagnostic", a
     "COURSE_STORAGE_BUSY",
   );
 });
-await test("duplicate running requests and daily quota are blocked for new generations", async () => {
+await test("duplicate jobs are blocked but application daily caps do not block generation", async () => {
   const job = await AiJob.create({
     userId: faculty.id,
     sourceId: source.id,
@@ -255,16 +257,18 @@ await test("duplicate running requests and daily quota are blocked for new gener
   });
   await job.update({ status: "failed" });
   await Setting.update({ value: "1" }, { where: { key: "aiDailyLimit" } });
-  await assert.rejects(
-    () =>
-      generateCourse(faculty.id, source, {
-        ...options,
-        outcomes: "A distinct new course request.",
-      }),
-    {
-      code: "COURSE_DAILY_LIMIT",
-    },
-  );
+  const originalFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = "test-key";
+  process.env.GEMINI_MODEL = "models/test-model";
+  globalThis.fetch = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(draft()) }] } }] }), { status: 200 });
+  try {
+    const result = await generateCourse(faculty.id, source, { ...options, outcomes: "A distinct new course request." });
+    assert.equal(result.job.status, "completed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_MODEL;
+  }
   await Setting.upsert({ key: "aiDailyLimit", value: "50" });
 });
 await test("Faculty source errors retain inputs and legacy manual submissions are rejected", async () => {
@@ -288,20 +292,16 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
     assert.match(r.html, /service.docx/);
     assert.doesNotMatch(r.html, /Something went wrong/);
     const originalFetch = globalThis.fetch;
-    process.env.GROQ_API_KEY = "test-key";
+    process.env.GEMINI_API_KEY = "test-key";
     try {
       globalThis.fetch = async (url, init) =>
-        String(url).startsWith("https://api.groq.com/openai/v1/chat/completions")
+        String(url).startsWith("https://generativelanguage.googleapis.com/")
           ? Response.json({
-              choices: [
-                { finish_reason: 'stop', message: { content: JSON.stringify(draft()) } },
+              candidates: [
+                { content: { parts: [{ text: JSON.stringify(draft()) }] } },
               ],
             })
           : originalFetch(url, init);
-      const groqPage = await f.get(`/faculty/sources/${source.id}`);
-      assert.equal(groqPage.status,200);
-      assert.match(groqPage.html,/configured AI providers \(Groq\)/);
-      assert.match(groqPage.html,/<button class="button" name="mode" value="ai" >Generate review-ready course/);
       const result = await f.request(`/faculty/sources/${source.id}/generate`, {
         method: "POST",
         headers: {
@@ -336,13 +336,14 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
       };
       publish = await f.post(`/faculty/courses/${courseId}`, {
         action: "publish",
+        confirmReview: "yes",
         courseData: JSON.stringify(reviewed),
       });
       assert.equal(publish.status, 302);
       assert.equal((await Course.findByPk(courseId)).published, true);
     } finally {
       globalThis.fetch = originalFetch;
-      delete process.env.GROQ_API_KEY;
+      delete process.env.GEMINI_API_KEY;
     }
     r = await f.post(`/faculty/sources/${source.id}/generate`, {
       ...options,
@@ -356,3 +357,4 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
     await closeResources();
   }
 });
+

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { sourceLimits } from '../services/sourceLimits.js';
-import { startCourseJob, courseJobStatus } from '../services/courseJobs.js';
+import { startCourseJob, startBlueprintJob, courseJobStatus } from '../services/courseJobs.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
 import { buildEvidence, summarizeLearning } from '../services/evidence.js';
 import { Op } from 'sequelize';
@@ -38,7 +38,7 @@ export const dashboard = async (req, res) => {
 export const profile = (req, res) => render(res, 'profile', { title: 'My faculty profile', googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
 export const credentials = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
+  const courses = await Course.findAll({ where: { ownerId: req.user.id, published: true, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
   const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory','certificateSignatoryPosition'] } })).map(s => [s.key, s.value]));
   render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
@@ -56,11 +56,32 @@ export const submitCredential = async (req, res) => {
   });
   req.flash('success_msg','Transparent signature and credential configuration sent to Admin for review. Existing issued awards retain their original signatures.');res.redirect('/faculty/credentials');
 };
+export const deleteCredentialRequest = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    if (!course.published || !course.certificateEnabled) fail('Only a published course with certificates enabled can have an award configuration.');
+    const request = await CredentialRequest.findOne({ where: { courseId: course.id, facultyId: req.user.id }, transaction });
+    if (!request) fail('No certificate configuration was found for this course.', 404);
+    await request.destroy({ transaction });
+    await course.update({ awardsApproved: false }, { transaction });
+    const attempts = await CourseAttempt.findAll({ where: { courseId: course.id }, transaction });
+    for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction });
+    await audit(req.user.id, 'credential.configuration_removed', 'course', course.id, { requestId: request.id }, transaction);
+  });
+  req.flash('success_msg', 'Certificate signature configuration removed. Existing student certificates remain in their records. Turn off certificate issuance in course settings to stop future certificates.');
+  res.redirect('/faculty/credentials');
+};
 export const courses = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['updatedAt', 'DESC']] });
+  let courses, databaseNotice='';
+  try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['id', 'DESC']] }); }
+  catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
   const ids = courses.map(c => c.id);
-  const [attempts, requests, assignments] = await Promise.all([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }), CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }), CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
-  render(res, 'courses', { title: 'My courses', courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+  let attempts=[],requests=[],assignments=[];
+  if(ids.length){
+    const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
+    [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
+  }
+  render(res, 'courses', { title: 'My courses', databaseNotice, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -75,13 +96,17 @@ export const saveCourse = async (req, res) => {
   const approve=req.body.action==='approve-generated',publish=approve||req.body.action==='publish';
   let input,id;
   if(!approve){try{input=JSON.parse(req.body.courseData);}catch{fail('Invalid course form. Reload and try again.');}}
+  if (!approve && publish && req.body.confirmReview === 'yes') {
+    input.modules = (input.modules || []).map(module => ({ ...module, lessons: (module.lessons || []).map(lesson => ({ ...lesson, sourceReviewed: true })) }));
+    input.questions = (input.questions || []).map(question => ({ ...question, reviewed: true }));
+  }
   await sequelize.transaction(async transaction => {
     const c=await ownedCourse(req,transaction);
     if(approve){
       if(req.body.confirmReview!=='yes'||Number(req.body.version)!==c.version)fail('Review the current course version before publishing.',409);
       if(c.published)fail('This course is already published.',409);
       if(!await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'},transaction}))fail('Generate a course from your saved materials first.');
-      input={...plain(c),questions:c.questions.map(q=>({...q,reviewed:true}))};
+      input={...plain(c),modules:c.modules.map(module=>({...module,lessons:module.lessons.map(lesson=>({...lesson,sourceReviewed:true}))})),questions:c.questions.map(q=>({...q,reviewed:true}))};
     }
     const data=courseInput(input,{draft:!publish});
     const wasPublished = Boolean(c?.published);
@@ -90,7 +115,32 @@ export const saveCourse = async (req, res) => {
     for (const prerequisite of data.prerequisites) {
       const seen = new Set(); const visit = async cid => { if (c && cid === c.id) fail('Prerequisites would form a cycle.'); if (seen.has(cid)) return; seen.add(cid); const dependency = await Course.findByPk(cid, { transaction }); if (!dependency) fail('Prerequisite course does not exist.'); for (const next of dependency.prerequisites) await visit(Number(next)); }; await visit(prerequisite);
     }
-    if (publish) publishCheck(data);
+    if (publish) {
+      publishCheck(data);
+      const generatedJob = await AiJob.findOne({ where: { courseId: c.id, status: 'completed', type: 'course-draft' }, transaction });
+      if (generatedJob) {
+        const source = await SourceDocument.findOne({ where: { id: generatedJob.sourceId, ownerId: req.user.id }, transaction });
+        const sourceRows = source ? sourceSections(source) : [];
+        const norm = value => String(value || '').normalize('NFKC').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/\s+/g,' ').trim().toLowerCase();
+        for (const module of data.modules) for (const lesson of module.lessons) {
+          const evidence = sourceRows.find(row => row.reference === lesson.sourceReference);
+          if (!lesson.sourceReviewed) fail('Review every generated lesson in the editor or confirm the complete review in student preview before publishing.', 422);
+          if (!lesson.sourceQuote || !evidence || !norm(evidence.text).includes(norm(lesson.sourceQuote))) {
+            lesson.sourceQuote = '';
+            lesson.sourceNeedsReview = true;
+            if (!evidence) lesson.sourceReference = 'Manual faculty review · no direct citation';
+          }
+        }
+        for (const question of data.questions) {
+          const evidence = sourceRows.find(row => row.reference === question.sourceReference);
+          if (!question.sourceQuote || !evidence || !norm(evidence.text).includes(norm(question.sourceQuote))) {
+            question.sourceQuote = '';
+            question.sourceNeedsReview = true;
+            if (!evidence) question.sourceReference = 'Manual faculty review · no direct citation';
+          }
+        }
+      }
+    }
     { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: publish }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
     id = c.id;
     if (c.published && !wasPublished) {
@@ -100,7 +150,7 @@ export const saveCourse = async (req, res) => {
     await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: c.published ? 'published' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, c.published ? 'course.published' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', publish ? 'Course published. Certificates and badges remain locked until an Admin approves your credential configuration.' : 'Draft saved. Publishing requires complete, reviewed assessments.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? 'Course published and available to students. Completion certificates follow the published course rules.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
 export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
 export const deleteDraft = async (req, res) => {
@@ -121,11 +171,22 @@ export const deleteDraft = async (req, res) => {
 };
 export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), generated:Boolean(await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'}})), questions: publicQuestions(c.questions) }); };
 const sourceValues = body => ({ areas:[].concat(body?.competencyAreas||body?.domain||[]), domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
-const sourceView = async (res, source, body, error) => { const config = await aiConfiguration(); return render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, domains, aiReady: config.ready, aiProviderLabel: config.label, aiUnavailableReason: config.unavailableReason, values: sourceValues(body), error }); };
-export const uploadPage = async (req, res) => { const config = await aiConfiguration(); return render(res, 'upload', { title: 'Upload & generate', domains, aiReady: config.ready, aiProviderLabel: config.label, aiUnavailableReason: config.unavailableReason, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) }); };
+const sourceDiagnostics = source => {
+  const grouped = new Map();
+  for (const section of sourceSections(source)) {
+    const key = section.documentKey || section.documentName || source.filename;
+    const item = grouped.get(key) || { name: section.documentName || source.filename, sections: 0, characters: 0, references: [] };
+    item.sections++; item.characters += section.text.length; item.references.push(section.reference); grouped.set(key, item);
+  }
+  return [...grouped.values()].map(item => ({ ...item, units: new Set(item.references.map(ref => ref.match(/(?:Page|Slide|Paragraph)\s+\d+/i)?.[0]).filter(Boolean)).size, warning: item.characters < 600 ? 'Low extracted text; check for scanned or mostly empty pages.' : '' }));
+};
+const sourceView = async (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, sourceDiagnostics: sourceDiagnostics(source), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
+export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
-  const reject=(message,status=422)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
+  const progressStream=req.get('accept')?.includes('application/x-ndjson');
+  const emit=event=>{if(!progressStream)return;if(!res.headersSent){res.status(200).type('application/x-ndjson');res.set('Cache-Control','no-cache, no-transform');res.set('X-Accel-Buffering','no');res.flushHeaders?.();}res.write(`${JSON.stringify(event)}\n`);res.flush?.();};
+  const reject=(message,status=422)=>{if(progressStream){if(!res.headersSent)res.status(status).type('application/x-ndjson').set('Cache-Control','no-cache, no-transform');res.write(`${JSON.stringify({ok:false,message,done:true})}\n`);return res.end();}if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/faculty/upload');};
   const files=req.files||(req.file?[req.file]:[]),sourceId=req.body.sourceId;
   if(!files.length)return reject('Choose at least one PDF, DOCX, PPTX or TXT file.');
   if(files.reduce((n,f)=>n+f.buffer.length,0)>sourceLimits.requestBytes)return reject('Upload at most 100 MB per request. The upload queue sends one file at a time.',413);
@@ -134,19 +195,20 @@ export const upload = async (req, res) => {
   for(const file of files){
     try{
       const key=createHash('sha256').update(file.buffer).digest('hex');
-      const sections=await extractSource(file);
+      emit({phase:'extracting',filename:text(file.originalname,120),current:0,total:0,unit:'pages'});
+      const sections=await extractSource(file,{onProgress:progress=>emit({...progress,filename:text(file.originalname,120)})});
       extracted.push({name:text(file.originalname,120),key,sections:sections.map(section=>({...section,documentKey:key,documentName:text(file.originalname,120),reference:`${text(file.originalname,80)} [${key.slice(0,8)}] · ${section.reference}`}))});
     }catch(error){failed.push({filename:text(file.originalname,120),message:error.status?error.message:'Could not decode this document. Use a valid PDF, DOCX, PPTX or TXT file.'});}
   }
   if(!extracted.length)return reject(failed.map(f=>`${f.filename}: ${f.message}`).join(' · '));
-  let source;
+  let source; const duplicateFiles=[];
   try{
     source=await sequelize.transaction(async transaction=>{
       const row=sourceId?await SourceDocument.findOne({where:{id:sourceId,ownerId:req.user.id},transaction,lock:transaction.LOCK.UPDATE}):null;
       if(sourceId&&!row)fail('Source collection not found.',404);
       if(row&&await AiJob.findOne({where:{sourceId:row.id,status:'running'},transaction}))fail('Wait for the current generation to finish before adding files.');
       const sections=row?sourceSections(row):[],keys=new Set(sections.map(s=>s.documentKey).filter(Boolean));
-      for(const doc of extracted)if(!keys.has(doc.key)){sections.push(...doc.sections);keys.add(doc.key);}
+      for(const doc of extracted)if(!keys.has(doc.key)){sections.push(...doc.sections);keys.add(doc.key);}else duplicateFiles.push(doc.name);
       if(sections.length>sourceLimits.sections||sections.reduce((n,s)=>n+s.text.length,0)>sourceLimits.textCharacters)fail('This collection would exceed 1,000,000 extracted characters or 10,000 sections. Previously extracted files are safe; put remaining material in another course.');
       const names=[...new Set(sections.map(s=>s.documentName).filter(Boolean))];
       const filename=names.length>1?`${names[0]} + ${names.length-1} related files`:names[0]||row?.filename;
@@ -155,8 +217,10 @@ export const upload = async (req, res) => {
     });
   }catch(error){if(error.status)return reject(error.message,error.status);const safe=safeGenerationError(error,'upload-save');return reject(`${safe.message} Reference: ${safe.reference}`,safe.status);}
   const redirect=`/faculty/sources/${source.id}`;
-  if(json)return res.json({ok:true,sourceId:source.id,redirect,failed,files:extracted.map(f=>f.name)});
-  req.flash(failed.length?'error_msg':'success_msg',failed.length?failed.map(f=>`${f.filename}: ${f.message}`).join(' · '):'Source collection saved. Generate your course with lessons, questions and answers.');res.redirect(redirect);
+  if(progressStream){if(!res.headersSent)res.status(200).type('application/x-ndjson').set('Cache-Control','no-cache, no-transform');res.write(`${JSON.stringify({ok:true,done:true,sourceId:source.id,redirect,failed,duplicates:[...new Set(duplicateFiles)],files:extracted.map(f=>f.name)})}\n`);return res.end();}
+  if(json)return res.json({ok:true,sourceId:source.id,redirect,failed,duplicates:[...new Set(duplicateFiles)],files:extracted.map(f=>f.name)});
+  const notes=[...failed.map(f=>`${f.filename}: ${f.message}`),...(duplicateFiles.length?[`Duplicate files skipped: ${[...new Set(duplicateFiles)].join(', ')}.`]:[])];
+  req.flash(notes.length?'error_msg':'success_msg',notes.length?notes.join(' · '):'Source collection saved. Review its extraction quality, then create a blueprint before generating lessons and assessments.');res.redirect(redirect);
 };
 export const resumeGeneration = async (req,res) => {
   const invalid=(message,status=400)=>res.status(status).json({ok:false,message});
@@ -168,9 +232,41 @@ export const resumeGeneration = async (req,res) => {
     if(!previous.state?.options?.consent||!providers.every(provider=>previous.state.options.consentProviders?.includes(provider)))return invalid('Provider configuration changed or permission is missing. Open the saved source and confirm the current providers before generating again.');
     const source=await SourceDocument.findOne({where:{id:previous.sourceId,ownerId:req.user.id}});if(!source)return invalid('Source collection not found.',404);
     if(previous.state.retryAt&&Date.parse(previous.state.retryAt)>Date.now())return res.status(429).json({ok:false,message:'The provider waiting period has not ended. Your saved sections remain available.',retryAt:previous.state.retryAt});
-    const job=await startCourseJob(req.user.id,source,{...previous.state.options,consent:'yes'});
+    const job=previous.state?.phase==='blueprint'
+      ? await startBlueprintJob(req.user.id,source,{...previous.state.options,consent:'yes'})
+      : await startCourseJob(req.user.id,source,{...previous.state.options,consent:'yes'});
     res.status(202).json({ok:true,redirect:`/faculty/generation/${job.id}`});
   }catch(error){const safe=safeGenerationError(error,'resume');res.status(safe.status).json({ok:false,message:safe.message,code:safe.code,reference:safe.reference});}
+};
+export const approveBlueprint = async (req, res) => {
+  try {
+    const previous = await AiJob.findOne({ where: { id: req.params.id, userId: req.user.id, type: 'course-draft' } });
+    if (!previous || previous.status !== 'review' || previous.state?.phase !== 'blueprint') return res.status(409).json({ ok: false, message: 'This blueprint is no longer waiting for review.' });
+    const source = await SourceDocument.findOne({ where: { id: previous.sourceId, ownerId: req.user.id } });
+    if (!source) return res.status(404).json({ ok: false, message: 'Source collection not found.' });
+    const original = previous.state.blueprint, sections = sourceSections(source);
+    if (original.modules?.length > Number(previous.state.options?.questionCount)) return res.status(422).json({ ok: false, message: 'The blueprint has more modules than assessment questions. Reduce the module count or increase the question count before approval.' });
+    const titles = [].concat(req.body.moduleTitle || []).map(v => text(v, 160)).filter(Boolean);
+    const outcomesByModule = [].concat(req.body.moduleOutcomes || []);
+    const refs = [].concat(req.body.moduleReference || []);
+    if (titles.length < 1 || titles.length > 6 || refs.length !== titles.length) return res.status(422).json({ ok: false, message: 'Keep 1–6 modules and retain a valid source reference for each.' });
+    const modules = titles.map((title, i) => {
+      const reference = text(refs[i], 200), section = sections.find(s => s.reference === reference);
+      if (!section) throw generationError('COURSE_SOURCE_UNSUPPORTED');
+      return { title, outcomes: text(outcomesByModule[i], 1000).split(/\r?\n/).map(v => text(v, 300)).filter(Boolean).slice(0, 5), sourceReference: reference, sourceNeedsReview: !section.text.trim() || original.modules[i]?.sourceNeedsReview === true };
+    });
+    const areas = [].concat(req.body.competencyAreas || []).filter(a => domains.includes(a));
+    if (!areas.length) return res.status(422).json({ ok: false, message: 'Select at least one competency area.' });
+    const blueprint = { ...original, title: text(req.body.title, 160), description: text(req.body.description, 2000), outcomes: text(req.body.outcomes, 1500).split(/\r?\n/).map(v => text(v, 500)).filter(Boolean).slice(0, 12), competencyAreas: [...new Set(areas)], modules };
+    if (blueprint.title.length < 4 || !blueprint.description || !blueprint.outcomes.length || modules.some(m => !m.outcomes.length)) return res.status(422).json({ ok: false, message: 'Complete the title, description, learning outcomes and outcomes for each module.' });
+    const options = { ...previous.state.options, domain: areas[0], competencyAreas: [...new Set(areas)], outcomes: blueprint.outcomes.join('\n'), courseTitle: blueprint.title, blueprint, consent: 'yes' };
+    await previous.update({ status: 'approved', state: { ...previous.state, blueprint } });
+    const job = await startCourseJob(req.user.id, source, options);
+    return res.status(202).json({ ok: true, redirect: `/faculty/generation/${job.id}` });
+  } catch (error) {
+    const safe = safeGenerationError(error, 'blueprint-approval');
+    return res.status(safe.status || 422).json({ ok: false, message: safe.message, code: safe.code });
+  }
 };
 export const generationStatus = async (req,res) => {
   const progress=await courseJobStatus(req.user.id,req.params.id);
@@ -189,7 +285,7 @@ export const generate = async (req, res) => {
     if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
     if (req.body.consent !== 'yes') throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with the selected AI provider.');
     if(req.body.background==='yes'){
-      const job=await startCourseJob(req.user.id,source,{...req.body,outcomes:values.outcomes || 'Derive learning outcomes from the supplied materials.'});
+      const job=await startBlueprintJob(req.user.id,source,{...req.body,outcomes:values.outcomes || 'Derive learning outcomes from the supplied materials.'});
       const statusUrl=`/faculty/generation/${job.id}`;
       if(req.get('accept')?.includes('application/json'))return res.status(202).json({ok:true,statusUrl,redirect:statusUrl});
       return res.redirect(statusUrl);
@@ -281,3 +377,4 @@ export const announce = async (req, res) => {
   await Notification.bulkCreate(students.map(s => ({ userId: s.id, title, message: body, href: '/student/notifications' })));
   await audit(req.user.id, 'faculty.announcement_sent', 'faculty', req.user.id, { recipients: students.length }); req.flash('success_msg', 'Announcement sent to your assigned students.'); res.redirect('/faculty/announcements');
 };
+

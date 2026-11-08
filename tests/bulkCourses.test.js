@@ -233,6 +233,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const data = JSON.parse(JSON.parse(init.body).contents[0].parts[0].text);
       seen.push(data);
       await new Promise((r) => setTimeout(r, 60));
+      if (data.selectedCompetencyAreas) return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: "Tourism information systems", description: "Understand tourism booking concepts.", outcomes: ["Verify guest requirements and safe bookings."], competencyAreas: data.selectedCompetencyAreas, modules: data.sections.slice(0, 3).map((section, index) => ({ title: `Tourism booking concepts ${index + 1}`, outcomes: ["Verify booking requirements."], sourceReference: section.reference })) }) }] } }] });
       return Response.json({
         candidates: [
           { content: { parts: [{ text: JSON.stringify(responseFor(data)) }] } },
@@ -259,7 +260,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       ]),
     });
     assert.equal(r.status, 202, r.html);
-    const { statusUrl } = JSON.parse(r.html);
+    let { statusUrl } = JSON.parse(r.html);
     const repeated = await f.request(`/faculty/sources/${sourceId}/generate`, {
       method: "POST",
       headers: {
@@ -292,10 +293,30 @@ test("three large files upload incrementally, retry without duplicates, and gene
       if (state.status !== "running") break;
       await new Promise((r) => setTimeout(r, 20));
     }
+    assert.equal(state.status, "review", JSON.stringify(state));
+    const approvedBlueprint = await f.post(`/faculty/generation/${state.id}/approve-blueprint`, {
+      title: state.blueprint.title,
+      description: state.blueprint.description,
+      outcomes: state.blueprint.outcomes.join("\n"),
+      competencyAreas: state.blueprint.competencyAreas,
+      moduleTitle: state.blueprint.modules.map((module) => module.title),
+      moduleOutcomes: state.blueprint.modules.map((module) => module.outcomes.join("\n")),
+      moduleReference: state.blueprint.modules.map((module) => module.sourceReference),
+    });
+    assert.equal(approvedBlueprint.status, 202, approvedBlueprint.html);
+    statusUrl = JSON.parse(approvedBlueprint.html).redirect;
+    statusUrl = statusUrl.replace(/\/faculty\/generation\//, "/faculty/generation/");
+    for (let n = 0; n < 80; n++) {
+      const poll = await f.request(statusUrl, { headers: { Accept: "application/json" } });
+      state = JSON.parse(poll.html);
+      if (state.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
     assert.equal(state.status, "completed", JSON.stringify(state));
-    assert.equal(seen.length, 3);
+    const courseCalls = seen.filter((payload) => payload.competencyAreas);
+    assert.equal(courseCalls.length, 3);
     assert.equal(
-      seen.reduce(
+      courseCalls.reduce(
         (n, p) => n + p.sections.reduce((m, s) => m + s.text.length, 0),
         0,
       ),
@@ -331,11 +352,10 @@ test("three large files upload incrementally, retry without duplicates, and gene
         return originalFetch(url, init);
       const payload = JSON.parse(
           JSON.parse(init.body).contents[0].parts[0].text,
-        ),
-        draft = responseFor(payload);
-      if (++failedCalls === 2)
-        draft.questions[0].sourceQuote =
-          "This fabricated statement is absent from the learning material.";
+        );
+      if (payload.selectedCompetencyAreas) return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: "Tourism information systems", description: "Understand tourism booking concepts.", outcomes: ["Verify guest requirements and safe bookings."], competencyAreas: payload.selectedCompetencyAreas, modules: payload.sections.slice(0, 3).map((section, index) => ({ title: `Tourism booking concepts ${index + 1}`, outcomes: ["Verify booking requirements."], sourceReference: section.reference })) }) }] } }] });
+      const draft = responseFor(payload);
+      if (++failedCalls === 2) draft.questions = [];
       return Response.json({
         candidates: [{ content: { parts: [{ text: JSON.stringify(draft) }] } }],
       });
@@ -356,21 +376,39 @@ test("three large files upload incrementally, retry without duplicates, and gene
       }),
     });
     assert.equal(failStart.status, 202, failStart.html);
-    const failedUrl = JSON.parse(failStart.html).statusUrl;
-    let failed;
+    const blueprintUrl = JSON.parse(failStart.html).statusUrl;
+    let blueprintState;
     for (let n = 0; n < 80; n++) {
-      failed = JSON.parse(
+      blueprintState = JSON.parse(
         (
-          await f.request(failedUrl, {
+          await f.request(blueprintUrl, {
             headers: { Accept: "application/json" },
           })
         ).html,
       );
+      if (blueprintState.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.equal(blueprintState.status, "review", JSON.stringify(blueprintState));
+    const failedStart = await f.post(`/faculty/generation/${blueprintState.id}/approve-blueprint`, {
+      title: blueprintState.blueprint.title,
+      description: blueprintState.blueprint.description,
+      outcomes: blueprintState.blueprint.outcomes.join("\n"),
+      competencyAreas: blueprintState.blueprint.competencyAreas,
+      moduleTitle: blueprintState.blueprint.modules.map((module) => module.title),
+      moduleOutcomes: blueprintState.blueprint.modules.map((module) => module.outcomes.join("\n")),
+      moduleReference: blueprintState.blueprint.modules.map((module) => module.sourceReference),
+    });
+    assert.equal(failedStart.status, 202, failedStart.html);
+    const failedUrl = JSON.parse(failedStart.html).redirect;
+    let failed;
+    for (let n = 0; n < 80; n++) {
+      failed = JSON.parse((await f.request(failedUrl, { headers: { Accept: "application/json" } })).html);
       if (failed.status !== "running") break;
       await new Promise((r) => setTimeout(r, 20));
     }
     assert.equal(failed.status, "failed");
-    assert.equal(failed.code, "COURSE_SOURCE_UNSUPPORTED");
+    assert.equal(failed.code, "COURSE_AI_INVALID");
     assert.equal(
       await Course.count(),
       1,

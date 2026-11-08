@@ -45,7 +45,11 @@ test('career evidence excludes ongoing / unlocked courses and uses latest comple
   assert.ok(evidence.tracks.every(t => t.label === 'More evidence needed'));
   const baseline = Object.fromEntries(domains.map(d => [d, 50]));
   assert.equal(careerMatches([a], { scores: baseline }).scores[domains[1]], 50);
-  assert.equal(careerMatches([a], { scores: baseline }).scores[domains[0]], 100);
+  assert.equal(careerMatches([a], { scores: baseline }).scores[domains[0]], 75, 'completed-course and diagnostic evidence are combined when both cover an area');
+  const interestMatch = careerMatches([], null, 'Travel');
+  assert.equal(interestMatch.tracks[0].title, 'Travel Consultant / Tour Operations Assistant');
+  assert.equal(interestMatch.tracks[0].preferred, true);
+  assert.equal(interestMatch.tracks[0].assessedAreas, 0, 'interest alone must not be presented as assessed knowledge');
 });
 test('signed assessment challenge binds user and scope and rejects tampering', () => {
   const token = issueChallenge(1, '5:final');
@@ -65,11 +69,12 @@ test('signup validates identity fields, confirmation and bcrypt byte limits', ()
   assert.throws(() => registrationInput({ ...input, password: 'x' }), /password/);
   assert.throws(() => registrationInput({ ...input, password: '🙂'.repeat(30), confirm_password: '🙂'.repeat(30) }), /password/);
 });
-test('profile validates required academic details and bounded OJT hours', () => {
-  const input = { yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', ojtStatus: 'Ongoing', ojtHours: '300', careerInterest: 'Events', preferredLocation: 'Philippines' };
+test('profile validates only the academic details kept in the student profile', () => {
+  const input = { yearLevel: 'Graduating', academicYear: '2026-2027', graduationYear: '2027', bio: 'Tourism student' };
   assert.equal(profileInput(input).complete, true);
-  assert.equal(profileInput(input).ojtHours, 300);
-  assert.throws(() => profileInput({ ...input, ojtHours: '-1' }), /hours/);
+  assert.equal(profileInput(input).bio, 'Tourism student');
+  assert.equal(profileInput(input).ojtHours, undefined);
+  assert.throws(() => profileInput({ ...input, yearLevel: '1st year ' + 'x' }), /year level/);
   assert.throws(() => profileInput({ ...input, academicYear: '2026' }), /academic year/);
 });
 test('starter course references, question keys and baseline cover four areas', () => {

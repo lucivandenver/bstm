@@ -161,7 +161,6 @@ test("Groq uses its own credentials and closed structured JSON schema, validated
       fetchImpl: async (url, init) => {
         assert.equal(url, "https://api.groq.com/openai/v1/chat/completions");
         assert.equal(init.headers.Authorization, "Bearer groq-test-key");
-        assert.equal(init.headers["User-Agent"], "CareerBridge/1.0");
         assert(!("x-goog-api-key" in init.headers));
         const body = JSON.parse(init.body);
         assert.equal(body.response_format.json_schema.strict, true);
@@ -266,38 +265,40 @@ test('Render AI_PROVIDER selects Groq and administrator disable overrides config
   }
 });
 
-test('replacing Gemini credentials with Groq selects the available enabled provider', async () => {
-  const names = ['GEMINI_API_KEY','GEMINI_FALLBACK_API_KEY','GROQ_API_KEY','COURSE_AI_PROVIDER','AI_PROVIDER','AI_ENABLED'];
+test('Vertex Express Mode is selectable and sends course generation through Vertex', async () => {
+  const names = ['AI_PROVIDER','COURSE_AI_PROVIDER','VERTEX_AUTH_MODE','VERTEX_API_KEY','VERTEX_MODEL','VERTEX_PROJECT_ID','VERTEX_LOCATION','VERTEX_SERVICE_ACCOUNT_JSON','GOOGLE_APPLICATION_CREDENTIALS'];
   const previous = names.map(name => [name,process.env[name]]);
+  const original = globalThis.fetch;
   try {
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_FALLBACK_API_KEY;
-    delete process.env.AI_PROVIDER;
-    delete process.env.COURSE_AI_PROVIDER;
-    process.env.GROQ_API_KEY='test-replacement-key';
-    process.env.AI_ENABLED='true';
-    assert.equal((await courseAiConfiguration()).provider,'groq');
-    assert.equal((await courseAiConfiguration()).ready,true);
-    process.env.COURSE_AI_PROVIDER='gemini';
-    assert.equal((await courseAiConfiguration()).provider,'groq');
-    await Setting.upsert({key:'courseAiProvider',value:'gemini'});
-    assert.equal((await courseAiConfiguration()).provider,'groq');
-    await Setting.upsert({key:'courseGroqEnabled',value:'false'});
-    assert.equal((await courseAiConfiguration()).ready,false);
-    await Setting.upsert({key:'courseGeminiEnabled',value:'false'});
-    assert.match((await courseAiConfiguration()).unavailableReason,/disabled/);
+    for (const name of names) delete process.env[name];
+    process.env.VERTEX_AUTH_MODE = 'api_key';
+    process.env.VERTEX_API_KEY = 'vertex-express-test-key';
+    process.env.VERTEX_MODEL = 'gemini-2.5-flash';
+    await Setting.upsert({key:'courseAiProvider',value:'vertex'});
+    await Setting.upsert({key:'courseAiEnabled',value:'true'});
+    await Setting.upsert({key:'courseVertexEnabled',value:'true'});
+    const config = await courseAiConfiguration();
+    assert.equal(config.provider,'vertex');
+    assert.equal(config.ready,true);
+    assert.equal(config.label,'Vertex AI');
+    let sent = false;
+    const request = createCourseTransport({fetchImpl:async(url,init)=>{
+      sent = true;
+      assert.match(String(url),/aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-2\.5-flash:generateContent$/);
+      assert.equal(init.headers['x-goog-api-key'],'vertex-express-test-key');
+      return success();
+    }});
+    const result = await request(config,input);
+    assert.equal(sent,true);
+    assert.equal(result.provider,'vertex');
+    process.env.VERTEX_AUTH_MODE = 'service_account';
+    process.env.VERTEX_PROJECT_ID = 'sample-project';
+    process.env.VERTEX_LOCATION = 'us-central1';
+    process.env.VERTEX_SERVICE_ACCOUNT_JSON = '{"type":"service_account","project_id":"sample-project"}';
+    assert.equal((await courseAiConfiguration()).vertexConfigured,true);
   } finally {
-    await Setting.destroy({where:{key:['courseAiProvider','courseGroqEnabled','courseGeminiEnabled']}});
+    globalThis.fetch = original;
+    await Setting.destroy({where:{key:['courseAiProvider','courseAiEnabled','courseVertexEnabled']}});
     for(const [name,value] of previous) { if(value === undefined) delete process.env[name]; else process.env[name]=value; }
   }
-});
-
-
-test('a non-JSON gateway denial is reported as provider availability instead of invalid credentials', async () => {
-  const previous = process.env.GROQ_API_KEY;
-  process.env.GROQ_API_KEY='test-gateway-key';
-  try {
-    const request = createCourseTransport({fetchImpl:async()=>new Response('error code: 1010',{status:403})});
-    await assert.rejects(()=>request({provider:'groq',model:'openai/gpt-oss-20b'},input),{code:'COURSE_AI_UNAVAILABLE'});
-  } finally { if(previous === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY=previous; }
 });

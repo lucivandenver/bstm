@@ -1,29 +1,30 @@
 import { Setting } from "../models/adminModels.js";
 import { generationError } from "./courseGenerationErrors.js";
+import { GoogleAuth } from "google-auth-library";
+
+const vertexMode = () => process.env.VERTEX_AUTH_MODE?.trim().toLowerCase() === "api_key" ? "api_key" : "service_account";
+const vertexReady = () => vertexMode() === "api_key"
+  ? Boolean(process.env.VERTEX_API_KEY?.trim())
+  : Boolean(process.env.VERTEX_PROJECT_ID?.trim() && process.env.VERTEX_LOCATION?.trim() && (process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()));
 
 export async function courseAiConfiguration() {
-  const settings = Object.fromEntries((await Setting.findAll({where:{key:['courseAiProvider','courseAiEnabled','courseGeminiEnabled','courseGroqEnabled']}})).map(row => [row.key,row.value]));
+  const settings = Object.fromEntries((await Setting.findAll({where:{key:['courseAiProvider','courseAiEnabled','courseGeminiEnabled','courseGroqEnabled','courseVertexEnabled']}})).map(row => [row.key,row.value]));
   const enabled = settings.courseAiEnabled === undefined ? process.env.AI_ENABLED !== 'false' : settings.courseAiEnabled === 'true';
-  const allowed = name => settings[name === 'groq' ? 'courseGroqEnabled' : 'courseGeminiEnabled'] !== 'false';
-  const keys = {
-    groq: process.env.GROQ_API_KEY?.trim(),
-    gemini: process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim(),
-  };
-  const selected = String(settings.courseAiProvider || process.env.COURSE_AI_PROVIDER || process.env.AI_PROVIDER || '').trim().toLowerCase();
-  const preferred = selected === 'groq' ? 'groq' : 'gemini';
-  const alternative = preferred === 'groq' ? 'gemini' : 'groq';
-  // Removing a provider key must not strand generation when the replacement is configured.
-  // An administrator's explicit disable remains authoritative.
-  const provider = allowed(preferred) && !keys[preferred] && keys[alternative] && allowed(alternative) ? alternative : preferred;
+  const allowed = name => settings[name === 'groq' ? 'courseGroqEnabled' : name === 'vertex' ? 'courseVertexEnabled' : 'courseGeminiEnabled'] !== 'false';
+  const selected = settings.courseAiProvider || process.env.COURSE_AI_PROVIDER || process.env.AI_PROVIDER;
+  const provider = ["groq", "vertex"].includes(selected) ? selected : "gemini";
   const model =
     provider === "groq"
       ? process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b"
+      : provider === "vertex"
+        ? process.env.VERTEX_MODEL?.trim() || "gemini-2.5-flash"
       : (
           process.env.COURSE_GEMINI_MODEL?.trim() ||
           process.env.GEMINI_MODEL?.trim() ||
           "gemini-3.1-flash-lite"
         ).replace(/^models\//, "");
-  const key = keys[provider];
+  const key =
+    provider === "groq" ? process.env.GROQ_API_KEY : provider === "vertex" ? process.env.VERTEX_API_KEY : (process.env.GEMINI_API_KEY || process.env.GEMINI_FALLBACK_API_KEY);
   const fallback =
     process.env.COURSE_AI_FALLBACK === "groq" &&
     provider !== "groq" && allowed("groq") &&
@@ -31,24 +32,20 @@ export async function courseAiConfiguration() {
   return {
     provider,
     model,
-    ready: enabled && allowed(provider) && Boolean(key?.trim()),
+    ready: enabled && allowed(provider) && (provider === "vertex" ? vertexReady() : Boolean(key?.trim())),
     enabled,
-    unavailableReason: !enabled
-      ? 'Course AI generation is disabled. Ask Admin to enable it in System Settings.'
-      : !allowed(provider)
-        ? `${provider === 'groq' ? 'Groq' : 'Gemini'} is disabled. Ask Admin to enable it or select another configured provider.`
-        : !key
-          ? `The selected ${provider === 'groq' ? 'Groq' : 'Gemini'} provider has no configured API key. Ask Admin to check the Render environment settings.`
-          : '',
     geminiEnabled: allowed("gemini"),
     groqEnabled: allowed("groq"),
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GEMINI_FALLBACK_API_KEY?.trim()),
     groqConfigured: Boolean(process.env.GROQ_API_KEY?.trim()),
+    vertexEnabled: allowed("vertex"),
+    vertexConfigured: vertexReady(),
+    vertexAuthMode: vertexMode(),
     label: fallback
       ? "Gemini and Groq"
       : provider === "groq"
         ? "Groq"
-        : "Gemini",
+        : provider === "vertex" ? "Vertex AI" : "Gemini",
     fallback: Boolean(fallback),
   };
 }
@@ -120,16 +117,29 @@ export function createCourseTransport({
   random = Math.random,
 } = {}) {
   return async function request(config, { system, payload, schema, onStatus }) {
-    const key = (config.apiKey || (
-      config.provider === "groq"
-        ? process.env.GROQ_API_KEY
-        : process.env.GEMINI_API_KEY || process.env.GEMINI_FALLBACK_API_KEY
-    ))?.trim();
-    if (!key) throw generationError("COURSE_AI_NOT_CONFIGURED");
+    const key = (config.apiKey || (config.provider === "groq" ? process.env.GROQ_API_KEY : config.provider === "vertex" ? process.env.VERTEX_API_KEY : process.env.GEMINI_API_KEY || process.env.GEMINI_FALLBACK_API_KEY))?.trim();
+    if (config.provider === "vertex" ? !vertexReady() : !key) throw generationError("COURSE_AI_NOT_CONFIGURED");
     const groq = config.provider === "groq";
-    const url = groq
+    const vertex = config.provider === "vertex";
+    let url = groq
       ? "https://api.groq.com/openai/v1/chat/completions"
       : `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
+    const headers = groq ? { "Content-Type": "application/json", Authorization: `Bearer ${key}` } : { "Content-Type": "application/json" };
+    if (vertex) {
+      if (vertexMode() === "api_key") {
+        url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${encodeURIComponent(config.model)}:generateContent`;
+        headers["x-goog-api-key"] = key;
+      } else {
+        const json = process.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim();
+        const auth = json ? new GoogleAuth({ credentials: JSON.parse(json), scopes: ["https://www.googleapis.com/auth/cloud-platform"] }) : new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+        const client = await auth.getClient();
+        const token = await client.getAccessToken();
+        if (!token?.token) throw generationError("COURSE_AI_AUTH");
+        const project = process.env.VERTEX_PROJECT_ID.trim(), location = process.env.VERTEX_LOCATION.trim();
+        url = `https://${location}-aiplatform.googleapis.com/v1/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(config.model)}:generateContent`;
+        headers.Authorization = `Bearer ${token.token}`;
+      }
+    } else if (!groq) headers["x-goog-api-key"] = key;
     const body = groq
       ? {
           model: config.model,
@@ -166,13 +176,7 @@ export function createCourseTransport({
       try {
         response = await fetchImpl(url, {
           method: "POST",
-          headers: groq
-            ? {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${key}`,
-                "User-Agent": "CareerBridge/1.0",
-              }
-            : { "Content-Type": "application/json", "x-goog-api-key": key },
+          headers,
           signal: AbortSignal.timeout(90000),
           body: JSON.stringify(body),
         });
@@ -211,7 +215,6 @@ export function createCourseTransport({
         return { text, provider: config.provider, model: config.model };
       }
       const status = response?.status;
-      if (status === 403 && Object.keys(data).length === 0) throw generationError("COURSE_AI_UNAVAILABLE");
       if (status && ![408, 429, 500, 502, 503, 504].includes(status))
         throw generationError(
           [401, 403].includes(status)
@@ -241,7 +244,7 @@ export function createCourseTransport({
       onStatus?.({
         phase: "waiting",
         retryAt: new Date(now() + delay).toISOString(),
-        message: `${groq ? "Groq" : "Gemini"} is busy or rate-limited. Waiting before retry ${attempt + 2} of 4…`,
+        message: `${groq ? "Groq" : vertex ? "Vertex AI" : "Gemini"} is busy or rate-limited. Waiting before retry ${attempt + 2} of 4…`,
       });
       await wait(delay);
     }
@@ -259,8 +262,8 @@ export async function requestCourseAi(config, input) {
         : process.env.NODE_ENV === "test"
           ? 0
           : config.provider === "groq"
-            ? 60000
-            : 12000;
+            ? 1500
+            : 2500;
     const wait = Math.max(0, nextRequestAt - Date.now());
     if (wait) {
       input.onStatus?.({
@@ -310,3 +313,4 @@ export async function requestCourseAi(config, input) {
     }
   }, input.onStatus);
 }
+

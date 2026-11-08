@@ -1,9 +1,31 @@
-import { CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
+import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
 import { Setting } from '../models/adminModels.js';
 import { starsFor, canTakeFinal, grade } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
+export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction) {
+  if (attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
+  const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
+  const course = await Course.findByPk(attempt.courseId, { transaction });
+  const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
+  const settings = await Setting.findAll({ where: { key: ['adminSignature', 'certificateSignatory', 'certificateSignatoryPosition'] }, transaction });
+  const values = Object.fromEntries(settings.map(s => [s.key, s.value]));
+  const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved' && values.adminSignature);
+  const defaults = {
+    userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion,
+    score, stars: starsFor(score), issuedAt: attempt.completedAt || new Date(),
+    facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
+    facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
+    adminSignature: signed ? values.adminSignature : null,
+    adminName: values.certificateSignatory || 'BSTM Administrator',
+    adminPosition: values.certificateSignatoryPosition || 'Campus Administrator',
+    badgeLabel: signed ? request.badge?.label || 'Course completion' : 'Course completion',
+  };
+  const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults, transaction });
+  if (created) await Notification.create({ userId: user.id, title: 'Course certificate issued', message: `You met the completion rules for ${attempt.snapshot.title}. Your certificate and badge are ready.`, href: '/student/achievements' }, { transaction });
+  return credential;
+}
 export async function finalizeAttempt(attempt, user, transaction) {
   if (attempt.status === 'completed' || attempt.finalScore === null || attempt.finalScore < attempt.snapshot.passingScore || !canTakeFinal(attempt)) return false;
   const tasks = tasksFor(attempt).filter(t => t.required !== false);
@@ -16,12 +38,7 @@ export async function finalizeAttempt(attempt, user, transaction) {
   const weighted = Math.round(quizAverage * (p.quizWeight ?? 0) / 100 + attempt.finalScore * (p.finalWeight ?? 100) / 100 + practical * (p.practicalWeight ?? 0) / 100);
   if (weighted < attempt.snapshot.passingScore) return false;
   await attempt.update({ status: 'completed', completedAt: new Date() }, { transaction });
-  if (attempt.snapshot.certificateEnabled !== false && attempt.snapshot.awardsApproved === true) {
-    const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
-    const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : null;
-    const settings = await Setting.findAll({ where: { key: ['adminSignature', 'certificateSignatory'] }, transaction }); const values = Object.fromEntries(settings.map(s => [s.key, s.value]));
-    if (request && faculty?.active && faculty.approvalStatus === 'approved' && request.facultySignature && values.adminSignature) await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults: { userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: new Date(), facultySignature: request?.facultySignature || null, facultyName: faculty?.name || null, adminSignature: values.adminSignature || null, adminName: values.certificateSignatory || null, badgeLabel: request?.badge?.label || 'Course completion' }, transaction });
-  }
+  await ensureCompletionCredential(attempt, user, weighted, transaction);
   await Notification.create({ userId: user.id, title: 'Course completed', message: `You completed ${attempt.snapshot.title}. View your completion history and eligible awards.`, href: '/student/achievements' }, { transaction });
   return true;
 }
@@ -47,3 +64,4 @@ export function checkQuizLimits(attempt, scope, draft) {
   if (scope !== 'pretest' && p.attemptLimit && taken >= p.attemptLimit) fail('Assessment attempt limit reached. Ask your faculty for a new learning attempt or remediation.', 403);
   if (p.quizMinutes && Date.now() - new Date(draft.startedAt) > p.quizMinutes * 60000) fail('Assessment time expired. Your saved answers are retained; restart the assessment to use another permitted attempt.', 409);
 }
+
