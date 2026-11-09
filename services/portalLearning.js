@@ -1,6 +1,5 @@
 import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
-import { Setting } from '../models/adminModels.js';
 import { starsFor, canTakeFinal, grade } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
@@ -9,17 +8,12 @@ export async function ensureCompletionCredential(attempt, user, score = attempt.
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
   const course = await Course.findByPk(attempt.courseId, { transaction });
   const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
-  const settings = await Setting.findAll({ where: { key: ['adminSignature', 'certificateSignatory', 'certificateSignatoryPosition'] }, transaction });
-  const values = Object.fromEntries(settings.map(s => [s.key, s.value]));
-  const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved' && values.adminSignature);
+  const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved');
   const defaults = {
     userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion,
     score, stars: starsFor(score), issuedAt: attempt.completedAt || new Date(),
     facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
     facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
-    adminSignature: signed ? values.adminSignature : null,
-    adminName: values.certificateSignatory || 'BSTM Administrator',
-    adminPosition: values.certificateSignatoryPosition || 'Campus Administrator',
     badgeLabel: signed ? request.badge?.label || 'Course completion' : 'Course completion',
   };
   const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults, transaction });

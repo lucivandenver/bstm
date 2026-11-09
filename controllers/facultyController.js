@@ -40,7 +40,7 @@ export const saveProfile = async (req, res) => { const name = text(req.body.name
 export const credentials = async (req, res) => {
   const courses = await Course.findAll({ where: { ownerId: req.user.id, published: true, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
-  const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName','adminSignature','certificateSignatory','certificateSignatoryPosition'] } })).map(s => [s.key, s.value]));
+  const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName'] } })).map(s => [s.key, s.value]));
   render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
 };
 export const submitCredential = async (req, res) => {

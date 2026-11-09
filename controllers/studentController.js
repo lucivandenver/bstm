@@ -447,12 +447,6 @@ export const certificate = async (req, res) => {
   const attempt = await CourseAttempt.findByPk(c.attemptId);
   const request = attempt && await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' } });
   const facultyAccount = await User.findByPk(request?.facultyId || attempt?.snapshot?.ownerId || (await Course.findByPk(attempt?.courseId))?.ownerId);
-  const configuredAdminName = await setting('certificateSignatory', 'BSTM Administrator');
-  const configuredAdminPosition = await setting('certificateSignatoryPosition', 'Campus Administrator');
-  const configuredAdminSignature = await setting('adminSignature', '');
-  const signatory = c.adminName && c.adminName !== 'CareerBridge Learning System' ? c.adminName : configuredAdminName || 'BSTM Administrator';
-  const adminPosition = c.adminPosition && c.adminPosition !== 'System-issued completion record' ? c.adminPosition : configuredAdminPosition || 'Campus Administrator';
-  const adminSignature = c.adminSignature || configuredAdminSignature;
   const facultySignature = c.facultySignature || request?.facultySignature || '';
   const facultyName = c.facultyName || facultyAccount?.name || 'Course Faculty';
   const facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
@@ -469,26 +463,30 @@ export const certificate = async (req, res) => {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
   doc.rect(25, 25, 792, 545).lineWidth(2).stroke('#007042');
+  const brand = await readFile(new URL('../public/images/careerbridge_brand_logo.png', import.meta.url));
+  doc.image(brand, 55, 48, { fit: [130, 65] });
   const logoX = [310, 391, 472];
-  logos.forEach((logo, i) => doc.image(logo, logoX[i], 37, { fit: [58, 58], align: 'center', valign: 'center' }));
-  doc.fillColor('#172533').fontSize(11).text(institution, 55, 99, { width: 730, align: 'center' });
-  doc.fillColor('#007042').fontSize(28).text('Certificate of Completion', 55, 127, { width: 730, align: 'center' });
-  doc.fillColor('#172533').fontSize(12).text('This certifies that', 55, 181, { width: 730, align: 'center' });
+  logos.forEach((logo, i) => doc.image(logo, logoX[i], 62, { fit: [58, 58], align: 'center', valign: 'center' }));
+  doc.fillColor('#172533').fontSize(11).text(institution, 55, 124, { width: 730, align: 'center' });
+  doc.fillColor('#007042').fontSize(28).text('Certificate of Completion', 55, 152, { width: 730, align: 'center' });
+  doc.fillColor('#172533').fontSize(12).text('This certifies that', 55, 206, { width: 730, align: 'center' });
   const fitted = (value, y, size, min, height) => { value = String(value || ''); while (size > min && doc.widthOfString(value, { fontSize: size }) > 700) size--; let fittedValue = value; while (fittedValue.length > 1 && doc.widthOfString(fittedValue, { fontSize: size }) > 700) fittedValue = `${fittedValue.slice(0, -2)}…`; doc.fontSize(size).text(fittedValue, 70, y, { width: 702, height, align: 'center', lineBreak: false }); };
-  fitted(c.recipientName, 207, 26, 16, 46);
-  doc.fontSize(12).text('for successfully completing the course', 55, 267, { width: 730, align: 'center' });
-  fitted(c.courseTitle, 291, 23, 15, 48);
-  doc.fontSize(10).text(`Course version ${c.courseVersion}  ·  Final grade ${c.score}%  ·  Issued ${date(c.issuedAt)}`, 55, 349, { width: 730, align: 'center' });
-  doc.fillColor('#64748b').fontSize(8).text(footer, 75, 378, { width: 690, height: 22, align: 'center' });
-  doc.fillColor('#007042').fontSize(8).text(`Verify: ${url}`, 75, 403, { width: 690, align: 'center', link: url });
-  doc.fillColor('#64748b').fontSize(8).text(`Credential ID: ${c.id}`, 75, 417, { width: 690, align: 'center' });
-  const addSignature = (value, x) => { if (!value) return; try { const raw = Buffer.from(String(value).split(',').pop(), 'base64'); doc.image(raw, x, 446, { fit: [160, 45], align: 'center', valign: 'center' }); } catch { /* Keep the certificate readable if an older signature image is malformed. */ } };
-  addSignature(facultySignature, 185); addSignature(adminSignature, 515);
-  doc.fillColor('#172533').fontSize(10).text(facultyName, 155, 495, { width: 220, height: 18, align: 'center', ellipsis: true });
-  doc.fillColor('#64748b').fontSize(8).text(facultyPosition, 155, 515, { width: 220, height: 18, align: 'center', ellipsis: true });
-  doc.fillColor('#172533').fontSize(10).text(signatory, 485, 495, { width: 220, height: 18, align: 'center', ellipsis: true });
-  doc.fillColor('#64748b').fontSize(8).text(adminPosition, 485, 515, { width: 220, height: 18, align: 'center', ellipsis: true });
-  doc.image(qr, 735, 475, { width: 64 });
+  fitted(c.recipientName, 232, 26, 16, 46);
+  doc.fontSize(12).text('for successfully completing the course', 55, 292, { width: 730, align: 'center' });
+  fitted(c.courseTitle, 316, 23, 15, 48);
+  doc.fillColor('#64748b').fontSize(8).text(footer, 75, 374, { width: 690, height: 22, align: 'center' });
+  doc.moveTo(65, 425).lineTo(777, 425).lineWidth(0.6).stroke('#cbd5e1');
+  if (facultySignature) {
+    try {
+      doc.image(Buffer.from(String(facultySignature).split(',').pop(), 'base64'), 65, 448, { fit: [150, 53], valign: 'center' });
+    } catch { /* Older credentials can contain an unreadable signature image. */ }
+  }
+  doc.fillColor('#172533').fontSize(10).text(facultyName, 65, 506, { width: 225, height: 15, ellipsis: true });
+  doc.fontSize(9).text(facultyPosition, 65, 522, { width: 225, height: 16, ellipsis: true });
+  doc.image(qr, (doc.page.width - 64) / 2, 470, { width: 64, link: url });
+  doc.fillColor('#64748b').fontSize(8).text(`Cert ID: ${c.id}`, 271, 542, { width: 300, align: 'center' });
+  doc.fillColor('#172533').fontSize(10).text(date(attempt?.completedAt || c.issuedAt), 552, 506, { width: 225, align: 'right' });
+  doc.fontSize(9).text('Completion Date', 552, 522, { width: 225, align: 'right' });
   doc.end();
 };
 export const badge = async (req, res) => {
