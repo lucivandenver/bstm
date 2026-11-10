@@ -38,15 +38,19 @@ export const dashboard = async (req, res) => {
 export const profile = (req, res) => render(res, 'profile', { title: 'My faculty profile', googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
 export const credentials = async (req, res) => {
-  const courses = await Course.findAll({ where: { ownerId: req.user.id, published: true, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
+  const courses = await Course.findAll({ where: { ownerId: req.user.id, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
   const settings = Object.fromEntries((await Setting.findAll({ where: { key: ['institutionName'] } })).map(s => [s.key, s.value]));
-  render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), request: plain(requests.find(r => r.courseId === c.id)) })) });
+  const savedSignature = (await Setting.findOne({ where: { key: `facultySignature:${req.user.id}` } }))?.value || requests.find(request => request.facultySignature)?.facultySignature;
+  render(res, 'credentials', { title: 'Certificates & badges', facultyName:req.user.name, facultyPosition:req.user.facultyPosition, ...settings, courses: courses.map(c => ({ ...plain(c), signature: requests.find(r => r.courseId === c.id)?.facultySignature || savedSignature, request: plain(requests.find(r => r.courseId === c.id)) })) });
 };
 export const submitCredential = async (req, res) => {
-  const signature=await validatedSignature(req.body.signature),label=text(req.body.badgeLabel,60)||'Course completion';
+  const label=text(req.body.badgeLabel,60)||'Course completion';
   await sequelize.transaction(async transaction=>{
-    const course=await ownedCourse(req,transaction);if(!course.published)fail('Publish your course before requesting a certificate and badge approval.');
+    const course=await ownedCourse(req,transaction);if(!course.certificateEnabled)fail('Enable certificates before requesting approval.');
+    const key = `facultySignature:${req.user.id}`;
+    const signature = await validatedSignature(req.body.signature || (await Setting.findOne({ where: { key }, transaction }))?.value);
+    await Setting.upsert({ key, value: signature }, { transaction });
     const [request,created]=await CredentialRequest.findOrCreate({where:{courseId:course.id},defaults:{facultyId:req.user.id,facultySignature:signature,badge:{enabled:true,label},status:'pending'},transaction});
     if(!created)await request.update({facultyId:req.user.id,facultySignature:signature,badge:{enabled:true,label},status:'pending',remarks:null,reviewedBy:null,reviewedAt:null},{transaction});
     await course.update({awardsApproved:false},{transaction});
@@ -75,13 +79,38 @@ export const courses = async (req, res) => {
   let courses, databaseNotice='';
   try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['id', 'DESC']] }); }
   catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 160) : '';
+  const archived = req.query.list === 'archive';
+  const revisions = courses.length ? await CourseRevision.findAll({
+    where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] } },
+    attributes: ['courseId', 'action'],
+    order: [['id', 'DESC']]
+  }) : [];
+  const latest = new Map();
+  for (const revision of revisions) {
+    if (!latest.has(revision.courseId)) latest.set(revision.courseId, revision);
+  }
+  const matches = courses.filter(course => {
+    const revision = latest.get(course.id);
+    const isArchived = !course.published && ['archived', 'admin-archived'].includes(revision?.action);
+    return isArchived === archived && [course.title, ...savedArray(course.modules).map(module => module.title)]
+      .some(title => String(title || '').toLowerCase().includes(query.toLowerCase()));
+  });
+  const pageCount = Math.max(1, Math.ceil(matches.length / 4));
+  const page = Math.min(pageCount, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
+  const listUrl = (number, archive = archived) => '/faculty/courses?' + new URLSearchParams({
+    q: query, list: archive ? 'archive' : 'active', page: String(number)
+  });
+  courses = matches.slice((page - 1) * 4, page * 4);
   const ids = courses.map(c => c.id);
   let attempts=[],requests=[],assignments=[];
   if(ids.length){
     const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
     [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
   }
-  render(res, 'courses', { title: 'My courses', databaseNotice, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+  render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, archived, page, pageCount,
+    activeUrl: listUrl(1, false), archiveUrl: listUrl(1, true),
+    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), pendingReview: latest.get(c.id)?.action === 'pending-review', modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -109,7 +138,6 @@ export const saveCourse = async (req, res) => {
       input={...plain(c),modules:c.modules.map(module=>({...module,lessons:module.lessons.map(lesson=>({...lesson,sourceReviewed:true}))})),questions:c.questions.map(q=>({...q,reviewed:true}))};
     }
     const data=courseInput(input,{draft:!publish});
-    const wasPublished = Boolean(c?.published);
     if (c && data.prerequisites.includes(c.id)) fail('A course cannot require itself.');
     // Every prerequisite must exist and cannot create an indirect cycle.
     for (const prerequisite of data.prerequisites) {
@@ -141,18 +169,26 @@ export const saveCourse = async (req, res) => {
         }
       }
     }
-    { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: publish }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
+    { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: false }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
     id = c.id;
-    if (c.published && !wasPublished) {
-      const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
-      await Notification.bulkCreate(learners.map(user => ({ userId: user.id, title: 'New course available', message: `${c.title} is now in the learning catalog.`, href: `/student/courses/${c.id}` })), { transaction });
-    }
-    await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: c.published ? 'published' : 'draft', snapshot: plain(c) }, { transaction });
-    await audit(req.user.id, c.published ? 'course.published' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
+    await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: publish ? 'pending-review' : 'draft', snapshot: plain(c) }, { transaction });
+    await audit(req.user.id, publish ? 'course.submitted_for_review' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', publish ? 'Course published and available to students. Completion certificates follow the published course rules.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? 'Course submitted for Admin approval.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
-export const archiveCourse = async (req, res) => { const c = await ownedCourse(req); await c.update({ published: false }); await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'archived', snapshot: plain(c) }); await audit(req.user.id, 'course.archived', 'course', c.id); req.flash('success_msg', 'Course archived. Existing attempts remain accessible.'); res.redirect('/faculty/courses'); };
+export const archiveCourse = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    if (!course.published) return;
+    await course.update({ published: false }, { transaction });
+    await CourseRevision.create({
+      courseId: course.id, actorId: req.user.id, version: course.version, action: 'archived', snapshot: plain(course)
+    }, { transaction });
+    await audit(req.user.id, 'course.archived', 'course', course.id, undefined, transaction);
+  });
+  req.flash('success_msg', 'Course archived. Existing attempts remain accessible.');
+  res.redirect('/faculty/courses?list=archive');
+};
 export const deleteDraft = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const course = await ownedCourse(req, transaction);

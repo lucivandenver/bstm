@@ -345,7 +345,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       version: course.version,
     });
     assert.equal(publish.status, 302, publish.html);
-    assert.equal((await course.reload()).published, true);
+    assert.equal((await course.reload()).published, false);
     let failedCalls = 0;
     globalThis.fetch = async (url, init) => {
       if (!String(url).startsWith("https://generativelanguage.googleapis.com/"))

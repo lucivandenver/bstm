@@ -116,10 +116,17 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await answer('m1')).status,302);assert.equal((await answer('final')).status,302);
     assert.equal((await CourseAttempt.findByPk(id)).status,'ongoing');assert.equal(await Credential.count(),0,'practical and feedback gate awards');
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,title:'Updated course version'}),action:'publish'});assert.equal(r.status,302);assert.equal((await Course.findByPk(c.id)).version,2);assert.equal((await CourseAttempt.findByPk(id)).snapshot.title,draft.title);assert.ok(await CourseRevision.count()>=3);
+    assert.equal((await Course.findByPk(c.id)).published, false);
+    assert.equal((await s.get('/student/courses/' + c.id)).status, 404);
+    await a.get('/admin/courses');
+    assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 1 })).status, 400);
+    assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 400);
     const signature='data:image/png;base64,'+(await readFile(new URL('../public/images/icons/careerbridge-192.png',import.meta.url))).toString('base64');
     const credentialRequest = await CredentialRequest.create({ courseId:c.id, facultyId:faculty.id, facultySignature:signature, status:'pending' });
     await a.get('/admin/credential-approvals');
     r=await a.post(`/admin/credential-approvals/${credentialRequest.id}`,{status:'approved',verifyCourse:'yes',verifyFacultySignature:'yes',verifyTemplate:'yes'});assert.equal(r.status,302);
+    assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 302);
+    assert.equal((await Course.findByPk(c.id)).published, true);
     r=await s.post(`/student/learn/${id}/activities/t1`,{response:'Thank you for your request. Could you confirm the travel dates, number of guests and accessibility requirements?',link:'https://example.test/evidence'});assert.equal(r.status,302);const sub=await PracticalSubmission.findOne();
     await f2.get('/faculty/evaluations');assert.equal((await f2.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'10','scores[communication]':'10',feedback:'Good evidence.'})).status,404);
     await f.get('/faculty/evaluations');r=await f.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'11','scores[communication]':'10',feedback:'Good evidence.'});assert.equal(r.status,400);
@@ -159,6 +166,23 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,prerequisites:[c.id]}),action:'publish'});assert.equal(r.status,400,'self-prerequisite rejected');
     await s.get('/student/profile');r=await s.post('/student/profile/correction',{studentId:'STU-CORRECTED',section:'BSTM 4-2',reason:'Correcting the registered academic section.'});assert.equal(r.status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-1');const correction=await ProfileCorrection.findOne();await a.get('/admin/academic');assert.equal((await a.post(`/admin/academic/${correction.id}`,{status:'approved'})).status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-2');assert.equal((await f.get('/faculty/students/'+student.id)).status,200,'preserve access to the student record for existing course history');
     r=await a.post(`/admin/courses/${c.id}/ownership`,{ownerId:otherFaculty.id});assert.equal(r.status,302);assert.equal((await f.get(`/faculty/courses/${c.id}/edit`)).status,404);assert.equal((await f2.get(`/faculty/courses/${c.id}/edit`)).status,200);
+    for (let index = 1; index <= 5; index++) {
+      await Course.create({
+        ...draft, ownerId: otherFaculty.id, slug: 'outline-' + index, title: 'Outline Course ' + index,
+        published: true, modules: [{ ...draft.modules[0], title: 'Searchable Module ' + index }]
+      });
+    }
+    const firstPage = await f2.get('/faculty/courses?q=searchable+module');
+    assert.equal(firstPage.status, 200);
+    assert.match(firstPage.html, /Page 1 of 2/);
+    assert.doesNotMatch(firstPage.html, /Outline Course 1/);
+    const secondPage = await f2.get('/faculty/courses?q=searchable+module&page=2');
+    assert.match(secondPage.html, /Module 1 · Searchable Module 1/);
+    const archiveTarget = await Course.findOne({ where: { slug: 'outline-1' } });
+    assert.equal((await f2.post('/faculty/courses/' + archiveTarget.id + '/archive', {})).status, 302);
+    assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<summary>Outline Course 1/);
+    assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<summary>Outline Course 1/);
+    assert.equal((await s.get('/student/courses/' + archiveTarget.id)).status, 404);
     const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
     process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
     try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');

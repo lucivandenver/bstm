@@ -49,3 +49,20 @@
   .lesson-outline summary{position:sticky;top:0;background:white;z-index:1}
   .lesson-position .check-circle,.lesson-outline .check-circle{width:22px;height:22px;flex-basis:22px}
 }
+
+.award-dialog {
+  width: min(42rem, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  overflow: auto;
+  margin: auto;
+}
+
+.award-dialog::backdrop {
+  background: rgb(15 23 42 / 65%);
+}
+
+button.award-tile {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

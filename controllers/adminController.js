@@ -161,12 +161,45 @@ export const deleteSection = async (req, res) => {
   });
   req.flash('success_msg', 'Section deleted.'); res.redirect('/admin/sections');
 };
-export const courses = async (req, res) => render(res, 'courses', { title: 'Course oversight', faculty: (await User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id','name'] })).map(plain), courses: (await Course.findAll({ order: [['title', 'ASC']] })).map(c => ({ ...plain(c), moduleCount: c.modules.length })), domains });
+export const courses = async (req, res) => {
+  const [faculty, courses, submissions] = await Promise.all([
+    User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id', 'name'] }),
+    Course.findAll({ order: [['title', 'ASC']] }),
+    CourseRevision.findAll({ where: { action: 'pending-review' }, attributes: ['courseId', 'version'] })
+  ]);
+  const pending = new Set(submissions.map(row => `${row.courseId}:${row.version}`));
+  render(res, 'courses', { title: 'Course oversight', faculty: faculty.map(plain), domains, courses: courses.map(course => ({
+    ...plain(course), moduleCount: course.modules.length,
+    pendingReview: !course.published && pending.has(`${course.id}:${course.version}`)
+  })) });
+};
+export const approvePublication = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!course || course.published || !course.ownerId || Number(req.body.version) !== course.version) fail('Review the latest faculty submission before publishing.');
+    const submission = await CourseRevision.findOne({
+      where: { courseId: course.id, version: course.version, action: 'pending-review' }, transaction
+    });
+    if (!submission) fail('This course is awaiting a faculty submission.');
+    const owner = await User.findOne({ where: { id: course.ownerId, role: 'faculty', active: true, approvalStatus: 'approved' }, transaction });
+    if (!owner || submission.actorId !== owner.id) fail('The current faculty owner must submit the course for approval.');
+    publishCheck(plain(course));
+    if (course.certificateEnabled && !course.awardsApproved) fail('Approve this course certificate configuration before publishing.');
+    await course.update({ published: true }, { transaction });
+    await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-published', snapshot: plain(course) }, { transaction });
+    await audit(req.user.id, 'course.published', 'course', course.id, { version: course.version }, transaction);
+    const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
+    await Notification.bulkCreate(learners.map(user => ({ userId: user.id, title: 'New course available', message: `${course.title} is now in the learning catalog.`, href: `/student/courses/${course.id}` })), { transaction });
+  });
+  req.flash('success_msg', 'Course approved and published.');
+  res.redirect('/admin/courses');
+};
 export const saveCourse = async (req, res) => {
   const title = text(req.body.title, 160), domain = text(req.body.domain, 60), score = Number(req.body.passingScore);
   if (!title || !domains.includes(domain) || !Number.isInteger(score) || score < 50 || score > 100) fail('Check course title, area and passing score (50–100).');
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!course) fail('Course not found.');
+    if (req.body.published === 'true' && !course.published && course.ownerId) fail('Use the faculty submission approval action to publish this course.');
     if (req.body.published === 'true') publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-before-edit', snapshot: plain(course) }, { transaction });
     await course.update({ title, description: text(req.body.description, 2000), domain, passingScore: score, published: req.body.published === 'true', version: course.version + 1 }, { transaction });

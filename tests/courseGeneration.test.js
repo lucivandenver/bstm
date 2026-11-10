@@ -340,7 +340,7 @@ await test("Faculty source errors retain inputs and legacy manual submissions ar
         courseData: JSON.stringify(reviewed),
       });
       assert.equal(publish.status, 302);
-      assert.equal((await Course.findByPk(courseId)).published, true);
+      assert.equal((await Course.findByPk(courseId)).published, false);
     } finally {
       globalThis.fetch = originalFetch;
       delete process.env.GEMINI_API_KEY;
