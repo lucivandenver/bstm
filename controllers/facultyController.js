@@ -479,6 +479,9 @@ export const generate = async (req, res) => {
         const destination = await Course.findOne({ where: { id: destinationId, ownerId: req.user.id, published: false } });
         const moduleTitle = text(req.body.moduleTitle, 160);
         if (!destination || text(destination.title, 160).length < 4 || moduleTitle.length < 4) throw generationError('COURSE_INPUT', 'Select an unpublished course you own and enter a module title.');
+        const topicCount = Number(req.body.topicCount ?? 5);
+        if (!Number.isInteger(topicCount) || topicCount < 5 || topicCount > 30) throw generationError('COURSE_INPUT', 'Choose a topic target from 5 to 30.');
+        options.topicCount = topicCount;
         options.destinationId = destination.id;
         options.moduleTitle = moduleTitle;
         options.courseTitle = destination.title;
