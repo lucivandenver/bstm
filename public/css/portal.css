@@ -23,3 +23,39 @@
 .grid.cols-4>.card.stat .accent{float:none;display:grid;place-items:center;align-self:center;width:42px;height:42px;margin:0 auto 2px;padding:0;color:#007042;background:#eaf5ef}
 .grid.cols-4>.card.stat.rose .accent{color:#007042;background:#eaf5ef}
 .ui-icon{display:inline-block;width:21px;height:21px;vertical-align:middle;flex-shrink:0}.side-nav .nav-icon{display:inline-flex;align-items:center;justify-content:center;width:23px;min-width:23px}.stat .accent .ui-icon{width:19px;height:19px}.stat-card-icon{display:flex;color:#007042;margin-bottom:12px}.course-art>.ui-icon{width:38px;height:38px}.account-dropdown{position:relative}.account-dropdown>summary{display:flex;align-items:center;gap:9px;list-style:none;cursor:pointer;border-radius:24px;padding:4px 8px 4px 4px}.account-dropdown>summary::-webkit-details-marker{display:none}.account-dropdown>summary:hover,.account-dropdown[open]>summary{background:#eef6f1}.account-dropdown summary:focus-visible{outline:3px solid #e95a83;outline-offset:3px}.account-dropdown .avatar{display:grid!important;place-items:center;overflow:hidden;width:38px;height:38px;flex-shrink:0}.account-dropdown .avatar img{width:100%;height:100%;object-fit:cover}.account-menu-name{font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-chevron .ui-icon{width:15px;height:15px}.account-dropdown-panel{position:absolute;right:0;top:calc(100% + 9px);z-index:65;width:240px;max-width:calc(100vw - 32px);border:1px solid #dce6e0;border-radius:14px;padding:8px;background:white;box-shadow:0 16px 40px #173a2920}.account-menu-heading{padding:10px 12px;font-size:13px;font-weight:700;overflow-wrap:anywhere}.account-menu-heading small{display:block;font-weight:400;font-size:11px;color:#718078;margin-top:3px}.account-dropdown-panel a,.account-dropdown-panel button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;padding:12px;border-radius:8px;color:#304b3d;text-align:left;font:inherit;font-size:13px;cursor:pointer}.account-dropdown-panel a:hover,.account-dropdown-panel button:hover{background:#fff0f5;color:#c72e61}.account-dropdown-panel form{border-top:1px solid #e8eeea;margin-top:5px;padding-top:5px}@media(max-width:800px){.account-menu-name{display:none}.account-dropdown>summary{padding-right:2px}.app-header .user-menu{gap:7px}.account-dropdown-panel{right:-4px}}
+
+.course-list-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.course-list-search {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-bottom: 1.25rem;
+}
+.course-list-search .field {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+.course-list-search .field:first-child {
+  flex-grow: 3;
+}
+.course-list-search input, .course-list-search select {
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .course-list-search .field, .course-list-search button {
+    flex-basis: 100%;
+  }
+}
+
+[data-upload-step][hidden],
+[data-upload-navigation][hidden],
+[data-upload-next][hidden],
+[data-upload-submit][hidden] {
+  display: none;
+}

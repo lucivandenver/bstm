@@ -1,7 +1,7 @@
 {{> studentTop}}
 <div class="page-heading"><div><p class="eyebrow">YOUR EFFORT, RECOGNISED</p><h1>My achievements</h1><p class="muted">Your earned module badges and certificates appear here.</p></div></div><div class="notice info">Pass a module assessment in a certificate-enabled course to earn its badge and certificate. Open a badge or certificate to see its details. Direct source citations are not an eligibility requirement. Stars reflect the assessment score: 75–84% = 1, 85–94% = 2, 95–100% = 3.</div>
 {{#if pendingAwards}}<section class="card space-top"><h2>Completed courses awaiting certificate setup</h2><p class="small muted">Your course completion is saved. A certificate is issued automatically when all published course requirements are met.</p>{{#each pendingAwards}}<p class="assignment-item"><strong>{{title}}</strong><span>Completed {{date}} · eligibility check pending</span></p>{{/each}}</section>{{/if}}<div class="grid cols-3 space-top">{{#each credentials}}<article class="card achievement"><h2>{{#if moduleTitle}}{{moduleTitle}} · {{/if}}{{courseTitle}}</h2>
-<p class="small muted">Issued {{date}} · Course version {{courseVersion}}</p>
+<p class="small muted">Issued {{date}}</p>
 <div class="award-pair">
   <button type="button" class="award-tile" data-open-award="badge-{{id}}"><span class="chip">Badge</span><span class="award-badge" aria-hidden="true">🏅</span><strong>{{badgeLabel}}</strong></button>
   <button type="button" class="award-tile" data-open-award="certificate-{{id}}"><span class="chip">Certificate</span><span class="award-certificate" aria-hidden="true">▤</span><strong>{{#if moduleTitle}}Module completion{{else}}Course completion{{/if}}</strong></button>

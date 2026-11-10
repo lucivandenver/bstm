@@ -8,7 +8,7 @@ import { browser } from './httpHelpers.js';
 process.env.NODE_ENV = 'test'; process.env.TEST_DB_STORAGE = ':memory:';
 const { sequelize, User, Course, CourseAttempt, StudentProfile, Credential, Notification } = await import('../models/learningModels.js');
 const { Section, Setting } = await import('../models/adminModels.js');
-const { CourseRevision, PracticalSubmission, SourceDocument, AiJob, QuizDraft, ProfileCorrection, CredentialRequest } = await import('../models/portalModels.js');
+const { CourseRevision, PracticalSubmission, SourceDocument, SourceFilePart, AiJob, QuizDraft, ProfileCorrection, CredentialRequest } = await import('../models/portalModels.js');
 const { seedAdministration } = await import('../services/accounts.js');
 const { domains } = await import('../data/starterCourses.js');
 const { courseInput, publishCheck } = await import('../services/courseAuthoring.js');
@@ -99,6 +99,17 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const section=await Section.findOne({where:{name:'BSTM 4-1'}});await f.get('/faculty/assignments');r=await f.post('/faculty/assignments',{courseId:c.id,sectionId:section.id,required:'true',dueAt:'2027-01-10T12:00'});assert.equal(r.status,302);
     r=await s.get('/student/courses');assert.match(r.html,/Required learning/);r=await s.post(`/student/courses/${c.id}/enroll`);assert.equal(r.status,302);const attempt=await CourseAttempt.findOne({where:{userId:student.id}}),id=attempt.id;
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
+    const material = { sourceId: 999, documentKey: 'a'.repeat(64) };
+    const originalBytes = Buffer.from('Original faculty learning material');
+    await SourceFilePart.create({ ...material, ownerId: faculty.id, part: 0, filename: 'module.txt', bytes: originalBytes.length, content: originalBytes });
+    await attempt.update({ snapshot: { ...attempt.snapshot, modules: attempt.snapshot.modules.map(module => ({ ...module, materials: [material] })) } });
+    const materialUrl = '/student/learn/' + id + '/materials/m1/999/' + material.documentKey;
+    const materialResponse = await s.get(materialUrl);
+    assert.equal(materialResponse.status, 200);
+    assert.equal(materialResponse.html, originalBytes.toString());
+    assert.equal((await o.get(materialUrl)).status, 404);
+    const confirmUrl = '/student/learn/' + id + '/materials/m1/confirm';
+    assert.equal((await s.post(confirmUrl, {})).status, 400);
     const token=scope=>issueChallenge(student.id,`${id}:${scope}`);
     const answer=scope=>s.post(`/student/learn/${id}/${scope==='final'?'final':'quiz/'+scope}`,{challenge:token(scope),'answers[q1]':'0'});
     assert.equal((await answer('pretest')).status,302);
@@ -106,7 +117,9 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match(r.html, /<button class="button" disabled>Complete/);
     const lessonChallenge=r.html.match(/data-lesson-challenge="([^"]+)"/)[1];
     r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.status,400);
-    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}/quiz/m1`);
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}?lesson=l1`);
+    assert.equal((await s.get(`/student/learn/${id}/quiz/m1`)).status, 403);
+    assert.equal((await s.post(confirmUrl, { read: 'yes' })).location, `/student/learn/${id}/quiz/m1`);
     r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`,'Continue from completed lesson opens pending quiz');
     await s.get(`/student/learn/${id}/quiz/m1`);
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
@@ -118,7 +131,10 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,title:'Updated course version'}),action:'publish'});assert.equal(r.status,302);assert.equal((await Course.findByPk(c.id)).version,2);assert.equal((await CourseAttempt.findByPk(id)).snapshot.title,draft.title);assert.ok(await CourseRevision.count()>=3);
     assert.equal((await Course.findByPk(c.id)).published, false);
     assert.equal((await s.get('/student/courses/' + c.id)).status, 404);
-    await a.get('/admin/courses');
+    const pendingCourses = await a.get('/admin/courses?status=pending');
+    assert.match(pendingCourses.html, /Pending publication \(1\)/);
+    assert.ok(pendingCourses.html.includes('/admin/courses/' + c.id + '/approve-publication'));
+    assert.match((await f.get('/faculty/courses?status=pending')).html, /UPDATED COURSE VERSION/);
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 1 })).status, 400);
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 400);
     const signature='data:image/png;base64,'+(await readFile(new URL('../public/images/icons/careerbridge-192.png',import.meta.url))).toString('base64');
@@ -180,8 +196,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match(secondPage.html, /Module 1 · Searchable Module 1/);
     const archiveTarget = await Course.findOne({ where: { slug: 'outline-1' } });
     assert.equal((await f2.post('/faculty/courses/' + archiveTarget.id + '/archive', {})).status, 302);
-    assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<summary>OUTLINE COURSE 1/);
-    assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<summary>OUTLINE COURSE 1/);
+    assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<h2>OUTLINE COURSE 1/);
+    assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<h2>OUTLINE COURSE 1/);
     assert.equal((await s.get('/student/courses/' + archiveTarget.id)).status, 404);
     const generatedModuleDraft = await Course.create({
       ...draft, ownerId: otherFaculty.id, slug: 'generated-module-draft', published: false
@@ -220,6 +236,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await QuizDraft.create({ userId: student.id, attemptId: archivedAttempt.id, scope: firstModule.id });
     const deleteArchive = '/faculty/courses/' + archiveTarget.id + '/archive/delete';
     assert.equal((await f.post(deleteArchive, { confirmDelete: 'yes' })).status, 404);
+    assert.ok((await f2.get('/faculty/courses?list=archive')).html.includes(deleteArchive));
     assert.equal((await f2.post(deleteArchive, {})).status, 400);
     assert.equal((await f2.post(deleteArchive, { confirmDelete: 'yes' })).status, 302);
     assert.equal(await Course.findByPk(archiveTarget.id), null);

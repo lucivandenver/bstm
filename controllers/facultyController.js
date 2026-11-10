@@ -8,7 +8,7 @@ import { Op } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { User, Course, CourseAttempt, Credential, SavedCourse, Assessment, StudentProfile, Notification, sequelize } from '../models/learningModels.js';
 import { Section, Announcement, Setting } from '../models/adminModels.js';
-import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, AiJob, PracticalSubmission, QuizDraft, CourseFeedback, FacultyNote, CredentialRequest } from '../models/portalModels.js';
+import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, SourceFilePart, AiJob, PracticalSubmission, QuizDraft, CourseFeedback, FacultyNote, CredentialRequest } from '../models/portalModels.js';
 import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
 import { domains } from '../data/starterCourses.js';
@@ -85,6 +85,7 @@ export const courses = async (req, res) => {
   catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
   const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 160) : '';
   const archived = req.query.list === 'archive';
+  const status = !archived && ['pending', 'approved', 'draft'].includes(req.query.status) ? req.query.status : '';
   const revisions = courses.length ? await CourseRevision.findAll({
     where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] } },
     attributes: ['courseId', 'action', 'version'],
@@ -103,13 +104,14 @@ export const courses = async (req, res) => {
   const matches = courses.filter(course => {
     const revision = latest.get(course.id);
     const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
-    return isArchived === archived && [course.title, ...savedArray(course.modules).map(module => module.title)]
+    const courseStatus = course.published ? 'approved' : pendingPublication(course, revision) ? 'pending' : 'draft';
+    return isArchived === archived && (!status || status === courseStatus) && [course.title, ...savedArray(course.modules).map(module => module.title)]
       .some(title => String(title || '').toLowerCase().includes(query.toLowerCase()));
   });
   const pageCount = Math.max(1, Math.ceil(matches.length / 4));
   const page = Math.min(pageCount, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
   const listUrl = (number, archive = archived) => '/faculty/courses?' + new URLSearchParams({
-    q: query, list: archive ? 'archive' : 'active', page: String(number)
+    q: query, list: archive ? 'archive' : 'active', status: archive ? '' : status, page: String(number)
   });
   courses = matches.slice((page - 1) * 4, page * 4);
   const ids = courses.map(c => c.id);
@@ -118,7 +120,7 @@ export const courses = async (req, res) => {
     const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
     [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
   }
-  render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, archived, page, pageCount,
+  render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, status, archived, page, pageCount,
     activeUrl: listUrl(1, false), archiveUrl: listUrl(1, true),
     previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), title: c.title.toUpperCase(), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !pendingPublication(c, latest.get(c.id)) && !hasHistory }; }) });
 };
@@ -312,7 +314,11 @@ export const createCourse = async (req, res) => {
 };
 export const uploadPage = async (req, res) => {
   const destinations = await Course.findAll({ where: { ownerId: req.user.id, published: false }, attributes: ['id', 'title'], order: [['title', 'ASC']] });
-  return render(res, 'upload', { title: 'Upload & generate', destinations: destinations.map(plain), selectedCourseId: Number(req.query.courseId), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+  const jobWhere = { userId: req.user.id, type: 'course-draft' };
+  const historyPages = Math.max(1, Math.ceil(await AiJob.count({ where: jobWhere }) / 10));
+  const historyPage = Math.min(historyPages, Math.max(1, Number.parseInt(req.query.historyPage, 10) || 1));
+  const historyUrl = page => '/faculty/upload?' + new URLSearchParams({ historyPage: page, ...(req.query.courseId ? { courseId: req.query.courseId } : {}) }) + '#generation-history';
+  return render(res, 'upload', { title: 'Upload & generate', historyPage, historyPages, previousHistory: historyPage > 1 ? historyUrl(historyPage - 1) : null, nextHistory: historyPage < historyPages ? historyUrl(historyPage + 1) : null, destinations: destinations.map(plain), selectedCourseId: Number(req.query.courseId), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: jobWhere, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 10, offset: (historyPage - 1) * 10 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
 };
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
@@ -329,7 +335,7 @@ export const upload = async (req, res) => {
       const key=createHash('sha256').update(file.buffer).digest('hex');
       emit({phase:'extracting',filename:text(file.originalname,120),current:0,total:0,unit:'pages'});
       const sections=await extractSource(file,{onProgress:progress=>emit({...progress,filename:text(file.originalname,120)})});
-      extracted.push({name:text(file.originalname,120),key,sections:sections.map(section=>({...section,documentKey:key,documentName:text(file.originalname,120),reference:`${text(file.originalname,80)} [${key.slice(0,8)}] · ${section.reference}`}))});
+      extracted.push({buffer:file.buffer,name:text(file.originalname,120),key,sections:sections.map(section=>({...section,documentKey:key,documentName:text(file.originalname,120),reference:`${text(file.originalname,80)} [${key.slice(0,8)}] · ${section.reference}`}))});
     }catch(error){failed.push({filename:text(file.originalname,120),message:error.status?error.message:'Could not decode this document. Use a valid PDF, DOCX, PPTX or TXT file.'});}
   }
   if(!extracted.length)return reject(failed.map(f=>`${f.filename}: ${f.message}`).join(' · '));
@@ -345,6 +351,17 @@ export const upload = async (req, res) => {
       const names=[...new Set(sections.map(s=>s.documentName).filter(Boolean))];
       const filename=names.length>1?`${names[0]} + ${names.length-1} related files`:names[0]||row?.filename;
       const saved=row?await row.update({filename,sections},{transaction}):await SourceDocument.create({ownerId:req.user.id,filename,sections},{transaction});
+      for (const doc of extracted) {
+        const where = { sourceId: saved.id, documentKey: doc.key, part: 0 };
+        if (await SourceFilePart.count({ where, transaction })) continue;
+        const partSize = 256 * 1024;
+        for (let offset = 0; offset < doc.buffer.length; offset += partSize) {
+          await SourceFilePart.create({
+            ...where, ownerId: req.user.id, part: offset / partSize, filename: doc.name, bytes: doc.buffer.length,
+            content: doc.buffer.subarray(offset, offset + partSize)
+          }, { transaction });
+        }
+      }
       await audit(req.user.id,'source.uploaded','source',saved.id,{files:extracted.length,failedFiles:failed.length,sections:sections.length},transaction);return saved;
     });
   }catch(error){if(error.status)return reject(error.message,error.status);const safe=safeGenerationError(error,'upload-save');return reject(`${safe.message} Reference: ${safe.reference}`,safe.status);}

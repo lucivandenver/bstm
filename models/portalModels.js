@@ -5,6 +5,15 @@ export const CourseRevision = sequelize.define('CourseRevision', { courseId: Dat
 export const CourseAssignment = sequelize.define('CourseAssignment', { courseId: { type: DataTypes.INTEGER, allowNull: false }, sectionId: { type: DataTypes.INTEGER, allowNull: false }, facultyId: DataTypes.INTEGER, dueAt: DataTypes.DATE, required: { type: DataTypes.BOOLEAN, defaultValue: true } }, { indexes: [{ unique: true, fields: ['courseId', 'sectionId'] }] });
 export const QuestionBank = sequelize.define('QuestionBank', { ownerId: DataTypes.INTEGER, prompt: DataTypes.TEXT, options: json([]), answer: DataTypes.INTEGER, explanation: DataTypes.TEXT, domain: DataTypes.STRING(60), sourceReference: DataTypes.STRING(200), sourceQuote: DataTypes.TEXT, reviewed: { type: DataTypes.BOOLEAN, defaultValue: false }, active: { type: DataTypes.BOOLEAN, defaultValue: true } });
 export const SourceDocument = sequelize.define('SourceDocument', { ownerId: DataTypes.INTEGER, filename: DataTypes.STRING, sections: json([]) });
+export const SourceFilePart = sequelize.define('SourceFilePart', {
+  ownerId: { type: DataTypes.INTEGER, allowNull: false },
+  sourceId: { type: DataTypes.INTEGER, allowNull: false },
+  documentKey: { type: DataTypes.STRING(64), allowNull: false },
+  part: { type: DataTypes.INTEGER, allowNull: false },
+  filename: DataTypes.STRING(120),
+  bytes: DataTypes.INTEGER,
+  content: { type: DataTypes.BLOB('long'), allowNull: false }
+}, { indexes: [{ unique: true, fields: ['sourceId', 'documentKey', 'part'] }] });
 export const AiJob = sequelize.define('AiJob', { userId: DataTypes.INTEGER, type: DataTypes.STRING(30), status: DataTypes.STRING(20), errorCode: DataTypes.STRING(80), sourceId: DataTypes.INTEGER, courseId: DataTypes.INTEGER, state: json({}) });
 export const DiagnosticDraft = sequelize.define('DiagnosticDraft', { userId: { type: DataTypes.INTEGER, unique: true }, answers: json({}), revision: { type: DataTypes.INTEGER, defaultValue: 0 } });
 export const QuizDraft = sequelize.define('QuizDraft', { userId: DataTypes.INTEGER, attemptId: DataTypes.INTEGER, scope: DataTypes.STRING(60), answers: json({}), revision: { type: DataTypes.INTEGER, defaultValue: 0 }, startedAt: DataTypes.DATE }, { indexes: [{ unique: true, fields: ['userId', 'attemptId', 'scope'] }] });

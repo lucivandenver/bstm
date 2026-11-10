@@ -1,8 +1,9 @@
+import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { buildEvidence } from '../services/evidence.js';
 import QRCode from 'qrcode';
 import { Op } from 'sequelize';
-import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest } from '../models/portalModels.js';
+import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest, SourceFilePart } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
 import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
@@ -121,14 +122,12 @@ export const catalog = async (req, res) => {
   const enrolledIds = new Set(attempts.map(attempt => attempt.courseId));
   const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
   const query = text(req.query.q, 100).toLowerCase(); const domain = text(req.query.domain, 60);
-  const author = text(req.query.author, 80);
   const section = await Section.findOne({ where: { name: req.user.section } });
   const assignments = section ? await CourseAssignment.findAll({ where: { sectionId: section.id } }) : [];
   const cards = courses.filter(c => facultyById.has(c.ownerId))
     .filter(c => view !== 'saved' || savedIds.has(c.id))
     .filter(c => view !== 'enrolled' || enrolledIds.has(c.id))
     .filter(c => (!query || `${c.title} ${c.description}`.toLowerCase().includes(query)) && (!domain || (c.competencyAreas || [c.domain]).includes(domain)))
-    .filter(c => !author || String(c.ownerId) === author)
     .map(row => {
     const c = plain(row);
     const done = completedIds.has(c.id);
@@ -137,7 +136,7 @@ export const catalog = async (req, res) => {
     return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done, moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
   });
   const visibleCourseIds = new Set(courses.filter(course => facultyById.has(course.ownerId)).map(course => course.id));
-  render(res, 'catalog', { title: 'Explore courses', courses: cards, hasRequired: cards.some(course => course.required), domains, query: text(req.query.q, 100), selectedDomain: domain, faculty: facultyRows.map(user => ({ ...plain(user), id: String(user.id) })), selectedAuthor: author, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
+  render(res, 'catalog', { title: 'Explore courses', courses: cards, hasRequired: cards.some(course => course.required), domains, query: text(req.query.q, 100), selectedDomain: domain, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
 };
 export const saveCourse = async (req, res) => {
   const course = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
@@ -215,6 +214,7 @@ function resumeHref(attempt) {
   for (const module of attempt.snapshot.modules) {
     const available = moduleAvailable(attempt, attempt.snapshot.modules.indexOf(module));
     if (!available) continue;
+    if (module.materials?.length && !attempt.quizScores[`read:${module.id}`]) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(module.lessons[0].id)}`;
     const unfinished = module.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
     if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(unfinished.id)}`;
     if (!(attempt.quizScores[module.id] >= attempt.snapshot.passingScore)) return `/student/learn/${attempt.id}/quiz/${module.id}`;
@@ -229,6 +229,40 @@ async function ownedAttempt(req, transaction) {
   if (!await Course.count({ where: { id: attempt.courseId, published: true, ownerId: { [Op.not]: null } }, transaction })) return null;
   return await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: attempt.courseId, status: 'completed' }, order: [['completedAt', 'DESC']], ...options }) || attempt;
 }
+function selectedMaterialModule(attempt, moduleId) {
+  const index = attempt.snapshot.modules.findIndex(module => module.id === moduleId);
+  return index >= 0 && moduleAvailable(attempt, index) ? attempt.snapshot.modules[index] : null;
+}
+export const moduleMaterial = async (req, res) => {
+  const attempt = await ownedAttempt(req);
+  const module = attempt && selectedMaterialModule(attempt, req.params.moduleId);
+  const material = module?.materials?.find(file => file.sourceId === Number(req.params.sourceId) && file.documentKey === req.params.key);
+  if (!material) return fail(res, 'Module material not found.', 404);
+  const where = { ...material, ownerId: attempt.snapshot.ownerId, part: 0 };
+  const file = await SourceFilePart.findOne({ where, attributes: ['filename', 'bytes'] });
+  if (!file) return fail(res, 'Module material not found.', 404);
+  const inline = /\.pdf$/i.test(file.filename);
+  res.attachment(file.filename);
+  if (inline) res.set('Content-Disposition', res.get('Content-Disposition').replace(/^attachment/, 'inline'));
+  res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': String(file.bytes) });
+  await pipeline((async function* () {
+    for (let part = 0; part * 256 * 1024 < file.bytes; part++) {
+      const row = await SourceFilePart.findOne({ where: { ...where, part }, attributes: ['content'] });
+      if (!row) throw new Error('Module material is incomplete.');
+      yield row.content;
+    }
+  })(), res);
+};
+export const confirmModuleReading = async (req, res) => {
+  const href = await sequelize.transaction(async transaction => {
+    const attempt = await ownedAttempt(req, transaction);
+    const module = attempt && selectedMaterialModule(attempt, req.params.moduleId);
+    if (!module?.materials?.length || attempt.status === 'completed' || req.body.read !== 'yes') error('Confirm that you read the module materials.', 400);
+    await attempt.update({ quizScores: { ...attempt.quizScores, [`read:${module.id}`]: 1 }, lastActivityAt: new Date() }, { transaction });
+    return resumeHref(plain(attempt));
+  });
+  res.redirect(href);
+};
 export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
   const attempt = plain(row); const course = attempt.snapshot;
@@ -239,19 +273,26 @@ export const learn = async (req, res) => {
   if (req.query.lesson) {
     for (const m of modules) {
       const lesson = m.lessons.find(l => l.id === req.query.lesson);
-      if (lesson && m.available) selected = { ...lesson, moduleTitle: m.title };
+      if (lesson && m.available) selected = { ...lesson, moduleTitle: m.title, moduleId: m.id };
     }
     if (!selected) return fail(res, 'This lesson is locked or unavailable.', 403);
   } else {
     const savedLesson = modules.filter(m => m.available).flatMap(m => m.lessons).find(l => l.id === attempt.lastLessonId && !l.completed);
     const m = savedLesson ? modules.find(m => m.lessons.some(l => l.id === savedLesson.id)) : modules.find(m => m.available && m.lessons.some(l => !l.completed)) || modules[0];
-    selected = { ...(savedLesson || m.lessons.find(l => !l.completed) || m.lessons[0]), moduleTitle: m.title };
+    selected = { ...(savedLesson || m.lessons.find(l => !l.completed) || m.lessons[0]), moduleTitle: m.title, moduleId: m.id };
   }
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
   const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id } });
   const lessonChallenge = selected?.id && !selected.completed && attempt.status !== 'completed'
     ? issueChallenge(req.user.id, `lesson:${attempt.id}:${selected.id}`) : null;
-  render(res, 'learn', { lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
+  const current = modules.find(module => module.id === selected?.moduleId);
+  const references = current?.materials || [];
+  const materials = references.length ? await SourceFilePart.findAll({
+    where: { ownerId: course.ownerId, part: 0, [Op.or]: references },
+    attributes: ['filename', 'sourceId', 'documentKey']
+  }) : [];
+  const readingConfirmed = Boolean(attempt.quizScores[`read:${current?.id}`]);
+  render(res, 'learn', { materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${current.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: current?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
 };
 export const completeLesson = async (req, res) => {
   const next = await sequelize.transaction(async transaction => {
@@ -284,6 +325,8 @@ export const heartbeat = async (req, res) => {
   res.json({ saved: true });
 };
 function scopeAllowed(a, scope) {
+  const module = a.snapshot.modules.find(item => item.id === scope);
+  if (module?.materials?.length && !a.quizScores[`read:${scope}`]) return false;
   return quizAccess(a, scope) && (scope === 'pretest' || (scope === 'final' ? canTakeFinal(a) : canTakeQuiz(a, scope)));
 }
 export const quizPage = async (req, res) => {

@@ -20,6 +20,8 @@ router.post('/courses/:id/enroll', asyncRoute(student.enroll));
 router.get('/learning', asyncRoute(student.myLearning));
 router.use('/learn/:id', asyncRoute(student.requireCompleteProfile));
 router.get('/learn/:id', asyncRoute(student.learn));
+router.get('/learn/:id/materials/:moduleId/:sourceId/:key', asyncRoute(student.moduleMaterial));
+router.post('/learn/:id/materials/:moduleId/confirm', asyncRoute(student.confirmModuleReading));
 router.post('/learn/:id/complete', asyncRoute(student.completeLesson));
 router.post('/learn/:id/heartbeat', asyncRoute(student.heartbeat));
 const assessmentLimit = rateLimit({ windowMs: 60000, limit: 15, message: 'Too many submissions. Please wait a minute and try again.' });

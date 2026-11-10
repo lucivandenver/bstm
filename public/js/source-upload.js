@@ -5,6 +5,30 @@
     status = form.querySelector("[data-upload-status]"),
     list = form.querySelector("[data-upload-files]"),
     link = form.querySelector("[data-source-link]");
+  const steps = [...form.querySelectorAll("[data-upload-step]")];
+  const navigation = form.querySelector("[data-upload-navigation]");
+  const actions = form.querySelector("[data-upload-submit]");
+  const back = form.querySelector("[data-upload-back]");
+  const next = form.querySelector("[data-upload-next]");
+  let step = 0;
+  function showStep() {
+    steps.forEach((panel, index) => { panel.hidden = index !== step; });
+    back.disabled = step === 0;
+    next.hidden = step === steps.length - 1;
+    actions.hidden = step !== steps.length - 1;
+  }
+  if (steps.length) {
+    navigation.hidden = false;
+    showStep();
+    back.addEventListener("click", () => { step--; showStep(); });
+    next.addEventListener("click", () => {
+      const field = steps[step].querySelector("[required]");
+      if (field && !field.reportValidity()) return;
+      step++;
+      showStep();
+      steps[step].querySelector("input, select")?.focus();
+    });
+  }
   let sourceId = "",
     saved = new Set(),
     busy = false;
@@ -76,7 +100,7 @@
     });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy || steps.length && step !== steps.length - 1) return;
     const generate = e.submitter?.value !== "extract";
     if (generate && (!form.elements.destinationId.value || form.elements.moduleTitle.value.trim().length < 4)) {
       status.textContent = "Choose your course and enter a module title of at least four characters.";
