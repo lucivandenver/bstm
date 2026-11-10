@@ -284,7 +284,8 @@ export const quizPage = async (req, res) => {
   if (!scopeAllowed(attempt, scope)) return fail(res, 'Complete the required pre-test, lessons and quizzes first.', 403);
   const draft = await draftFor(req.user.id, attempt, scope);
   let questions = scopeQuestions(attempt, scope);
-  if (attempt.snapshot.policy?.randomize) { const rank = q => createHash('sha256').update(`${attempt.id}:${scope}:${attempt.quizAttempts.length}:${q.id}`).digest('hex'); questions = [...questions].sort((a,b) => rank(a).localeCompare(rank(b))); }
+  const retries = attempt.quizAttempts.filter(entry => entry.scope === scope).length;
+  if (retries || attempt.snapshot.policy?.randomize) { const rank = q => createHash('sha256').update(`${attempt.id}:${scope}:${retries}:${q.id}`).digest('hex'); questions = [...questions].sort((a,b) => rank(a).localeCompare(rank(b))); }
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
   const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && attempt.quizAttempts.filter(q => q.scope === scope).length >= attempt.snapshot.policy.attemptLimit;
   render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : 'Module quiz', questions: publicQuestions(questions).map(q => ({ ...q, options: q.options.map((label, index) => ({ label, index, checked: String(draft.answers[q.id]) === String(index) })) })), attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
@@ -327,7 +328,7 @@ export const submitQuiz = async (req, res) => {
     await draft.update({ answers: {}, startedAt: new Date(), revision: draft.revision + 1 }, { transaction });
     const completed = final && passed ? await finalizeAttempt(attempt, req.user, transaction) : false;
     if (passed && (pretest || !final)) continuation = resumeHref(plain(attempt));
-    req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}%. ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. Moving to your next lesson or quiz.' : 'Review the lessons, then try again.'}`);
+    req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}% (${result.correct}/${result.total} correct). ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. Moving to your next lesson or quiz.' : 'Review the lessons, then try again.'}`);
   }); delete req.session.careerAi; res.redirect(continuation || `/student/learn/${req.params.id}`);
 };
 export const assessmentPage = async (req, res) => {
@@ -437,8 +438,13 @@ export const achievements = async (req, res) => {
   const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
   const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
-  render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), starsText: '★'.repeat(c.stars) })) });
+  render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
 };
+function credentialSkills(snapshot) {
+  return Array.isArray(snapshot?.competencyAreas) && snapshot.competencyAreas.length
+    ? snapshot.competencyAreas
+    : [snapshot?.domain].filter(Boolean);
+}
 async function ownedCredential(req) {
   return Credential.findOne({ where: { id: req.params.id, userId: req.user.id, revoked: false } });
 }
@@ -498,7 +504,8 @@ export const badge = async (req, res) => {
 export const verify = async (req, res) => {
   const c = await Credential.findByPk(req.params.id);
   if (!c) return res.status(404).render('verify', { title: 'Credential not found', missing: true });
-  res.render('verify', { title: 'Verify credential', credential: { ...plain(c), date: date(c.issuedAt) } });
+  const attempt = c.revoked ? null : await CourseAttempt.findByPk(c.attemptId);
+  res.render('verify', { title: 'Verify credential', credential: { ...plain(c), date: date(c.issuedAt), skills: credentialSkills(attempt?.snapshot) } });
 };
 export const downloadReport = async (req, res) => {
   const attempts = await attemptsFor(req.user.id);

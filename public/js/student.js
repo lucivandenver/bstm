@@ -6,6 +6,12 @@
   const closeMenu = () => { side?.classList.remove('open'); open?.setAttribute('aria-expanded', 'false'); open?.focus(); };
   close?.addEventListener('click', closeMenu);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && side?.classList.contains('open')) closeMenu(); });
+  for (const button of document.querySelectorAll('[data-open-award]')) {
+    button.addEventListener('click', () => {
+      const dialog = document.getElementById(button.dataset.openAward);
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
   // Count only estimated active browser time. Hidden or idle tabs stop sending activity.
   const learning = document.querySelector('[data-attempt]');
   if (learning) {

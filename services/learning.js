@@ -32,7 +32,7 @@ export function grade(questions, input) {
     const relevant = questions.map((q, i) => ({ q, i })).filter(x => x.q.domain === domain);
     if (relevant.length) scores[domain] = Math.round(relevant.filter(x => x.q.answer === answers[x.i]).length / relevant.length * 100);
   }
-  return { score: Math.round(correct / questions.length * 100), scores, answers };
+  return { score: Math.round(correct / questions.length * 100), scores, answers, correct, total: questions.length };
 }
 export const starsFor = score => score >= 95 ? 3 : score >= 85 ? 2 : 1;
 export function publicQuestions(questions) {
