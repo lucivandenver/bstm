@@ -188,8 +188,12 @@ export const enroll = async (req, res) => {
         const error = new Error('Complete the prerequisite courses first.'); error.status = 400; throw error;
       }
     }
+    const latestCourse = await Course.findOne({
+      where: { id: course.id, published: true, ownerId: course.ownerId }, transaction, lock: transaction.LOCK.UPDATE
+    });
+    if (!latestCourse) error('Course not found.', 404);
     attempt = await CourseAttempt.create({ userId: req.user.id, courseId: course.id, attemptNumber: (previous[0]?.attemptNumber || 0) + 1,
-      courseVersion: course.version, snapshot: plain(course), completedLessons: [], quizScores: {}, quizAttempts: [], lastActivityAt: new Date() }, { transaction });
+      courseVersion: latestCourse.version, snapshot: plain(latestCourse), completedLessons: [], quizScores: {}, quizAttempts: [], lastActivityAt: new Date() }, { transaction });
     await Notification.create({ userId: req.user.id, title: 'Your course is ready', message: `You started ${course.title}, attempt ${attempt.attemptNumber}.`, href: `/student/learn/${attempt.id}` }, { transaction });
   });
   if (attempt.status === 'completed') req.flash('success_msg', 'You have already completed this course. You can review your lessons and results, but a new attempt is not available.');

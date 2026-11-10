@@ -138,6 +138,55 @@ export const editor = async (req, res) => {
   }) : [];
   render(res, 'editor', { title: 'Revise course', destinations: destinations.map(plain), backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
+async function storeSourceFile(source, document, transaction) {
+  const where = { sourceId: source.id, documentKey: document.key, part: 0 };
+  if (await SourceFilePart.count({ where, transaction })) return;
+  const partSize = 256 * 1024;
+  for (let offset = 0; offset < document.buffer.length; offset += partSize) {
+    await SourceFilePart.create({
+      ...where, ownerId: source.ownerId, part: offset / partSize, filename: document.name,
+      bytes: document.buffer.length, content: document.buffer.subarray(offset, offset + partSize)
+    }, { transaction });
+  }
+}
+
+export const attachOriginalFile = async (req, res) => {
+  const file = req.file;
+  if (!file || !/\.pdf$/i.test(file.originalname) || !file.buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    fail('Choose a valid PDF file.', 422);
+  }
+  const name = text(file.originalname.slice(0, -4), 116) + '.pdf';
+  const key = createHash('sha256').update(file.buffer).digest('hex');
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    const modules = savedArray(course.modules);
+    const module = modules.find(item => item.id === req.body.moduleId);
+    if (!module) fail('Select a module in this course.', 422);
+    if (module.materials?.some(material => material.documentKey === key)) return;
+
+    const source = await SourceDocument.create({ ownerId: req.user.id, filename: name, sections: [] }, { transaction });
+    await storeSourceFile(source, { name, key, buffer: file.buffer }, transaction);
+    const material = { sourceId: source.id, documentKey: key };
+    const attach = items => items.map(item => item.id === module.id
+      ? { ...item, materials: [...(item.materials || []), material] }
+      : item);
+    await course.update({ modules: attach(modules) }, { transaction });
+
+    const attempts = await CourseAttempt.findAll({
+      where: { courseId: course.id, status: 'ongoing' }, transaction, lock: transaction.LOCK.UPDATE
+    });
+    for (const attempt of attempts) {
+      if (attempt.snapshot.ownerId !== course.ownerId || !attempt.snapshot.modules?.some(item => item.id === module.id)) continue;
+      const quizScores = { ...attempt.quizScores };
+      if (!(quizScores[module.id] >= attempt.snapshot.passingScore)) delete quizScores[`read:${module.id}`];
+      await attempt.update({ snapshot: { ...attempt.snapshot, modules: attach(attempt.snapshot.modules) }, quizScores }, { transaction });
+    }
+    await audit(req.user.id, 'module.material_attached', 'course', course.id, { moduleId: module.id, sourceId: source.id }, transaction);
+  });
+  req.flash('success_msg', 'Original PDF attached to the existing module.');
+  res.json({ redirect: `/faculty/courses/${req.params.id}/edit#original-material` });
+};
+
 export const attachGeneratedModule = async (req, res) => {
   const destinationId = Number(req.body.destinationId);
   if (!Number.isSafeInteger(destinationId) || destinationId < 1 || destinationId === Number(req.params.id)) fail('Select another course you own.');
@@ -351,17 +400,7 @@ export const upload = async (req, res) => {
       const names=[...new Set(sections.map(s=>s.documentName).filter(Boolean))];
       const filename=names.length>1?`${names[0]} + ${names.length-1} related files`:names[0]||row?.filename;
       const saved=row?await row.update({filename,sections},{transaction}):await SourceDocument.create({ownerId:req.user.id,filename,sections},{transaction});
-      for (const doc of extracted) {
-        const where = { sourceId: saved.id, documentKey: doc.key, part: 0 };
-        if (await SourceFilePart.count({ where, transaction })) continue;
-        const partSize = 256 * 1024;
-        for (let offset = 0; offset < doc.buffer.length; offset += partSize) {
-          await SourceFilePart.create({
-            ...where, ownerId: req.user.id, part: offset / partSize, filename: doc.name, bytes: doc.buffer.length,
-            content: doc.buffer.subarray(offset, offset + partSize)
-          }, { transaction });
-        }
-      }
+      for (const doc of extracted) await storeSourceFile(saved, doc, transaction);
       await audit(req.user.id,'source.uploaded','source',saved.id,{files:extracted.length,failedFiles:failed.length,sections:sections.length},transaction);return saved;
     });
   }catch(error){if(error.status)return reject(error.message,error.status);const safe=safeGenerationError(error,'upload-save');return reject(`${safe.message} Reference: ${safe.reference}`,safe.status);}
