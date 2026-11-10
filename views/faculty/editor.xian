@@ -1,4 +1,10 @@
-{{> facultyTop}}<div class="toolbar"><a class="text-link" href="/faculty/courses">← My courses</a>{{#if course.id}}<a class="button secondary" href="/faculty/courses/{{course.id}}/preview">Preview student experience</a>{{/if}}</div>{{#if course.modules.length}}<section class="card space-top" id="original-material">
+{{> facultyTop}}{{#if signatureMissing}}<p class="notice info">Faculty signature missing. <a href="/faculty/credentials">Save your reusable signature</a> before Admin can publish this course with certificates.</p>{{/if}}{{#if moduleSubmissions}}<section id="module-submissions" class="card space-top"><h2>New modules for this published course</h2>
+{{#each moduleSubmissions}}<details open><summary>{{snapshot.module.title}} · {{#if pending}}Pending Admin review{{else}}Draft{{/if}}</summary>
+{{#each snapshot.module.lessons}}<h3>{{title}}</h3><p>{{body}}</p>{{/each}}
+<ol>{{#each snapshot.questions}}<li><strong>{{prompt}}</strong><ol>{{#each options}}<li>{{this}}{{#if (eq @index ../answer)}} <strong>Correct answer</strong>{{/if}}</li>{{/each}}</ol><p>{{explanation}}</p></li>{{/each}}</ol>
+{{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/submit"><input type="hidden" name="_csrf" value="{{../csrf}}"><label><input type="checkbox" name="confirmReview" value="yes" required> I reviewed the topics and assessment.</label><button class="button">Submit module and certificate</button></form>{{/unless}}
+</details>{{/each}}</section>{{/if}}
+<div class="toolbar"><a class="text-link" href="/faculty/courses">← My courses</a>{{#if course.published}}<a class="button secondary" href="/faculty/upload?courseId={{course.id}}">Generate another module</a>{{/if}}{{#if course.id}}<a class="button secondary" href="/faculty/courses/{{course.id}}/preview">Preview student experience</a>{{/if}}</div>{{#if course.modules.length}}<section class="card space-top" id="original-material">
 <h2>Attach original file</h2>
 <p>Add a PDF to an existing module. Students can open it as learning material and confirm reading before taking the module quiz.</p>
 <form method="post" action="/faculty/courses/{{course.id}}/material" enctype="multipart/form-data" data-module-material>

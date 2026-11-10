@@ -245,8 +245,8 @@ async function storeDraft(userId, source, draft, job, action) {
     const materials = materialRows.map(row => ({ sourceId: row.sourceId, documentKey: row.documentKey }));
     let course;
     if (options?.destinationId) {
-      course = await Course.findOne({ where: { id: options.destinationId, ownerId: userId, published: false }, transaction, lock: transaction.LOCK.UPDATE });
-      if (!course || text(course.title, 160).length < 4) throw generationError("COURSE_INPUT", "Select an unpublished course you own with a valid title.");
+      course = await Course.findOne({ where: { id: options.destinationId, ownerId: userId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!course || text(course.title, 160).length < 4) throw generationError("COURSE_INPUT", "Select a course you own with a valid title.");
       const moduleId = randomUUID();
       const modules = course.modules.map((module, index) => ({ ...module, number: module.number ?? index + 1 }));
       const module = {
@@ -264,6 +264,14 @@ async function storeDraft(userId, source, draft, job, action) {
         modules: [...modules, module],
         questions: [...course.questions, ...draft.questions.map(question => ({ ...question, id: randomUUID(), moduleId }))],
       }, { draft: true });
+      if (course.published) {
+        await CourseRevision.create({
+          courseId: course.id, actorId: userId, version: course.version, action: 'module-draft',
+          snapshot: { module: merged.modules.at(-1), questions: merged.questions.filter(q => q.moduleId === moduleId) }
+        }, { transaction });
+        if (job) await job.update({ status: 'completed', courseId: course.id, errorCode: null }, { transaction });
+        return course;
+      }
       await course.update({ ...merged, version: course.version + 1, awardsApproved: false }, { transaction });
       await CredentialRequest.update({ status: "returned", remarks: "Module content changed. Resubmit the certificate configuration." }, { where: { courseId: course.id, status: "approved" }, transaction });
     } else {

@@ -59,3 +59,23 @@
 [data-upload-submit][hidden] {
   display: none;
 }
+
+@media (max-width: 640px) {
+  .page-heading, .toolbar, .actions { flex-wrap: wrap; }
+  .page-heading > *, .toolbar > *, .card, .table-wrap { min-width: 0; }
+  .card { overflow-wrap: anywhere; }
+  .table-wrap { max-width: 100%; overflow-x: auto; }
+}
+
+.credential-badge-preview {
+  display: grid;
+  justify-items: center;
+  gap: .5rem;
+  max-width: 22rem;
+  padding: 1rem;
+  text-align: center;
+  border: 1px solid #dcebe1;
+  border-radius: 12px;
+  background: #f1f8f4;
+}
+.credential-badge-preview .award-badge { font-size: 2.5rem; }

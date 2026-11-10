@@ -12,6 +12,31 @@
       if (dialog && !dialog.open) dialog.showModal();
     });
   }
+  for (const button of document.querySelectorAll('[data-share-badge]')) {
+    button.addEventListener('click', async () => {
+      const url = new URL(button.dataset.shareBadge, location.href).href;
+      const status = button.closest('dialog').querySelector('[data-share-status]');
+      try {
+        if (navigator.share) await navigator.share({ title: 'CareerBridge badge', url });
+        else {
+          await navigator.clipboard.writeText(url);
+          status.textContent = 'Badge link copied.';
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') status.textContent = 'Open the badge to copy its link.';
+      }
+    });
+  }
+  for (const link of document.querySelectorAll('[data-download-certificate]')) {
+    link.addEventListener('click', () => {
+      const download = document.createElement('a');
+      download.href = link.dataset.downloadCertificate;
+      download.download = '';
+      document.body.append(download);
+      download.click();
+      download.remove();
+    });
+  }
   // Count only estimated active browser time. Hidden or idle tabs stop sending activity.
   const learning = document.querySelector('[data-attempt]');
   if (learning) {

@@ -271,7 +271,7 @@ export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
   const attempt = plain(row); const course = attempt.snapshot;
   const modules = course.modules.map((m, i) => ({ ...m, number: i + 1, available: moduleAvailable(attempt, i),
-    passed: attempt.quizScores[m.id] >= course.passingScore, score: attempt.quizScores[m.id],
+    submitted: attempt.quizAttempts.some(quiz => quiz.scope === m.id), passed: attempt.quizScores[m.id] >= course.passingScore, score: attempt.quizScores[m.id],
     quizAvailable: scopeAllowed(attempt, m.id), lessons: m.lessons.map((l, j) => ({ ...l, number: `${i + 1}.${j + 1}`, completed: attempt.completedLessons.includes(l.id) })) }));
   let selected;
   if (req.query.lesson) {
@@ -501,6 +501,8 @@ export const achievements = async (req, res) => {
   render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
 };
 function credentialSkills(snapshot) {
+  const skills = [...new Set((snapshot?.modules || []).flatMap(module => module.skills || []))];
+  if (skills.length) return skills;
   return Array.isArray(snapshot?.competencyAreas) && snapshot.competencyAreas.length
     ? snapshot.competencyAreas
     : [snapshot?.domain].filter(Boolean);
@@ -539,7 +541,7 @@ export const certificate = async (req, res) => {
   const fitted = (value, y, size, min, height) => { value = String(value || ''); while (size > min && doc.widthOfString(value, { fontSize: size }) > 700) size--; let fittedValue = value; while (fittedValue.length > 1 && doc.widthOfString(fittedValue, { fontSize: size }) > 700) fittedValue = `${fittedValue.slice(0, -2)}…`; doc.fontSize(size).text(fittedValue, 70, y, { width: 702, height, align: 'center', lineBreak: false }); };
   fitted(c.recipientName, 232, 26, 16, 46);
   doc.fontSize(12).text(c.moduleId ? 'for successfully completing the module' : 'for successfully completing the course', 55, 292, { width: 730, align: 'center' });
-  fitted(c.moduleId ? `${c.moduleTitle} · ${c.courseTitle}` : c.courseTitle, 316, 23, 15, 48);
+  fitted(c.moduleTitle || c.courseTitle, 316, 23, 15, 48);
   doc.fillColor('#64748b').fontSize(8).text(footer, 75, 374, { width: 690, height: 22, align: 'center' });
   doc.moveTo(65, 425).lineTo(777, 425).lineWidth(0.6).stroke('#cbd5e1');
   if (facultySignature) {

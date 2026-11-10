@@ -1,3 +1,4 @@
+import { facultySignature, preparePublicationCredential } from '../services/publicationCredentials.js';
 import { courseAiConfiguration, missingVertexSettings } from '../services/courseAiProvider.js';
 import { summarizeLearning } from '../services/evidence.js';
 import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
@@ -6,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { User, Course, CourseAttempt, StudentProfile, Credential, Assessment, Notification, sequelize } from '../models/learningModels.js';
 import { Section, AuditLog, Setting, Announcement, CareerPath } from '../models/adminModels.js';
-import { publishCheck } from '../services/courseAuthoring.js';
+import { courseInput, publishCheck } from '../services/courseAuthoring.js';
 import { audit, ownerEmail, genders, setting } from '../services/accounts.js';
 import { text, email } from '../services/validation.js';
 import { domains } from '../data/starterCourses.js';
@@ -172,17 +173,51 @@ export const courses = async (req, res) => {
     ...plain(course), moduleCount: course.modules.length,
     pendingReview: !course.published && pending.has(`${course.id}:${course.version}`)
   }));
-  const pendingCount = reviewRows.filter(course => course.pendingReview).length;
+  const pendingModules = await CourseRevision.findAll({ where: { action: 'module-pending' } });
+  for (const course of reviewRows) {
+    course.moduleSubmissions = course.published ? pendingModules.filter(row => row.courseId === course.id && row.actorId === course.ownerId).map(plain) : [];
+  }
+  const institutionName = (await Setting.findOne({ where: { key: 'institutionName' } }))?.value;
+  const pendingCredentials = reviewRows.filter(course => (course.pendingReview || course.moduleSubmissions.length) && course.certificateEnabled);
+  const signatures = new Map(await Promise.all([...new Set(pendingCredentials.map(course => course.ownerId))].map(async id => [id, await facultySignature(id)])));
+  const requests = await CredentialRequest.findAll({ where: { courseId: pendingCredentials.map(course => course.id) } });
+  for (const course of pendingCredentials) {
+    course.signature = signatures.get(course.ownerId) || requests.find(request =>
+      request.courseId === course.id && request.facultyId === course.ownerId && request.status !== 'rejected')?.facultySignature;
+    course.facultyName = faculty.find(owner => owner.id === course.ownerId)?.name;
+  }
+  const pendingCount = reviewRows.reduce((count, course) => count + Number(course.pendingReview) + course.moduleSubmissions.length, 0);
   const pendingOnly = req.query.status === 'pending';
   render(res, 'courses', {
-    title: 'Course oversight', faculty: faculty.map(plain), domains, pendingCount, pendingOnly,
-    courses: reviewRows.filter(course => !pendingOnly || course.pendingReview)
+    title: 'Course oversight', institutionName, faculty: faculty.map(plain), domains, pendingCount, pendingOnly,
+    courses: reviewRows.filter(course => !pendingOnly || course.pendingReview || course.moduleSubmissions.length)
       .sort((first, second) => Number(second.pendingReview) - Number(first.pendingReview))
   });
 };
 export const approvePublication = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (req.body.revisionId) {
+      if (!course?.published || !course.ownerId) fail('This module requires a published course.');
+      const revision = await CourseRevision.findOne({
+        where: { id: req.body.revisionId, courseId: course.id, actorId: course.ownerId, action: 'module-pending' }, transaction
+      });
+      const owner = await User.findOne({ where: { id: course.ownerId, role: 'faculty', active: true, approvalStatus: 'approved' }, transaction });
+      if (!revision || !owner) fail('This module is no longer pending review.');
+      const { module, questions } = revision.snapshot;
+      const number = Math.max(0, ...course.modules.map((item, index) => item.number ?? index + 1)) + 1;
+      const data = courseInput({
+        ...plain(course),
+        modules: [...course.modules, { ...module, number, lessons: module.lessons.map(lesson => ({ ...lesson, sourceReviewed: true })) }],
+        questions: [...course.questions, ...questions.map(question => ({ ...question, reviewed: true }))]
+      });
+      publishCheck(data);
+      if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) fail('The faculty signature is missing.');
+      await course.update({ modules: data.modules, questions: data.questions, version: course.version + 1, awardsApproved: course.certificateEnabled }, { transaction });
+      await revision.update({ action: 'module-published' }, { transaction });
+      await audit(req.user.id, 'module.published', 'course', course.id, { moduleId: module.id }, transaction);
+      return;
+    }
     if (!course || course.published || !course.ownerId || Number(req.body.version) !== course.version) fail('Review the latest faculty submission before publishing.');
     const submission = await CourseRevision.findOne({
       where: { courseId: course.id, version: course.version, action: 'pending-review' }, transaction
@@ -191,8 +226,14 @@ export const approvePublication = async (req, res) => {
     const owner = await User.findOne({ where: { id: course.ownerId, role: 'faculty', active: true, approvalStatus: 'approved' }, transaction });
     if (!owner || submission.actorId !== owner.id) fail('The current faculty owner must submit the course for approval.');
     publishCheck(plain(course));
-    if (course.certificateEnabled && !course.awardsApproved) fail('Approve this course certificate configuration before publishing.');
-    await course.update({ published: true }, { transaction });
+    if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) fail('The faculty signature is missing. Ask the faculty member to save their signature in Certificates & badges before publishing.');
+    await course.update({ published: true, awardsApproved: course.certificateEnabled }, { transaction });
+    if (course.certificateEnabled) {
+      const attempts = await CourseAttempt.findAll({ where: { courseId: course.id, status: 'ongoing' }, transaction, lock: transaction.LOCK.UPDATE });
+      for (const attempt of attempts) await attempt.update({
+        snapshot: { ...attempt.snapshot, awardsApproved: attempt.snapshot.certificateEnabled !== false }
+      }, { transaction });
+    }
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-published', snapshot: plain(course) }, { transaction });
     await audit(req.user.id, 'course.published', 'course', course.id, { version: course.version }, transaction);
     const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
