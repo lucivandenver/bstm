@@ -83,8 +83,8 @@ test("large source planning covers every character without overflowing course mo
   );
   assert.equal(
     courseBatches([{ reference: "One", text: "a".repeat(60001) }], 8).length,
-    1,
-    "tiny trailing fragments are not isolated",
+    2,
+    "even a small trailing fragment stays within the configured request limit",
   );
   assert.equal(
     sourceSections({ sections }).length,
@@ -325,6 +325,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     const job = await AiJob.findByPk(state.id),
       course = await Course.findByPk(job.courseId);
     assert.equal(course.modules.length, 3);
+    assert.deepEqual(course.modules.map(module => module.number), [1, 2, 3]);
     assert.equal(course.questions.length, 8);
     assert(
       course.questions.every(
