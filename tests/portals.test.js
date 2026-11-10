@@ -154,9 +154,9 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 400);
     const signature='data:image/png;base64,'+(await readFile(new URL('../public/images/icons/careerbridge-192.png',import.meta.url))).toString('base64');
     const credentialRequest = await CredentialRequest.create({ courseId:c.id, facultyId:faculty.id, facultySignature:signature, status:'pending' });
-    await a.get('/admin/credential-approvals');
-    r=await a.post(`/admin/credential-approvals/${credentialRequest.id}`,{status:'approved',verifyCourse:'yes',verifyFacultySignature:'yes',verifyTemplate:'yes'});assert.equal(r.status,302);
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 302);
+    assert.equal((await credentialRequest.reload()).status, 'approved');
+    assert.equal(credentialRequest.badge.label, 'UPDATED COURSE VERSION');
     assert.equal((await Course.findByPk(c.id)).published, true);
     r=await s.post(`/student/learn/${id}/activities/t1`,{response:'Thank you for your request. Could you confirm the travel dates, number of guests and accessibility requirements?',link:'https://example.test/evidence'});assert.equal(r.status,302);const sub=await PracticalSubmission.findOne();
     await f2.get('/faculty/evaluations');assert.equal((await f2.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'10','scores[communication]':'10',feedback:'Good evidence.'})).status,404);
@@ -196,6 +196,20 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await f.get('/faculty/questions');r=await f.post('/faculty/questions',{prompt:'What must you confirm before recommending?',options:JSON.stringify(['Guest requirements','Nothing']),answer:'0',explanation:'Confirm the guest requirements.',domain:domains[0],reviewed:'true'});assert.equal(r.status,302);r=await f.get('/faculty/questions');assert.match(r.html,/What must you confirm/);
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,prerequisites:[c.id]}),action:'publish'});assert.equal(r.status,400,'self-prerequisite rejected');
     await s.get('/student/profile');r=await s.post('/student/profile/correction',{studentId:'STU-CORRECTED',section:'BSTM 4-2',reason:'Correcting the registered academic section.'});assert.equal(r.status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-1');const correction=await ProfileCorrection.findOne();await a.get('/admin/academic');assert.equal((await a.post(`/admin/academic/${correction.id}`,{status:'approved'})).status,302);assert.equal((await User.findByPk(student.id)).section,'BSTM 4-2');assert.equal((await f.get('/faculty/students/'+student.id)).status,200,'preserve access to the student record for existing course history');
+    const moduleDraft = await CourseRevision.create({
+      courseId: c.id, actorId: faculty.id, version: 2, action: 'module-draft',
+      snapshot: {
+        module: { ...draft.modules[0], id: 'm2', title: 'Independent module', skills: ['Practice'], lessons: [{ ...draft.modules[0].lessons[0], id: 'l2' }] },
+        questions: [{ ...draft.questions[0], id: 'q2', moduleId: 'm2' }]
+      }
+    });
+    assert.equal((await f.post(`/faculty/courses/${c.id}/modules/${moduleDraft.id}/submit`, { confirmReview: 'yes' })).status, 302);
+    assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1']);
+    assert.equal(c.published, true);
+    assert.match((await a.get('/admin/courses?status=pending')).html, /Pending module · Independent module/);
+    assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: moduleDraft.id })).status, 302);
+    assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1', 'm2']);
+    assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: moduleDraft.id })).status, 400);
     r=await a.post(`/admin/courses/${c.id}/ownership`,{ownerId:otherFaculty.id});assert.equal(r.status,302);assert.equal((await f.get(`/faculty/courses/${c.id}/edit`)).status,404);assert.equal((await f2.get(`/faculty/courses/${c.id}/edit`)).status,200);
     for (let index = 1; index <= 5; index++) {
       await Course.create({

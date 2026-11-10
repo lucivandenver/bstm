@@ -66,3 +66,18 @@ button.award-tile {
   font: inherit;
   cursor: pointer;
 }
+
+.achievement-gallery { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); gap:1.25rem; }
+.achievement-gallery .award-pair { gap:1rem; align-items:stretch; }
+.achievement-gallery .award-tile { justify-content:start; background:white; padding:1rem 0 0; overflow:hidden; }
+.achievement-gallery .award-tile:hover,.achievement-gallery .award-tile:focus-visible { border-color:var(--green); }
+.achievement-gallery .award-tile strong { padding:0 .5rem; font-size:clamp(.85rem,2vw,1.1rem); overflow-wrap:anywhere; }
+.award-issued { margin-top:auto; padding:.6rem .3rem; width:100%; background:#edf4ef; font-size:.8rem; }
+.award-dialog form { display:flex; justify-content:end; }
+.award-dialog .actions { flex-wrap:wrap; }
+.award-skills { list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:.5rem; }
+.award-skills li { background:#edf4ef; border-radius:.4rem; padding:.4rem .65rem; overflow-wrap:anywhere; }
+@media (max-width:520px) {
+  .achievement-gallery .award-pair { gap:.5rem; }
+  .award-dialog .actions > * { width:100%; }
+}

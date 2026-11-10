@@ -4,7 +4,7 @@ import { starsFor, canTakeFinal, grade } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
 export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction, module = null) {
-  if (module ? score < attempt.snapshot.passingScore : attempt.snapshot.modules.some(item => Array.isArray(item.skills))) return null;
+  if (module && score < attempt.snapshot.passingScore) return null;
   if (!module && attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
   const course = await Course.findByPk(attempt.courseId, { transaction });
@@ -16,7 +16,7 @@ export async function ensureCompletionCredential(attempt, user, score = attempt.
     score, stars: starsFor(score), issuedAt: module ? new Date() : attempt.completedAt || new Date(),
     facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
     facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
-    badgeLabel: module ? 'Module completion' : signed ? request.badge?.label || 'Course completion' : 'Course completion',
+    badgeLabel: attempt.snapshot.title,
   };
   const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id, moduleId: module?.id || '' }, defaults, transaction });
   if (created) await Notification.create({ userId: user.id, title: module ? 'Module certificate issued' : 'Course certificate issued', message: `You met the completion rules for ${module?.title || attempt.snapshot.title}. Your certificate and badge are ready.`, href: '/student/achievements' }, { transaction });
