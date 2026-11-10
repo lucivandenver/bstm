@@ -175,13 +175,13 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const firstPage = await f2.get('/faculty/courses?q=searchable+module');
     assert.equal(firstPage.status, 200);
     assert.match(firstPage.html, /Page 1 of 2/);
-    assert.doesNotMatch(firstPage.html, /Outline Course 1/);
+    assert.doesNotMatch(firstPage.html, /OUTLINE COURSE 1/);
     const secondPage = await f2.get('/faculty/courses?q=searchable+module&page=2');
     assert.match(secondPage.html, /Module 1 · Searchable Module 1/);
     const archiveTarget = await Course.findOne({ where: { slug: 'outline-1' } });
     assert.equal((await f2.post('/faculty/courses/' + archiveTarget.id + '/archive', {})).status, 302);
-    assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<summary>Outline Course 1/);
-    assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<summary>Outline Course 1/);
+    assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<summary>OUTLINE COURSE 1/);
+    assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<summary>OUTLINE COURSE 1/);
     assert.equal((await s.get('/student/courses/' + archiveTarget.id)).status, 404);
     const generatedModuleDraft = await Course.create({
       ...draft, ownerId: otherFaculty.id, slug: 'generated-module-draft', published: false
@@ -212,6 +212,21 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const verification = await s.get('/verify/' + firstAward.id);
     assert.match(verification.html, /Guest communication/);
     assert.doesNotMatch(verification.html, /Reservation handling/);
+    const archivedAttempt = await CourseAttempt.create({
+      userId: student.id, courseId: archiveTarget.id, courseVersion: archiveTarget.version,
+      attemptNumber: 1, snapshot: moduleAwardAttempt.snapshot, status: 'completed'
+    });
+    const archivedAward = await Credential.create({ userId: student.id, attemptId: archivedAttempt.id, moduleId: firstModule.id });
+    await QuizDraft.create({ userId: student.id, attemptId: archivedAttempt.id, scope: firstModule.id });
+    const deleteArchive = '/faculty/courses/' + archiveTarget.id + '/archive/delete';
+    assert.equal((await f.post(deleteArchive, { confirmDelete: 'yes' })).status, 404);
+    assert.equal((await f2.post(deleteArchive, {})).status, 400);
+    assert.equal((await f2.post(deleteArchive, { confirmDelete: 'yes' })).status, 302);
+    assert.equal(await Course.findByPk(archiveTarget.id), null);
+    assert.equal(await CourseAttempt.findByPk(archivedAttempt.id), null);
+    assert.equal(await Credential.findByPk(archivedAward.id), null);
+    assert.equal(await QuizDraft.count({ where: { attemptId: archivedAttempt.id } }), 0);
+    assert.ok(await Credential.findByPk(firstAward.id));
     const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
     process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
     try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');

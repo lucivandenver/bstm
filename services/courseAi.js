@@ -6,7 +6,7 @@ import {
 export { courseAiConfiguration as aiConfiguration } from "./courseAiProvider.js";
 import { Op } from "sequelize";
 import { randomUUID, createHash } from "node:crypto";
-import { AiJob, CourseRevision } from "../models/portalModels.js";
+import { AiJob, CourseRevision, CredentialRequest } from "../models/portalModels.js";
 import { sequelize, User, Course } from "../models/learningModels.js";
 import { audit } from "./accounts.js";
 import { courseInput } from "./courseAuthoring.js";
@@ -238,20 +238,38 @@ export function validateGeneratedDraft(raw, sections, options) {
 }
 async function storeDraft(userId, source, draft, job, action) {
   return sequelize.transaction(async (transaction) => {
-    const course = await Course.create(
-      {
-        ...draft,
-        ownerId: userId,
-        slug: `${job ? "ai" : "source"}-${randomUUID()}`,
-        published: false,
-      },
-      { transaction },
-    );
+    const options = job?.state?.options;
+    let course;
+    if (options?.destinationId) {
+      course = await Course.findOne({ where: { id: options.destinationId, ownerId: userId, published: false }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!course || text(course.title, 160).length < 4) throw generationError("COURSE_INPUT", "Select an unpublished course you own with a valid title.");
+      const moduleId = randomUUID();
+      const modules = course.modules.map((module, index) => ({ ...module, number: module.number ?? index + 1 }));
+      const module = {
+        id: moduleId, title: options.moduleTitle,
+        number: Math.max(0, ...modules.map(item => item.number)) + 1,
+        lessons: draft.modules.flatMap(item => item.lessons.map(lesson => ({ ...lesson, id: randomUUID() }))),
+        skills: [...new Set(draft.modules.flatMap(item => item.skills || []))].slice(0, 12),
+      };
+      const merged = courseInput({
+        ...draft, ...course.get({ plain: true }), title: course.title.toUpperCase(),
+        description: course.description || draft.description, domain: course.domain || draft.domain,
+        level: course.level || draft.level, minutes: Math.min(6000, (course.minutes || 0) + draft.minutes),
+        competencyAreas: [...new Set([...course.competencyAreas, ...draft.competencyAreas])],
+        outcomes: [...new Set([...course.outcomes, ...draft.outcomes])].slice(0, 20),
+        modules: [...modules, module],
+        questions: [...course.questions, ...draft.questions.map(question => ({ ...question, id: randomUUID(), moduleId }))],
+      }, { draft: true });
+      await course.update({ ...merged, version: course.version + 1, awardsApproved: false }, { transaction });
+      await CredentialRequest.update({ status: "returned", remarks: "Module content changed. Resubmit the certificate configuration." }, { where: { courseId: course.id, status: "approved" }, transaction });
+    } else {
+      course = await Course.create({ ...draft, ownerId: userId, slug: `${job ? "ai" : "source"}-${randomUUID()}`, published: false }, { transaction });
+    }
     await CourseRevision.create(
       {
         courseId: course.id,
         actorId: userId,
-        version: 1,
+        version: course.version,
         action,
         snapshot: course.get({ plain: true }),
       },
@@ -464,6 +482,7 @@ export async function generateCourse(userId, source, options) {
       outcomes: text(options.outcomes, 1500),
       questionCount: count,
       courseTitle: text(options.courseTitle, 160),
+      ...(options.destinationId ? { destinationId: Number(options.destinationId), moduleTitle: text(options.moduleTitle, 160) } : {}),
       blueprint: options.blueprint || null,
       consent: options.consent === "yes",
       consentProviders: config.fallback

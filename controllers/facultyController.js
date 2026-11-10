@@ -6,9 +6,9 @@ import { validatedSignature } from '../services/signatureProcessing.js';
 import { buildEvidence, summarizeLearning } from '../services/evidence.js';
 import { Op } from 'sequelize';
 import { randomUUID } from 'node:crypto';
-import { User, Course, CourseAttempt, Assessment, StudentProfile, Notification, sequelize } from '../models/learningModels.js';
+import { User, Course, CourseAttempt, Credential, SavedCourse, Assessment, StudentProfile, Notification, sequelize } from '../models/learningModels.js';
 import { Section, Announcement, Setting } from '../models/adminModels.js';
-import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, AiJob, PracticalSubmission, FacultyNote, CredentialRequest } from '../models/portalModels.js';
+import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, AiJob, PracticalSubmission, QuizDraft, CourseFeedback, FacultyNote, CredentialRequest } from '../models/portalModels.js';
 import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
 import { domains } from '../data/starterCourses.js';
@@ -76,6 +76,9 @@ export const deleteCredentialRequest = async (req, res) => {
   req.flash('success_msg', 'Certificate signature configuration removed. Existing student certificates remain in their records. Turn off certificate issuance in course settings to stop future certificates.');
   res.redirect('/faculty/credentials');
 };
+const publicationHistory = ['archived', 'admin-archived', 'published', 'admin-published'];
+const pendingPublication = (course, revision) => revision?.action === 'pending-review' && revision.version === course.version;
+const archivedCourse = (course, revision, previouslyPublished) => !course.published && !pendingPublication(course, revision) && previouslyPublished;
 export const courses = async (req, res) => {
   let courses, databaseNotice='';
   try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['id', 'DESC']] }); }
@@ -91,9 +94,15 @@ export const courses = async (req, res) => {
   for (const revision of revisions) {
     if (!latest.has(revision.courseId)) latest.set(revision.courseId, revision);
   }
+  const previouslyPublished = new Set(revisions.filter(revision => publicationHistory.includes(revision.action)).map(revision => revision.courseId));
+  const unpublishedIds = courses.filter(course => !course.published && !previouslyPublished.has(course.id) && !pendingPublication(course, latest.get(course.id))).map(course => course.id);
+  if (unpublishedIds.length) {
+    const historicalAttempts = await CourseAttempt.findAll({ where: { courseId: unpublishedIds }, attributes: ['courseId'], group: ['courseId'] });
+    for (const attempt of historicalAttempts) previouslyPublished.add(attempt.courseId);
+  }
   const matches = courses.filter(course => {
     const revision = latest.get(course.id);
-    const isArchived = !course.published && ['archived', 'admin-archived'].includes(revision?.action);
+    const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
     return isArchived === archived && [course.title, ...savedArray(course.modules).map(module => module.title)]
       .some(title => String(title || '').toLowerCase().includes(query.toLowerCase()));
   });
@@ -111,7 +120,7 @@ export const courses = async (req, res) => {
   }
   render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, archived, page, pageCount,
     activeUrl: listUrl(1, false), archiveUrl: listUrl(1, true),
-    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), title: c.title.toUpperCase(), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !pendingPublication(c, latest.get(c.id)) && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -176,7 +185,7 @@ export const saveCourse = async (req, res) => {
       if(!await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'},transaction}))fail('Generate a course from your saved materials first.');
       input={...plain(c),modules:c.modules.map(module=>({...module,lessons:module.lessons.map(lesson=>({...lesson,sourceReviewed:true}))})),questions:c.questions.map(q=>({...q,reviewed:true}))};
     }
-    const data=courseInput(input,{draft:!publish});
+    const data=courseInput({ ...input, title: text(input.title, 160).toUpperCase() },{draft:!publish});
     if (c && data.prerequisites.includes(c.id)) fail('A course cannot require itself.');
     // Every prerequisite must exist and cannot create an indirect cycle.
     for (const prerequisite of data.prerequisites) {
@@ -184,32 +193,38 @@ export const saveCourse = async (req, res) => {
     }
     if (publish) {
       publishCheck(data);
-      const generatedJob = await AiJob.findOne({ where: { courseId: c.id, status: 'completed', type: 'course-draft' }, transaction });
-      if (generatedJob) {
-        const source = await SourceDocument.findOne({ where: { id: generatedJob.sourceId, ownerId: req.user.id }, transaction });
-        const sourceRows = source ? sourceSections(source) : [];
+      const generatedJobs = await AiJob.findAll({ where: { courseId: c.id, status: 'completed', type: 'course-draft' }, attributes: ['sourceId'], transaction });
+      if (generatedJobs.length) {
+        const sources = await SourceDocument.findAll({ where: { id: generatedJobs.map(job => job.sourceId).filter(Boolean), ownerId: req.user.id }, transaction });
+        const sourceRows = sources.flatMap(sourceSections);
         const norm = value => String(value || '').normalize('NFKC').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/\s+/g,' ').trim().toLowerCase();
         for (const module of data.modules) for (const lesson of module.lessons) {
-          const evidence = sourceRows.find(row => row.reference === lesson.sourceReference);
+          const evidence = sourceRows.filter(row => row.reference === lesson.sourceReference);
           if (!lesson.sourceReviewed) fail('Review every generated lesson in the editor or confirm the complete review in student preview before publishing.', 422);
-          if (!lesson.sourceQuote || !evidence || !norm(evidence.text).includes(norm(lesson.sourceQuote))) {
+          if (!lesson.sourceQuote || !evidence.some(row => norm(row.text).includes(norm(lesson.sourceQuote)))) {
             lesson.sourceQuote = '';
             lesson.sourceNeedsReview = true;
-            if (!evidence) lesson.sourceReference = 'Manual faculty review · no direct citation';
+            if (!evidence.length) lesson.sourceReference = 'Manual faculty review · no direct citation';
           }
         }
         for (const question of data.questions) {
-          const evidence = sourceRows.find(row => row.reference === question.sourceReference);
-          if (!question.sourceQuote || !evidence || !norm(evidence.text).includes(norm(question.sourceQuote))) {
+          const evidence = sourceRows.filter(row => row.reference === question.sourceReference);
+          if (!question.sourceQuote || !evidence.some(row => norm(row.text).includes(norm(question.sourceQuote)))) {
             question.sourceQuote = '';
             question.sourceNeedsReview = true;
-            if (!evidence) question.sourceReference = 'Manual faculty review · no direct citation';
+            if (!evidence.length) question.sourceReference = 'Manual faculty review · no direct citation';
           }
         }
       }
     }
     { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: false }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
     id = c.id;
+    if (publish) {
+      const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'], transaction });
+      if (admins.length) await Notification.bulkCreate(admins.map(admin => ({
+        userId: admin.id, title: 'Course ready for review', message: `${c.title} · Version ${c.version}`, href: `/admin/courses#course-${c.id}`
+      })), { transaction });
+    }
     const prior = await CourseRevision.findOne({
       where: { courseId: c.id, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published'] } },
       order: [['id', 'DESC']], transaction
@@ -237,6 +252,8 @@ export const deleteDraft = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const course = await ownedCourse(req, transaction);
     if (course.published) fail('Unpublish this course before deleting it.');
+    const submission = await CourseRevision.findOne({ where: { courseId: course.id, version: course.version, action: 'pending-review' }, transaction });
+    if (submission) fail('A course pending Admin review cannot be deleted here.');
     const [attempts, requests, assignments] = await Promise.all([
       CourseAttempt.count({ where: { courseId: course.id }, transaction }),
       CredentialRequest.count({ where: { courseId: course.id }, transaction }),
@@ -248,6 +265,32 @@ export const deleteDraft = async (req, res) => {
     await course.destroy({ transaction });
   });
   req.flash('success_msg', 'Unused draft deleted.'); res.redirect('/faculty/courses');
+};
+export const deleteArchivedCourse = async (req, res) => {
+  if (req.body.confirmDelete !== 'yes') fail('Confirm permanent deletion first.');
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    const history = await CourseRevision.findAll({
+      where: { courseId: course.id, action: [...publicationHistory, 'pending-review', 'draft'] },
+      attributes: ['action', 'version'], order: [['id', 'DESC']], transaction
+    });
+    const attempts = await CourseAttempt.findAll({
+      where: { courseId: course.id }, attributes: ['id'], transaction, lock: transaction.LOCK.UPDATE
+    });
+    if (!archivedCourse(course, history[0], attempts.length > 0 || history.some(revision => publicationHistory.includes(revision.action)))) fail('Only archived courses can be permanently deleted.');
+    const attemptIds = attempts.map(attempt => attempt.id);
+    if (attemptIds.length) {
+      const where = { attemptId: attemptIds };
+      for (const model of [Credential, QuizDraft, PracticalSubmission, CourseFeedback]) await model.destroy({ where, transaction });
+      await CourseAttempt.destroy({ where: { id: attemptIds }, transaction });
+    }
+    const where = { courseId: course.id };
+    for (const model of [SavedCourse, CourseAssignment, CredentialRequest, CourseRevision, AiJob]) await model.destroy({ where, transaction });
+    await course.destroy({ transaction });
+    await audit(req.user.id, 'course.archive_deleted', 'course', course.id, { title: course.title, attemptsRemoved: attempts.length }, transaction);
+  });
+  req.flash('success_msg', 'Archived course and its learner records permanently deleted.');
+  res.redirect('/faculty/courses?list=archive');
 };
 export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), generated:Boolean(await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'}})), questions: publicQuestions(c.questions) }); };
 const sourceValues = body => ({ areas:[].concat(body?.competencyAreas||body?.domain||[]), domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
@@ -261,7 +304,16 @@ const sourceDiagnostics = source => {
   return [...grouped.values()].map(item => ({ ...item, units: new Set(item.references.map(ref => ref.match(/(?:Page|Slide|Paragraph)\s+\d+/i)?.[0]).filter(Boolean)).size, warning: item.characters < 600 ? 'Low extracted text; check for scanned or mostly empty pages.' : '' }));
 };
 const sourceView = async (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, sourceDiagnostics: sourceDiagnostics(source), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
-export const uploadPage = async (req, res) => render(res, 'upload', { title: 'Upload & generate', domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+export const createCourse = async (req, res) => {
+  const title = text(req.body.title, 160).toUpperCase();
+  if (title.length < 4) fail('Enter a course name of at least four characters.');
+  const course = await Course.create({ title, ownerId: req.user.id, slug: `course-${newModuleId()}`, published: false });
+  res.redirect(`/faculty/upload?courseId=${course.id}`);
+};
+export const uploadPage = async (req, res) => {
+  const destinations = await Course.findAll({ where: { ownerId: req.user.id, published: false }, attributes: ['id', 'title'], order: [['title', 'ASC']] });
+  return render(res, 'upload', { title: 'Upload & generate', destinations: destinations.map(plain), selectedCourseId: Number(req.query.courseId), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, sources: (await SourceDocument.findAll({ where: { ownerId: req.user.id }, order: [['createdAt', 'DESC']], attributes: ['id', 'filename'], limit: 20 })).map(plain), jobs: (await AiJob.findAll({ where: { userId: req.user.id }, attributes:['id','createdAt','status','errorCode','courseId'], order: [['createdAt', 'DESC']], limit: 20 })).map(j => ({ ...plain(j), date: date(j.createdAt) })) });
+};
 export const upload = async (req, res) => {
   const json=req.get('accept')?.includes('application/json');
   const progressStream=req.get('accept')?.includes('application/x-ndjson');
@@ -365,7 +417,19 @@ export const generate = async (req, res) => {
     if (!domains.includes(req.body.domain)) throw generationError('COURSE_INPUT', 'Choose the competency area for this course.');
     if (req.body.consent !== 'yes') throw generationError('COURSE_INPUT', 'Enter target outcomes and confirm permission to share this source with the selected AI provider.');
     if(req.body.background==='yes'){
-      const job=await startBlueprintJob(req.user.id,source,{...req.body,outcomes:values.outcomes || 'Derive learning outcomes from the supplied materials.'});
+      const options = { ...req.body, outcomes: values.outcomes || 'Derive learning outcomes from the supplied materials.' };
+      const destinationId = Number(req.body.destinationId);
+      if (req.body.destinationId || req.body.moduleTitle) {
+        const destination = await Course.findOne({ where: { id: destinationId, ownerId: req.user.id, published: false } });
+        const moduleTitle = text(req.body.moduleTitle, 160);
+        if (!destination || text(destination.title, 160).length < 4 || moduleTitle.length < 4) throw generationError('COURSE_INPUT', 'Select an unpublished course you own and enter a module title.');
+        options.destinationId = destination.id;
+        options.moduleTitle = moduleTitle;
+        options.courseTitle = destination.title;
+      }
+      const job = options.destinationId
+        ? await startCourseJob(req.user.id, source, options)
+        : await startBlueprintJob(req.user.id, source, options);
       const statusUrl=`/faculty/generation/${job.id}`;
       if(req.get('accept')?.includes('application/json'))return res.status(202).json({ok:true,statusUrl,redirect:statusUrl});
       return res.redirect(statusUrl);
