@@ -372,6 +372,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.equal(anchoredCourse.title, "FACULTY-OWNED COURSE");
     assert.deepEqual(anchoredCourse.modules.map(module => [module.number, module.title]), [[1, "First generated module"], [2, "Second generated module"]]);
     assert.equal(anchoredCourse.published, false);
+    assert.ok(anchoredCourse.modules.every(module => module.materials.length === 3));
     let failedCalls = 0;
     globalThis.fetch = async (url, init) => {
       if (!String(url).startsWith("https://generativelanguage.googleapis.com/"))

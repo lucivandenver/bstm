@@ -168,10 +168,17 @@ export const courses = async (req, res) => {
     CourseRevision.findAll({ where: { action: 'pending-review' }, attributes: ['courseId', 'version'] })
   ]);
   const pending = new Set(submissions.map(row => `${row.courseId}:${row.version}`));
-  render(res, 'courses', { title: 'Course oversight', faculty: faculty.map(plain), domains, courses: courses.map(course => ({
+  const reviewRows = courses.map(course => ({
     ...plain(course), moduleCount: course.modules.length,
     pendingReview: !course.published && pending.has(`${course.id}:${course.version}`)
-  })) });
+  }));
+  const pendingCount = reviewRows.filter(course => course.pendingReview).length;
+  const pendingOnly = req.query.status === 'pending';
+  render(res, 'courses', {
+    title: 'Course oversight', faculty: faculty.map(plain), domains, pendingCount, pendingOnly,
+    courses: reviewRows.filter(course => !pendingOnly || course.pendingReview)
+      .sort((first, second) => Number(second.pendingReview) - Number(first.pendingReview))
+  });
 };
 export const approvePublication = async (req, res) => {
   await sequelize.transaction(async transaction => {
@@ -199,10 +206,11 @@ export const saveCourse = async (req, res) => {
   if (!title || !domains.includes(domain) || !Number.isInteger(score) || score < 50 || score > 100) fail('Check course title, area and passing score (50–100).');
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!course) fail('Course not found.');
-    if (req.body.published === 'true' && !course.published && course.ownerId) fail('Use the faculty submission approval action to publish this course.');
-    if (req.body.published === 'true') publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
+    if (!course.published && await CourseRevision.count({ where: { courseId: course.id, version: course.version, action: 'pending-review' }, transaction })) fail('Use Approve & publish on the pending submission.');
+    const published = req.body.unpublish !== 'yes' && (course.published || !course.ownerId && req.body.published === 'true');
+    if (published) publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-before-edit', snapshot: plain(course) }, { transaction });
-    await course.update({ title, description: text(req.body.description, 2000), domain, passingScore: score, published: req.body.published === 'true', version: course.version + 1 }, { transaction });
+    await course.update({ title, description: text(req.body.description, 2000), domain, passingScore: score, published, version: course.version + 1 }, { transaction });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: course.published ? 'admin-published' : 'admin-archived', snapshot: plain(course) }, { transaction });
     await audit(req.user.id, 'course.updated', 'course', course.id, { version: course.version, published: course.published }, transaction);
   });

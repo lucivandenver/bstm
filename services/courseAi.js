@@ -6,7 +6,7 @@ import {
 export { courseAiConfiguration as aiConfiguration } from "./courseAiProvider.js";
 import { Op } from "sequelize";
 import { randomUUID, createHash } from "node:crypto";
-import { AiJob, CourseRevision, CredentialRequest } from "../models/portalModels.js";
+import { AiJob, CourseRevision, CredentialRequest, SourceFilePart } from "../models/portalModels.js";
 import { sequelize, User, Course } from "../models/learningModels.js";
 import { audit } from "./accounts.js";
 import { courseInput } from "./courseAuthoring.js";
@@ -239,6 +239,10 @@ export function validateGeneratedDraft(raw, sections, options) {
 async function storeDraft(userId, source, draft, job, action) {
   return sequelize.transaction(async (transaction) => {
     const options = job?.state?.options;
+    const materialRows = await SourceFilePart.findAll({
+      where: { sourceId: source.id, part: 0 }, attributes: ['sourceId', 'documentKey'], transaction
+    });
+    const materials = materialRows.map(row => ({ sourceId: row.sourceId, documentKey: row.documentKey }));
     let course;
     if (options?.destinationId) {
       course = await Course.findOne({ where: { id: options.destinationId, ownerId: userId, published: false }, transaction, lock: transaction.LOCK.UPDATE });
@@ -246,7 +250,7 @@ async function storeDraft(userId, source, draft, job, action) {
       const moduleId = randomUUID();
       const modules = course.modules.map((module, index) => ({ ...module, number: module.number ?? index + 1 }));
       const module = {
-        id: moduleId, title: options.moduleTitle,
+        id: moduleId, title: options.moduleTitle, materials,
         number: Math.max(0, ...modules.map(item => item.number)) + 1,
         lessons: draft.modules.flatMap(item => item.lessons.map(lesson => ({ ...lesson, id: randomUUID() }))),
         skills: [...new Set(draft.modules.flatMap(item => item.skills || []))].slice(0, 12),
@@ -263,7 +267,7 @@ async function storeDraft(userId, source, draft, job, action) {
       await course.update({ ...merged, version: course.version + 1, awardsApproved: false }, { transaction });
       await CredentialRequest.update({ status: "returned", remarks: "Module content changed. Resubmit the certificate configuration." }, { where: { courseId: course.id, status: "approved" }, transaction });
     } else {
-      course = await Course.create({ ...draft, ownerId: userId, slug: `${job ? "ai" : "source"}-${randomUUID()}`, published: false }, { transaction });
+      course = await Course.create({ ...draft, modules: draft.modules.map(module => ({ ...module, materials })), ownerId: userId, slug: `${job ? "ai" : "source"}-${randomUUID()}`, published: false }, { transaction });
     }
     await CourseRevision.create(
       {
