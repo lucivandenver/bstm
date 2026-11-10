@@ -326,6 +326,10 @@ export const submitQuiz = async (req, res) => {
     else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: Math.max(attempt.quizScores[scope] || 0, result.score) };
     await attempt.update(update, { transaction });
     await draft.update({ answers: {}, startedAt: new Date(), revision: draft.revision + 1 }, { transaction });
+    if (!final && !pretest && passed) {
+      const module = attempt.snapshot.modules.find(item => item.id === scope);
+      if (Array.isArray(module?.skills)) await ensureCompletionCredential(attempt, req.user, result.score, transaction, module);
+    }
     const completed = final && passed ? await finalizeAttempt(attempt, req.user, transaction) : false;
     if (passed && (pretest || !final)) continuation = resumeHref(plain(attempt));
     req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}% (${result.correct}/${result.total} correct). ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. Moving to your next lesson or quiz.' : 'Review the lessons, then try again.'}`);
@@ -432,13 +436,13 @@ export const generateGuidance = async (req, res) => {
 export const achievements = async (req, res) => {
   const allAttempts = await attemptsFor(req.user.id);
   const completed = allAttempts.filter(a => a.status === 'completed').sort((a,b) => new Date(a.completedAt) - new Date(b.completedAt));
-  const existing = await Credential.findAll({ where: { userId: req.user.id }, attributes: ['attemptId'] });
+  const existing = await Credential.findAll({ where: { userId: req.user.id, moduleId: '' }, attributes: ['attemptId'] });
   const issuedAttempts = new Set(existing.map(row => Number(row.attemptId)));
   for (const attempt of completed) if (attempt.snapshot.certificateEnabled !== false && !issuedAttempts.has(Number(attempt.id))) await ensureCompletionCredential(attempt, req.user);
   const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
-  const pendingAwards = completed.filter(attempt => attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
-  render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
+  const pendingAwards = completed.filter(attempt => !attempt.snapshot.modules.some(module => Array.isArray(module.skills)) && attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
+  render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
 };
 function credentialSkills(snapshot) {
   return Array.isArray(snapshot?.competencyAreas) && snapshot.competencyAreas.length
@@ -478,8 +482,8 @@ export const certificate = async (req, res) => {
   doc.fillColor('#172533').fontSize(12).text('This certifies that', 55, 206, { width: 730, align: 'center' });
   const fitted = (value, y, size, min, height) => { value = String(value || ''); while (size > min && doc.widthOfString(value, { fontSize: size }) > 700) size--; let fittedValue = value; while (fittedValue.length > 1 && doc.widthOfString(fittedValue, { fontSize: size }) > 700) fittedValue = `${fittedValue.slice(0, -2)}…`; doc.fontSize(size).text(fittedValue, 70, y, { width: 702, height, align: 'center', lineBreak: false }); };
   fitted(c.recipientName, 232, 26, 16, 46);
-  doc.fontSize(12).text('for successfully completing the course', 55, 292, { width: 730, align: 'center' });
-  fitted(c.courseTitle, 316, 23, 15, 48);
+  doc.fontSize(12).text(c.moduleId ? 'for successfully completing the module' : 'for successfully completing the course', 55, 292, { width: 730, align: 'center' });
+  fitted(c.moduleId ? `${c.moduleTitle} · ${c.courseTitle}` : c.courseTitle, 316, 23, 15, 48);
   doc.fillColor('#64748b').fontSize(8).text(footer, 75, 374, { width: 690, height: 22, align: 'center' });
   doc.moveTo(65, 425).lineTo(777, 425).lineWidth(0.6).stroke('#cbd5e1');
   if (facultySignature) {
@@ -505,7 +509,7 @@ export const verify = async (req, res) => {
   const c = await Credential.findByPk(req.params.id);
   if (!c) return res.status(404).render('verify', { title: 'Credential not found', missing: true });
   const attempt = c.revoked ? null : await CourseAttempt.findByPk(c.attemptId);
-  res.render('verify', { title: 'Verify credential', credential: { ...plain(c), date: date(c.issuedAt), skills: credentialSkills(attempt?.snapshot) } });
+  res.render('verify', { title: 'Verify credential', credential: { ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(attempt?.snapshot) } });
 };
 export const downloadReport = async (req, res) => {
   const attempts = await attemptsFor(req.user.id);

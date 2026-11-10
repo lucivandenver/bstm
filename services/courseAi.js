@@ -175,6 +175,7 @@ export function validateGeneratedDraft(raw, sections, options) {
   const modules = raw.modules.map((m, i) => ({
     id: `module-${i + 1}`,
     title: m.title,
+    skills: (Array.isArray(m.lessons) ? m.lessons.flatMap(lesson => Array.isArray(lesson.takeaways) ? lesson.takeaways : []) : []).slice(0, 6).map(skill => String(skill).slice(0, 120)),
     lessons: Array.isArray(m.lessons)
       ? m.lessons.map((l, j) => {
           const evidence = evidenceFor(l.sourceReference, l.sourceQuote, sections);

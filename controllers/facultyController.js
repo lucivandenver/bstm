@@ -1,3 +1,4 @@
+import { randomUUID as newModuleId } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { sourceLimits } from '../services/sourceLimits.js';
 import { startCourseJob, startBlueprintJob, courseJobStatus } from '../services/courseJobs.js';
@@ -83,7 +84,7 @@ export const courses = async (req, res) => {
   const archived = req.query.list === 'archive';
   const revisions = courses.length ? await CourseRevision.findAll({
     where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] } },
-    attributes: ['courseId', 'action'],
+    attributes: ['courseId', 'action', 'version'],
     order: [['id', 'DESC']]
   }) : [];
   const latest = new Map();
@@ -110,7 +111,7 @@ export const courses = async (req, res) => {
   }
   render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, archived, page, pageCount,
     activeUrl: listUrl(1, false), archiveUrl: listUrl(1, true),
-    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), pendingReview: latest.get(c.id)?.action === 'pending-review', modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
+    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -119,7 +120,45 @@ export const editor = async (req, res) => {
   }
   course.competencyAreas=courseAreas(course.competencyAreas,course.domain);
   const [bank, otherCourses, revisions] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] }), course.id ? CourseRevision.findAll({ where: { courseId: course.id }, attributes:['version','action','createdAt'], order: [['createdAt', 'DESC']], limit: 20 }) : []]);
-  render(res, 'editor', { title: 'Revise course', backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
+  const generatedDraft = !course.published && await AiJob.count({ where: { courseId: course.id, type: 'course-draft', status: 'completed' } });
+  const destinations = generatedDraft ? await Course.findAll({
+    where: { ownerId: req.user.id, published: false, id: { [Op.ne]: course.id } },
+    attributes: ['id', 'title'], order: [['title', 'ASC']]
+  }) : [];
+  render(res, 'editor', { title: 'Revise course', destinations: destinations.map(plain), backUrl: '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
+};
+export const attachGeneratedModule = async (req, res) => {
+  const destinationId = Number(req.body.destinationId);
+  if (!Number.isSafeInteger(destinationId) || destinationId < 1 || destinationId === Number(req.params.id)) fail('Select another course you own.');
+  await sequelize.transaction(async transaction => {
+    const rows = await Course.findAll({
+      where: { id: [Number(req.params.id), destinationId], ownerId: req.user.id },
+      order: [['id', 'ASC']], transaction, lock: transaction.LOCK.UPDATE
+    });
+    const source = rows.find(row => row.id === Number(req.params.id));
+    const destination = rows.find(row => row.id === destinationId);
+    if (!source || !destination) fail('Course not found.', 404);
+    if (source.published || destination.published) fail('Unpublish the course before attaching a generated module.');
+    if (!await AiJob.count({ where: { courseId: source.id, userId: req.user.id, type: 'course-draft', status: 'completed' }, transaction })) fail('Select a draft created through Upload & Generate.');
+    const module = savedArray(source.modules).find(item => item.id === req.body.moduleId);
+    if (!module) fail('Select a generated module.');
+    const modules = savedArray(destination.modules).map((item, index) => ({ ...item, number: item.number ?? index + 1 }));
+    const number = Number(req.body.moduleNumber);
+    const title = text(req.body.moduleTitle, 160) || module.title;
+    const id = newModuleId();
+    const questions = savedArray(source.questions).filter(question => question.moduleId === module.id);
+    const data = courseInput({
+      ...plain(destination),
+      modules: [...modules, { ...module, id, title, number, lessons: module.lessons.map(lesson => ({ ...lesson, id: newModuleId(), sourceReviewed: false })) }],
+      questions: [...savedArray(destination.questions), ...questions.map(question => ({ ...question, id: newModuleId(), moduleId: id, reviewed: false }))]
+    }, { draft: true });
+    await CourseRevision.create({ courseId: destination.id, actorId: req.user.id, version: destination.version, action: 'before-edit', snapshot: plain(destination) }, { transaction });
+    await destination.update({ modules: data.modules, questions: data.questions, awardsApproved: false, version: destination.version + 1 }, { transaction });
+    await CredentialRequest.update({ status: 'returned', remarks: 'Course modules changed. Resubmit the certificate configuration.' }, { where: { courseId: destination.id, status: 'approved' }, transaction });
+    await audit(req.user.id, 'course.module_attached', 'course', destination.id, { sourceCourseId: source.id, moduleId: id }, transaction);
+  });
+  req.flash('success_msg', 'Module attached. Review the updated course and submit it for Admin approval.');
+  res.redirect(`/faculty/courses/${destinationId}/edit`);
 };
 export const saveCourse = async (req, res) => {
   const approve=req.body.action==='approve-generated',publish=approve||req.body.action==='publish';
@@ -171,7 +210,12 @@ export const saveCourse = async (req, res) => {
     }
     { await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: 'before-edit', snapshot: plain(c) }, { transaction }); await c.update({ ...data, starter: false, awardsApproved: false, version: c.version + 1, published: false }, { transaction }); await CredentialRequest.update({ status: 'returned', remarks: 'Course content changed. Resubmit the credential configuration for review.' }, { where: { courseId: c.id, status: 'approved' }, transaction }); const attempts = await CourseAttempt.findAll({ where: { courseId: c.id }, transaction }); for (const attempt of attempts) await attempt.update({ snapshot: { ...attempt.snapshot, awardsApproved: false } }, { transaction }); }
     id = c.id;
-    await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: publish ? 'pending-review' : 'draft', snapshot: plain(c) }, { transaction });
+    const prior = await CourseRevision.findOne({
+      where: { courseId: c.id, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published'] } },
+      order: [['id', 'DESC']], transaction
+    });
+    const remainsArchived = !publish && ['archived', 'admin-archived'].includes(prior?.action);
+    await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: publish ? 'pending-review' : remainsArchived ? 'archived' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, publish ? 'course.submitted_for_review' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
   req.flash('success_msg', publish ? 'Course submitted for Admin approval.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);

@@ -38,13 +38,14 @@ export const Assessment = sequelize.define('Assessment', {
 });
 export const Credential = sequelize.define('Credential', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  userId: { type: DataTypes.INTEGER, allowNull: false }, attemptId: { type: DataTypes.INTEGER, allowNull: false, unique: true },
+  userId: { type: DataTypes.INTEGER, allowNull: false }, attemptId: { type: DataTypes.INTEGER, allowNull: false },
+  moduleId: { type: DataTypes.STRING(60), allowNull: false, defaultValue: '' }, moduleTitle: DataTypes.STRING, skills: DataTypes.JSON,
   courseTitle: DataTypes.STRING, recipientName: DataTypes.STRING, courseVersion: DataTypes.INTEGER,
   score: DataTypes.INTEGER, stars: DataTypes.INTEGER, issuedAt: DataTypes.DATE,
   facultySignature: DataTypes.TEXT('long'), facultyName: DataTypes.STRING(100), facultyPosition: DataTypes.STRING(120),
   adminSignature: DataTypes.TEXT('long'), adminName: DataTypes.STRING(160), adminPosition: DataTypes.STRING(160), badgeLabel: DataTypes.STRING(60),
   revoked: { type: DataTypes.BOOLEAN, defaultValue: false }
-});
+}, { indexes: [{ name: 'credentials_attempt_module_unique', unique: true, fields: ['attemptId', 'moduleId'] }] });
 export const Notification = sequelize.define('Notification', {
   userId: { type: DataTypes.INTEGER, allowNull: false }, title: DataTypes.STRING, message: DataTypes.TEXT, href: DataTypes.STRING,
   readAt: DataTypes.DATE
