@@ -46,12 +46,17 @@ export async function migrateStudent() {
   await extend('Courses', { ownerId: { type: DataTypes.INTEGER, allowNull: true }, competencyAreas: { type: DataTypes.JSON, allowNull: true }, outcomes: { type: DataTypes.JSON, allowNull: true }, tasks: { type: DataTypes.JSON, allowNull: true }, policy: { type: DataTypes.JSON, allowNull: true }, enrollFrom: { type: DataTypes.DATE }, enrollUntil: { type: DataTypes.DATE }, deadline: { type: DataTypes.DATE }, certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true }, awardsApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false } });
   await extend('AiJobs', { state: { type: DataTypes.JSON, allowNull: true } });
   await extend('CourseAttempts', { lastLessonId: { type: DataTypes.STRING(100), allowNull: true } });
-  await extend('Credentials', { facultySignature: { type: DataTypes.TEXT('long') }, facultyName: { type: DataTypes.STRING(100) }, facultyPosition: { type: DataTypes.STRING(120) }, adminSignature: { type: DataTypes.TEXT('long') }, adminName: { type: DataTypes.STRING(160) }, adminPosition: { type: DataTypes.STRING(160) }, badgeLabel: { type: DataTypes.STRING(60) } });
+  await extend('Credentials', { moduleId: { type: DataTypes.STRING(60), allowNull: false, defaultValue: '' }, moduleTitle: { type: DataTypes.STRING }, skills: { type: DataTypes.JSON }, facultySignature: { type: DataTypes.TEXT('long') }, facultyName: { type: DataTypes.STRING(100) }, facultyPosition: { type: DataTypes.STRING(120) }, adminSignature: { type: DataTypes.TEXT('long') }, adminName: { type: DataTypes.STRING(160) }, adminPosition: { type: DataTypes.STRING(160) }, badgeLabel: { type: DataTypes.STRING(60) } });
   if (sequelize.getDialect() === 'mysql' && tables.includes('Settings')) { const settingsColumns = await qi.describeTable('Settings'); if (settingsColumns.value && !String(settingsColumns.value.type).toLowerCase().includes('longtext')) await qi.changeColumn('Settings', 'value', { type: DataTypes.TEXT('long'), allowNull: true }); }
   await extend('CareerPaths', { qualifications: { type: DataTypes.TEXT } });
   await extend('StudentProfiles', Object.fromEntries(['relocate', 'targetRoles', 'workPreferences', 'ojtTasks'].map(name => [name, { type: DataTypes.TEXT }])));
   // Creates missing tables only. Never force-sync or reset existing student data.
   await sequelize.sync();
+  if (sequelize.getDialect() === 'mysql' && tables.includes('Credentials')) {
+    for (const index of await qi.showIndex('Credentials')) {
+      if (index.unique && index.fields.length === 1 && index.fields[0].attribute === 'attemptId') await qi.removeIndex('Credentials', index.name);
+    }
+  }
   await seedAdministration();
   await bootstrapAdmin();
 }

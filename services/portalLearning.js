@@ -3,21 +3,23 @@ import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } fro
 import { starsFor, canTakeFinal, grade } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
-export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction) {
-  if (attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
+export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction, module = null) {
+  if (module ? score < attempt.snapshot.passingScore : attempt.snapshot.modules.some(item => Array.isArray(item.skills))) return null;
+  if (!module && attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
   const course = await Course.findByPk(attempt.courseId, { transaction });
   const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
   const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved');
   const defaults = {
+    moduleTitle: module?.title, skills: module?.skills,
     userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion,
-    score, stars: starsFor(score), issuedAt: attempt.completedAt || new Date(),
+    score, stars: starsFor(score), issuedAt: module ? new Date() : attempt.completedAt || new Date(),
     facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
     facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
-    badgeLabel: signed ? request.badge?.label || 'Course completion' : 'Course completion',
+    badgeLabel: module ? 'Module completion' : signed ? request.badge?.label || 'Course completion' : 'Course completion',
   };
-  const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id }, defaults, transaction });
-  if (created) await Notification.create({ userId: user.id, title: 'Course certificate issued', message: `You met the completion rules for ${attempt.snapshot.title}. Your certificate and badge are ready.`, href: '/student/achievements' }, { transaction });
+  const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id, moduleId: module?.id || '' }, defaults, transaction });
+  if (created) await Notification.create({ userId: user.id, title: module ? 'Module certificate issued' : 'Course certificate issued', message: `You met the completion rules for ${module?.title || attempt.snapshot.title}. Your certificate and badge are ready.`, href: '/student/achievements' }, { transaction });
   return credential;
 }
 export async function finalizeAttempt(attempt, user, transaction) {

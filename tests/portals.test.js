@@ -183,6 +183,35 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<summary>Outline Course 1/);
     assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<summary>Outline Course 1/);
     assert.equal((await s.get('/student/courses/' + archiveTarget.id)).status, 404);
+    const generatedModuleDraft = await Course.create({
+      ...draft, ownerId: otherFaculty.id, slug: 'generated-module-draft', published: false
+    });
+    await AiJob.create({ userId: otherFaculty.id, type: 'course-draft', status: 'completed', courseId: generatedModuleDraft.id });
+    const attachUrl = '/faculty/courses/' + generatedModuleDraft.id + '/attach-module';
+    const attachFields = { destinationId: archiveTarget.id, moduleId: draft.modules[0].id, moduleNumber: 7, moduleTitle: 'Advanced Module' };
+    assert.match((await f2.get('/faculty/courses/' + generatedModuleDraft.id + '/edit')).html, /Attach a generated module/);
+    assert.equal((await f2.post(attachUrl, attachFields)).status, 302);
+    assert.equal((await f2.post(attachUrl, attachFields)).status, 400);
+    await archiveTarget.reload();
+    const attached = archiveTarget.modules.find(module => module.number === 7);
+    assert.equal(attached.title, 'Advanced Module');
+    assert.ok(archiveTarget.questions.some(question => question.moduleId === attached.id && !question.reviewed));
+    assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module')).html, /Module 7/);
+    const { ensureCompletionCredential } = await import('../services/portalLearning.js');
+    const moduleAwardAttempt = await CourseAttempt.findByPk(id);
+    await moduleAwardAttempt.update({ snapshot: { ...moduleAwardAttempt.snapshot, modules: [
+      { id: 'new-module-1', title: 'Module One', skills: ['Guest communication'] },
+      { id: 'new-module-2', title: 'Module Two', skills: ['Reservation handling'] }
+    ] } });
+    const [firstModule, secondModule] = moduleAwardAttempt.snapshot.modules;
+    assert.equal(await ensureCompletionCredential(moduleAwardAttempt, student, 0, undefined, firstModule), null);
+    const firstAward = await ensureCompletionCredential(moduleAwardAttempt, student, 100, undefined, firstModule);
+    assert.equal((await ensureCompletionCredential(moduleAwardAttempt, student, 100, undefined, firstModule)).id, firstAward.id);
+    const secondAward = await ensureCompletionCredential(moduleAwardAttempt, student, 100, undefined, secondModule);
+    assert.notEqual(secondAward.id, firstAward.id);
+    const verification = await s.get('/verify/' + firstAward.id);
+    assert.match(verification.html, /Guest communication/);
+    assert.doesNotMatch(verification.html, /Reservation handling/);
     const source=await SourceDocument.create({ownerId:otherFaculty.id,filename:'sample.docx',sections:[{reference:'Paragraph 1',text:draft.questions[0].sourceQuote.repeat(8)}]});
     process.env.GEMINI_API_KEY='dummy-unit-test-key';process.env.GEMINI_MODEL='dummy-test-model';await Setting.upsert({key:'aiDailyLimit',value:'2'});const original=globalThis.fetch;
     try{globalThis.fetch=async url=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({...draft,questions:[1,2,3].map(n=>({...draft.questions[0],id:'q'+n})),tasks:[],policy:{quizWeight:40,finalWeight:60,practicalWeight:0}})}]}}]}),{status:200});const result=await generateCourse(otherFaculty.id,source,{domain:domains[0],level:'Foundation',questionCount:3,outcomes:'Apply the source.'});assert.equal(result.draft.questions[0].reviewed,false);assert.equal(result.job.status,'completed');
