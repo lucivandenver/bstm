@@ -69,7 +69,8 @@ export const dashboard = async (req, res) => {
   const approvedOwnerIds = new Set(approvedOwners.map(user => user.id));
   const completed = attempts.filter(a => a.status === 'completed');
   const completedCourseIds = new Set(completed.map(a => a.courseId));
-  const ongoing = attempts.filter(a => a.status === 'ongoing' && !completedCourseIds.has(a.courseId)).map(decorate);
+  const available = await availableAttemptCourses(attempts);
+  const ongoing = attempts.filter(a => available.has(a.courseId) && a.status === 'ongoing' && !completedCourseIds.has(a.courseId)).map(decorate);
   const evidence = await buildEvidence(attempts, plain(baseline));
   render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
     requiredCourses: requiredCourses.filter(c => approvedOwnerIds.has(c.ownerId)).map(c => ({ ...plain(c), done: attempts.some(a => a.courseId === c.id && a.status === 'completed'), due: date(required.find(r => r.courseId === c.id)?.dueAt) })), ongoing, completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
@@ -195,10 +196,17 @@ export const enroll = async (req, res) => {
   if (attempt.status === 'completed') req.flash('success_msg', 'You have already completed this course. You can review your lessons and results, but a new attempt is not available.');
   res.redirect(`/student/learn/${attempt.id}`);
 };
+async function availableAttemptCourses(attempts) {
+  const ids = [...new Set(attempts.filter(attempt => attempt.status === 'ongoing').map(attempt => attempt.courseId))];
+  if (!ids.length) return new Set();
+  const courses = await Course.findAll({ where: { id: ids, published: true, ownerId: { [Op.not]: null } }, attributes: ['id'] });
+  return new Set(courses.map(course => course.id));
+}
 export const myLearning = async (req, res) => {
   const attempts = (await attemptsFor(req.user.id)).map(decorate);
   const completedCourseIds = new Set(attempts.filter(a => a.completed).map(a => a.courseId));
-  render(res, 'learning', { title: 'My learning', ongoing: attempts.filter(a => !a.completed && !completedCourseIds.has(a.courseId)).map(a => ({ ...a, resumeHref: resumeHref(a) })), completed: attempts.filter(a => a.completed),
+  const available = await availableAttemptCourses(attempts);
+  render(res, 'learning', { title: 'My learning', ongoing: attempts.filter(a => available.has(a.courseId) && !a.completed && !completedCourseIds.has(a.courseId)).map(a => ({ ...a, resumeHref: resumeHref(a) })), completed: attempts.filter(a => a.completed),
     learningHistory: attempts.flatMap(a => a.quizAttempts.map(result => ({ title: a.title, attemptNumber: a.attemptNumber, scope: result.scope === 'final' ? 'Final assessment' : result.scope === 'pretest' ? 'Course pre-test' : `Module quiz · ${a.snapshot.modules.find(m => m.id === result.scope)?.title || result.scope}`, score: result.score, passed: result.score >= a.snapshot.passingScore, date: date(result.at) }))).slice(0, 30) });
 };
 function resumeHref(attempt) {
@@ -218,6 +226,7 @@ async function ownedAttempt(req, transaction) {
   const options = transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {};
   const attempt = await CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id }, ...options });
   if (!attempt || attempt.status === 'completed') return attempt;
+  if (!await Course.count({ where: { id: attempt.courseId, published: true, ownerId: { [Op.not]: null } }, transaction })) return null;
   return await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: attempt.courseId, status: 'completed' }, order: [['completedAt', 'DESC']], ...options }) || attempt;
 }
 export const learn = async (req, res) => {

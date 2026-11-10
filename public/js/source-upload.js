@@ -78,6 +78,10 @@
     e.preventDefault();
     if (busy) return;
     const generate = e.submitter?.value !== "extract";
+    if (generate && (!form.elements.destinationId.value || form.elements.moduleTitle.value.trim().length < 4)) {
+      status.textContent = "Choose your course and enter a module title of at least four characters.";
+      return;
+    }
     if (
       generate &&
       (!form.querySelector('[name="competencyAreas"]:checked') ||
@@ -152,6 +156,8 @@
         mode: "ai",
         background: "yes",
 
+        destinationId: form.elements.destinationId.value,
+        moduleTitle: form.elements.moduleTitle.value.trim(),
         level: form.elements.level.value,
         questionCount: form.elements.questionCount.value,
         outcomes:

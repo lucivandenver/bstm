@@ -347,6 +347,31 @@ test("three large files upload incrementally, retry without duplicates, and gene
     });
     assert.equal(publish.status, 302, publish.html);
     assert.equal((await course.reload()).published, false);
+    await f.get("/faculty/upload");
+    const created = await f.post("/faculty/courses", { title: "Faculty-owned course" });
+    assert.equal(created.status, 302);
+    const destinationId = Number(new URL(created.location, "https://example.test").searchParams.get("courseId"));
+    for (const moduleTitle of ["First generated module", "Second generated module"]) {
+      const started = await f.request(`/faculty/sources/${sourceId}/generate`, {
+        method: "POST",
+        headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
+        body: new URLSearchParams({ destinationId, moduleTitle, domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
+      });
+      assert.equal(started.status, 202, started.html);
+      const { statusUrl: moduleStatusUrl } = JSON.parse(started.html);
+      let moduleStatus;
+      for (let n = 0; n < 80; n++) {
+        const poll = await f.request(moduleStatusUrl, { headers: { Accept: "application/json" } });
+        moduleStatus = JSON.parse(poll.html);
+        if (moduleStatus.status !== "running") break;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      assert.equal(moduleStatus.status, "completed", JSON.stringify(moduleStatus));
+    }
+    const anchoredCourse = await Course.findByPk(destinationId);
+    assert.equal(anchoredCourse.title, "FACULTY-OWNED COURSE");
+    assert.deepEqual(anchoredCourse.modules.map(module => [module.number, module.title]), [[1, "First generated module"], [2, "Second generated module"]]);
+    assert.equal(anchoredCourse.published, false);
     let failedCalls = 0;
     globalThis.fetch = async (url, init) => {
       if (!String(url).startsWith("https://generativelanguage.googleapis.com/"))
@@ -412,7 +437,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.equal(failed.code, "COURSE_AI_INVALID");
     assert.equal(
       await Course.count(),
-      1,
+      2,
       "a later failed batch cannot save or publish a partial course",
     );
     assert.equal((await SourceDocument.findByPk(sourceId)).sections.length, 3);
