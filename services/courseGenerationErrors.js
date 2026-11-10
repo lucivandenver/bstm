@@ -60,6 +60,10 @@ const messages = {
     "The AI provider could not produce content for this source. Review the teaching material.",
     422,
   ],
+  COURSE_ASSEMBLY_INVALID: [
+    "The saved sections could not be assembled into a valid course. Your sections are retained. Ask Admin to check the reference in the service logs.",
+    422,
+  ],
   COURSE_AI_INVALID: [
     "The returned draft could not be validated. No incomplete course was saved. Try fewer questions.",
     422,
@@ -119,7 +123,9 @@ export function safeGenerationError(error, stage = "unknown", jobId) {
     else if (stage === "input" && error?.status === 400) code = "COURSE_INPUT";
     else
       code =
-        stage === "provider"
+        stage === "assemble"
+          ? "COURSE_ASSEMBLY_INVALID"
+          : stage === "provider"
           ? "COURSE_AI_UNAVAILABLE"
           : stage === "parse" || stage === "validate"
             ? "COURSE_AI_INVALID"

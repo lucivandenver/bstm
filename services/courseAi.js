@@ -277,6 +277,7 @@ export function courseBatches(
   sections,
   requestedCount,
   chunkCharacters = limits.chunkCharacters,
+  legacyTail = false,
 ) {
   if (!sections.some(section => section.text.trim())) {
     const count = Number(requestedCount);
@@ -315,8 +316,7 @@ export function courseBatches(
     }
   }
   if (current.length) {
-    if (batches.length && size < 3000)
-      batches[batches.length - 1].push(...current);
+    if (legacyTail && batches.length && size < 3000) batches.at(-1).push(...current);
     else batches.push(current);
   }
   const count = Math.max(requestedCount, batches.length);
@@ -392,6 +392,7 @@ function combineDrafts(parts, options) {
       modules.push({
         ...m,
         id,
+        number: modules.length + 1,
         lessons: m.lessons.map((l) => ({ ...l, id: `batch-${i + 1}-${l.id}` })),
       });
     }
@@ -439,22 +440,23 @@ export async function generateCourse(userId, source, options) {
     if (Number(source.ownerId) !== Number(userId))
       throw generationError("COURSE_INPUT");
     const sections = sourceSections(source);
-    const plan = options.blueprint?.modules?.length
+    const makePlan = (legacyTail = false) => options.blueprint?.modules?.length
       ? (() => {
           const modules = options.blueprint.modules;
           if (modules.length > count) throw generationError("COURSE_INPUT", "The approved blueprint has more modules than requested assessment questions. Revise it and retry.");
           const maxChars = config.provider === "groq" ? 6000 : limits.chunkCharacters;
-          const fallback = courseBatches(sections, 1, maxChars);
+          const fallback = courseBatches(sections, 1, maxChars, legacyTail);
           const fallbackByModule = modules.map((_, moduleIndex) => fallback.filter((_, batchIndex) => batchIndex % modules.length === moduleIndex));
           const planned = modules.flatMap((module, moduleIndex) => {
             const cited = sections.filter(section => section.reference === module.sourceReference);
-            const sourceBatches = cited.length ? courseBatches(cited, 1, maxChars) : fallbackByModule[moduleIndex];
+            const sourceBatches = cited.length ? courseBatches(cited, 1, maxChars, legacyTail) : fallbackByModule[moduleIndex];
             const batches = sourceBatches.length ? sourceBatches : fallback.slice(moduleIndex % fallback.length, moduleIndex % fallback.length + 1);
             return batches.map((batch, partIndex) => ({ ...batch, blueprintModule: { ...module, title: batches.length > 1 ? `${module.title} · Part ${partIndex + 1}` : module.title, sourceNeedsReview: !cited.length || module.sourceNeedsReview === true } }));
           });
           return planned.map((batch, i) => ({ ...batch, questionCount: Math.max(1, Math.floor(count / planned.length) + (i < count % planned.length ? 1 : 0)) }));
         })()
-      : courseBatches(sections, count, config.provider === "groq" ? 6000 : limits.chunkCharacters);
+      : courseBatches(sections, count, config.provider === "groq" ? 6000 : limits.chunkCharacters, legacyTail);
+    let plan = makePlan();
     const savedOptions = {
       competencyAreas: options.competencyAreas || [options.domain],
       domain: options.domain,
@@ -468,7 +470,7 @@ export async function generateCourse(userId, source, options) {
         ? [config.provider, "groq"]
         : [config.provider],
     };
-    const fingerprint = createHash("sha256")
+    const planFingerprint = plan => createHash("sha256")
       .update(
         JSON.stringify({
           version: "course-ai-v2",
@@ -514,9 +516,17 @@ export async function generateCourse(userId, source, options) {
         limit: 20,
         transaction,
       });
-      const resume = previous.find(
-        (candidate) => candidate.state?.fingerprint === fingerprint,
-      );
+      let fingerprint = planFingerprint(plan);
+      let resume = previous.find(candidate => candidate.state?.fingerprint === fingerprint);
+      if (!resume) {
+        const legacyPlan = makePlan(true);
+        const legacyFingerprint = planFingerprint(legacyPlan);
+        resume = previous.find(candidate => candidate.state?.fingerprint === legacyFingerprint && candidate.state.batches?.length);
+        if (resume) {
+          plan = legacyPlan;
+          fingerprint = legacyFingerprint;
+        }
+      }
       const state = {
         fingerprint,
         options: savedOptions,
@@ -583,6 +593,11 @@ export async function generateCourse(userId, source, options) {
         message: `Saved ${index + 1} of ${plan.length} course sections.`,
       });
     }
+    stage = "assemble";
+    options.onProgress?.({
+      completed: plan.length, total: plan.length,
+      message: "All sections saved. Validating and saving the assembled course…",
+    });
     const draft = combineDrafts(parts, options);
     draft.competencyAreas = savedOptions.competencyAreas;
     stage = "save";
