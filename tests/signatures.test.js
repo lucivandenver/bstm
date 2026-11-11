@@ -32,6 +32,25 @@ await test("signature conversion removes light paper, retains blue strokes and o
   assert(ink > 50);
   assert.match(await validatedSignature(result), /^data:image\/png;base64,/);
 });
+await test("transparent signatures with ink at the crop edge can be saved again", async () => {
+  const image = await sharp(Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><path d="M0 10Q25 45 48 30T120 52" fill="none" stroke="#14223e" stroke-width="6"/></svg>',
+  )).png().toBuffer();
+  const preview = await processSignature(image);
+  const saved = await validatedSignature(preview);
+  assert.equal(saved, preview);
+});
+
+await test("a JPEG with dark edges can still use the visible paper as its background", async () => {
+  const image = await sharp(Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="#656565"/><rect x="10" y="10" width="180" height="80" fill="#eee6d8"/><path d="M40 65Q70 20 100 52T165 45" fill="none" stroke="#173772" stroke-width="5"/></svg>',
+  )).jpeg().toBuffer();
+  const result = await processSignature(image);
+  const pixels = await sharp(Buffer.from(result.split(",")[1], "base64")).raw().toBuffer();
+  assert(pixels.some((value, index) => index % 4 === 3 && value === 0));
+  assert(pixels.some((value, index) => index % 4 === 0 && pixels[index + 2] - value > 30 && pixels[index + 3] > 200));
+});
+
 await test("signature decoding rejects malformed, blank, oversized and dark-background images", async () => {
   await assert.rejects(
     () => processSignature(Buffer.from("fake png")),

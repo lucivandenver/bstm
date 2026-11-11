@@ -10,7 +10,7 @@ export async function processSignature(buffer) {
   let data, info;
   try {
     const input = sharp(buffer, {
-      limitInputPixels: 8000000,
+      limitInputPixels: 24000000,
       failOn: "error",
       animated: false,
     });
@@ -49,17 +49,30 @@ export async function processSignature(buffer) {
       const i = (y * width + x) * 4;
       if (data[i + 3] > 240) edge.push([data[i], data[i + 1], data[i + 2]]);
     }
-  const median = (channel) =>
-    edge.map((p) => p[channel]).sort((a, b) => a - b)[
-      Math.floor(edge.length / 2)
-    ] ?? 255;
-  const background = [median(0), median(1), median(2)],
-    bgLuma =
-      background[0] * 0.2126 + background[1] * 0.7152 + background[2] * 0.0722;
-  if (edge.length && bgLuma < 150)
-    throw invalid(
+  const luma = (r, g, b) => r * 0.2126 + g * 0.7152 + b * 0.0722;
+  const pixels = width * height;
+  let transparent = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] <= 16) transparent++;
+  }
+  const alreadyTransparent = transparent >= Math.max(8, pixels * 0.01);
+  const samples = edge.sort((a, b) => luma(...a) - luma(...b));
+  let background = samples[Math.floor(samples.length / 2)] || [255, 255, 255];
+  if (!alreadyTransparent && luma(...background) < 150) {
+    const interior = [];
+    for (let y = Math.floor(height / 8); y < height * 7 / 8; y += Math.max(1, Math.floor(height / 60))) {
+      for (let x = Math.floor(width / 8); x < width * 7 / 8; x += Math.max(1, Math.floor(width / 60))) {
+        const i = (y * width + x) * 4;
+        interior.push([data[i], data[i + 1], data[i + 2]]);
+      }
+    }
+    interior.sort((a, b) => luma(...a) - luma(...b));
+    background = interior[Math.floor(interior.length * 0.75)] || background;
+    if (luma(...background) < 150) throw invalid(
       "Use dark ink on a plain light background, or upload an already transparent PNG.",
     );
+  }
+  const bgLuma = luma(...background);
   let minX = width,
     minY = height,
     maxX = -1,
@@ -70,17 +83,13 @@ export async function processSignature(buffer) {
       const i = (y * width + x) * 4,
         alpha = data[i + 3];
       if (!alpha) continue;
-      const luma =
-        data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
-      const difference =
-        Math.sqrt(
-          background.reduce((n, v, c) => n + (data[i + c] - v) ** 2, 0),
-        ) / 441.7;
-      const ink = Math.max(1 - luma / Math.max(bgLuma, 1), difference * 0.85);
-      data[i + 3] = Math.round(
-        alpha * Math.max(0, Math.min(1, (ink - 0.11) / 0.19)),
-      );
-      if (data[i + 3] > 32) {
+      const brightness = luma(data[i], data[i + 1], data[i + 2]);
+      if (!alreadyTransparent) {
+        const difference = Math.hypot(data[i] - background[0], data[i + 1] - background[1], data[i + 2] - background[2]) / 441.7;
+        const ink = Math.max(1 - brightness / bgLuma, difference * 0.85);
+        data[i + 3] = Math.round(alpha * Math.max(0, Math.min(1, (ink - 0.11) / 0.19)));
+      }
+      if (data[i + 3] > 32 && (!alreadyTransparent || brightness < 245)) {
         inkPixels++;
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
