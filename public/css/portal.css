@@ -79,3 +79,14 @@
   background: #f1f8f4;
 }
 .credential-badge-preview .award-badge { font-size: 2.5rem; }
+
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  margin-block-start: 1rem;
+  text-align: right;
+}
+.pagination p { margin: 0; }

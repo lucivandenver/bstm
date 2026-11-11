@@ -48,7 +48,7 @@ export const credentials = async (req, res) => {
 };
 export const submitCredential = async (req, res) => {
   const label=text(req.body.badgeLabel,60)||'Course completion';
-  await sequelize.transaction(async transaction=>{
+  const saved = await sequelize.transaction(async transaction=>{
     const course=await ownedCourse(req,transaction);if(!course.certificateEnabled)fail('Enable certificates before requesting approval.');
     const key = `facultySignature:${req.user.id}`;
     const signature = await validatedSignature(req.body.signature || (await Setting.findOne({ where: { key }, transaction }))?.value);
@@ -60,7 +60,12 @@ export const submitCredential = async (req, res) => {
     const attempts=await CourseAttempt.findAll({where:{courseId:course.id},transaction});
     for(const attempt of attempts)await attempt.update({snapshot:{...attempt.snapshot,awardsApproved:false}},{transaction});
     await audit(req.user.id,'credential.requested','course',course.id,{requestId:request.id},transaction);
+  }).catch(error => {
+    if (req.body.saveReusable !== 'yes' || error.status !== 422) throw error;
+    req.flash('error_msg', error.message);
+    return false;
   });
+  if (saved === false) return res.redirect('/faculty/credentials');
   req.flash('success_msg',req.body.saveReusable === 'yes' ? 'Faculty signature saved for current and future publications.' : 'Transparent signature and credential configuration sent to Admin for review. Existing issued awards retain their original signatures.');res.redirect('/faculty/credentials');
 };
 export const deleteCredentialRequest = async (req, res) => {

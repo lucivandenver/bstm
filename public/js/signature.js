@@ -34,10 +34,10 @@
         if (status) status.textContent = "";
         return;
       }
-      if (
-        !/^image\/(png|jpeg|webp)$/.test(selected.type) ||
-        selected.size > 4 * 1024 * 1024
-      ) {
+      const supportedType = /^image\/(png|jpeg|webp)$/.test(selected.type);
+      const unknownType = !selected.type || selected.type === "application/octet-stream";
+      const supportedName = /\.(png|jpe?g|webp)$/i.test(selected.name);
+      if (!(supportedType || (unknownType && supportedName)) || selected.size > 4 * 1024 * 1024) {
         file.setCustomValidity(
           "Choose a PNG, JPEG or WebP signature up to 4 MB.",
         );
@@ -92,6 +92,7 @@
             : "Choose a clear signature image and wait for its preview.",
         );
         file.reportValidity();
+        if (busy) file.setCustomValidity("");
       }
     });
   }
