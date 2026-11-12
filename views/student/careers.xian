@@ -1,5 +1,5 @@
 {{> studentTop}}
-<div class="page-heading"><div><h1>Find My Career</h1><p class="muted">Explore roles connected to the competencies you’ve assessed in your modules.</p></div></div>
+<div class="page-heading"><div><p class="muted">Explore roles connected to the competencies you’ve assessed in your modules.</p></div></div>
 {{#if hasPassedModule}}
 <section class="card career-finder">
   <div class="row wrap"><h2>Your career matches</h2><a class="button secondary" href="/student/careers?find=matches#career-matches" data-career-match-search aria-controls="career-matches">{{> icon name="search"}} Find My Career Matches</a></div>
@@ -26,9 +26,9 @@
     </article>{{else}}<article class="card">No configured pathway matches the scored competencies in your passed modules yet.</article>{{/each}}</div>
     <div class="grid cols-2 space-top">
       <section class="card"><h2>Passed module evidence</h2>{{#each passedModules}}<p>{{title}} · Quiz {{score}}% · {{percent}}% progress</p>{{/each}}</section>
-      <section class="card"><h2>Areas to work on</h2>{{#each developingCourses}}<p>{{title}} · {{percent}}% progress · Quiz {{score}}%</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
+      <section class="card"><h2>Gaps from below-passing module quizzes</h2>{{#each developingCourses}}<p>{{title}} · {{percent}}% progress · Quiz {{score}}%</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
     </div>
   {{else}}<div class="card empty space-top"><h2>Your matches will appear here</h2></div>{{/if}}
 </section>
-{{else}}<section class="card"><h2>Pass a module to see career matches</h2><a class="button secondary" href="/student/learning">Open My Learning →</a></section>{{/if}}
+{{else}}<section class="card"><h2>Take and pass a module assessment to see career matches</h2><a class="button secondary" href="/student/courses">Explore Courses →</a></section>{{/if}}
 {{> studentBottom}}

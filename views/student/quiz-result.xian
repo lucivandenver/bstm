@@ -1,7 +1,6 @@
 {{> studentTop}}<div class="lesson-layout">{{#if attempt}}{{> studentTopicOutline}}{{/if}}<div>
 <section class="card">
-  <p class="muted">{{courseTitle}}</p>
-  <h1>{{title}}</h1>
+  <p class="muted">{{#if moduleTitle}}{{moduleTitle}}{{else}}{{courseTitle}}{{/if}}</p>
   <p class="stat-number"><strong>{{result.score}}%</strong></p>
   {{#if result.total}}<p>{{result.correct}} of {{result.total}} correct</p>{{/if}}
   {{#if pretest}}<p>Your starting score has been recorded.</p>
