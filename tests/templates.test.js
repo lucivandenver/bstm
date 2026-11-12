@@ -14,7 +14,7 @@ const render = (path, data) => new Promise((resolve, reject) => hbs.__express(pa
 const course = starterCourses[0];
 const data = { title: 'Student test', csrf: 'test-token', currentUser: { name: '<script>alert(1)</script>', email: 'student@example.com' },
   course, attempt: { id: 1, title: course.title, snapshot: course, percent: 50, done: 3, total: 7 },
-  selected: course.modules[0].lessons[0], modules: course.modules.map(m => ({ ...m, available: true, quizAvailable: true })),
+  selected: course.modules[0].lessons[0], modules: course.modules.map(m => ({ ...m, lessons: m.lessons.map(lesson => ({ ...lesson, unlocked: true })), quizAvailable: true })),
   questions: publicQuestions(course.questions), domains: [], tracks: [], profile: {}, notifications: [] };
 test('all student screens render with empty and populated account data', async () => {
   for (const file of fs.readdirSync('views/student')) {

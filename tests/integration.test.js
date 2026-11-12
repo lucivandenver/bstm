@@ -78,16 +78,45 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     response = await other.post('/student/learn/1/complete', { lessonId: 'traveller' }); assert.equal(response.status, 404);
     const c = starterCourses[0];
     for (const module of c.modules) {
-      for (const lesson of module.lessons) { const page = await student.get(`/student/learn/1?lesson=${lesson.id}`); const lessonChallenge = page.html.match(/data-lesson-challenge="([^"]+)"/)[1]; await student.post('/student/learn/1/complete', { lessonId: lesson.id, lessonChallenge }); }
+      for (const [index, lesson] of module.lessons.entries()) {
+        const lessonUrl = `/student/learn/1?lesson=${lesson.id}`;
+        const page = await student.get(lessonUrl);
+        const lessonChallenge = page.html.match(/data-lesson-challenge="([^"]+)"/)[1];
+        const completed = await student.post('/student/learn/1/complete', { lessonId: lesson.id, lessonChallenge });
+        const next = module.lessons[index + 1];
+        if (!completed.headers.get('location').endsWith('#topic-quiz')) continue;
+        if (next) {
+          assert.equal((await student.get(`/student/learn/1?lesson=${next.id}`)).r.status, 403);
+          const earlyCompletion = await student.post('/student/learn/1/complete', { lessonId: next.id });
+          assert.equal(earlyCompletion.status, 403);
+        }
+        const topic = await student.get(lessonUrl);
+        const revision = Number(topic.html.match(/data-revision="(\d+)"/)[1]);
+        const ids = [...new Set([...topic.html.matchAll(/name="answers\[([^\]]+)\]"/g)].map(match => match[1]))];
+        const answers = Object.fromEntries(ids.map(id => [id, String(c.questions.find(question => question.id === id).answer)]));
+        const saved = await fetch(`${base}/student/learn/1/draft/${module.id}?topic=${lesson.id}`, {
+          method: 'POST', headers: { cookie: student.cookie, 'Content-Type': 'application/json', 'X-CSRF-Token': student.csrf },
+          body: JSON.stringify({ revision, answers })
+        });
+        assert.equal(saved.status, 200);
+        if (next) assert.equal((await student.get(`/student/learn/1?lesson=${next.id}`)).r.status, 200);
+      }
       const quiz = await student.get(`/student/learn/1/quiz/${module.id}`);
       assert.equal(quiz.r.status, 200);
       assert.match(quiz.html, new RegExp(`Topic ${c.modules.indexOf(module) + 1}\\.\\d+ ·`));
       assert.ok(!quiz.html.includes(c.questions[0].explanation));
+      const moduleQuestions = c.questions.filter(question => question.moduleId === module.id);
+      const displayedQuestions = new Set([...quiz.html.matchAll(/name="answers\[([^\]]+)\]"/g)].map(match => match[1]));
+      assert.deepEqual([...displayedQuestions].sort(), moduleQuestions.map(question => question.id).sort());
       const challenge = quiz.html.match(/name="challenge" value="([^"]+)"/)[1];
-      const answers = Object.fromEntries(c.questions.filter(q => q.moduleId === module.id).map(q => [`answers[${q.id}]`, String(q.answer)]));
+      const answers = Object.fromEntries(moduleQuestions.map(q => [`answers[${q.id}]`, String(q.answer)]));
       response = await student.post(`/student/learn/1/quiz/${module.id}`, { challenge, ...answers }); assert.equal(response.status, 302);
+      const attempt = await CourseAttempt.findByPk(1);
+      assert.equal(attempt.quizAttempts.filter(result => result.scope === module.id).length, 1);
     }
     const final = await student.get('/student/learn/1/final'); assert.equal(final.r.status, 200);
+    assert.match(final.html, /Topic outline/);
+    assert.doesNotMatch(final.html, /Review submitted final feedback/);
     const challenge = final.html.match(/name="challenge" value="([^"]+)"/)[1];
     const answers = Object.fromEntries(c.questions.map(q => [`answers[${q.id}]`, String(q.answer)]));
     // A failed final does not issue credentials; retry succeeds later.
@@ -102,6 +131,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     const credential = await Credential.findOne();
     assert.equal(credential.score, 100); assert.equal(credential.stars, 3);
     assert.equal((await CourseAttempt.findByPk(1)).status, 'completed');
+    assert.equal((await student.get('/student/learn/1/review/final')).r.status, 200);
     for (const route of ['/student/achievements', `/verify/${credential.id}`, '/student/results', '/student/notifications']) {
       const result = await student.get(route); assert.equal(result.r.status, 200, route);
     }
