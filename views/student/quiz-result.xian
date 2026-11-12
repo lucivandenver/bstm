@@ -1,0 +1,19 @@
+{{> studentTop}}
+<section class="card">
+  <p class="muted">{{courseTitle}}</p>
+  <h1>{{title}}</h1>
+  <p class="stat-number"><strong>{{result.score}}%</strong></p>
+  {{#if result.total}}<p>{{result.correct}} of {{result.total}} correct</p>{{/if}}
+  {{#if pretest}}<p>Your starting score has been recorded.</p>
+  {{else}}
+  <p><span class="chip {{#unless passed}}pink{{/unless}}">{{#if passed}}Passed{{else}}Below passing score{{/if}}</span> Passing score {{passingScore}}%</p>
+  {{#unless passed}}<p>This result does not qualify for a certificate.</p>{{/unless}}
+  {{/if}}
+  {{#if retry}}<h2>Would you like to try again?</h2>{{#if final}}<p>The final assessment questions will appear in a different order when there is more than one question.</p>{{/if}}{{/if}}
+  <div class="actions">
+    {{#if retry}}<a class="button" href="{{retryUrl}}">Retry assessment</a>{{/if}}
+    <a class="button secondary" href="{{continueUrl}}">{{#if retry}}Back to course{{else}}Continue learning{{/if}}</a>
+    {{#if completed}}<a class="button" href="/student/achievements">View achievements</a>{{/if}}
+  </div>
+</section>
+{{> studentBottom}}

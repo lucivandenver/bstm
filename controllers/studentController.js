@@ -454,8 +454,18 @@ export const quizPage = async (req, res) => {
   const canSubmit = scopeAllowed(attempt, scope);
   const topics = assessmentTopics(module, questions, draft).filter(topic => canSubmit || attempt.completedLessons.includes(topic.id));
   if (retries || attempt.snapshot.policy?.randomize) {
-    const rank = question => createHash('sha256').update(`${attempt.id}:${scope}:${retries}:${question.id}`).digest('hex');
-    for (const topic of topics) topic.questions.sort((a, b) => rank(a).localeCompare(rank(b)));
+    const rank = (question, attemptNumber) => createHash('sha256').update(`${attempt.id}:${scope}:${attemptNumber}:${question.id}`).digest('hex');
+    for (const topic of topics) {
+      const items = topic.questions;
+      if (final && retries && items.length > 1) {
+        const initial = attempt.snapshot.policy?.randomize
+          ? [...items].sort((a, b) => rank(a, 0).localeCompare(rank(b, 0))) : items;
+        const first = initial[retries % items.length];
+        items.splice(items.indexOf(first), 1);
+        items.sort((a, b) => rank(a, retries).localeCompare(rank(b, retries)));
+        items.unshift(first);
+      } else items.sort((a, b) => rank(a, retries).localeCompare(rank(b, retries)));
+    }
   }
   const nextLesson = !canSubmit && module?.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
   if (!topics.length && nextLesson) return res.redirect(`/student/learn/${attempt.id}?lesson=${encodeURIComponent(nextLesson.id)}`);
@@ -493,26 +503,46 @@ export const restartQuiz = async (req, res) => {
 export const submitQuiz = async (req, res) => {
   const scope = req.params.moduleId || 'final', final = scope === 'final', pretest = scope === 'pretest';
   const nonce = checkChallenge(req.body.challenge, req.user.id, `${req.params.id}:${scope}`);
-  let continuation = null;
   await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction); if (!attempt) error('Attempt not found.', 404);
     if (attempt.status === 'completed' || attempt.quizAttempts.some(a => a.nonce === nonce)) return;
     if (!scopeAllowed(attempt, scope)) error('Requirements are incomplete.', 403);
     const draft = await draftFor(req.user.id, attempt, scope, transaction); checkQuizLimits(attempt, scope, draft);
     const result = grade(scopeQuestions(attempt, scope), req.body.answers || {}), passed = result.score >= attempt.snapshot.passingScore;
-    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, score: result.score, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
+    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, score: result.score, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
     if (final) update.finalScore = result.score;
     else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: Math.max(attempt.quizScores[scope] || 0, result.score) };
     await attempt.update(update, { transaction });
-    await draft.update({ answers: {}, startedAt: new Date(), revision: draft.revision + 1 }, { transaction });
+    await draft.destroy({ transaction });
     if (!final && !pretest && passed) {
       const module = attempt.snapshot.modules.find(item => item.id === scope);
       if (Array.isArray(module?.skills)) await ensureCompletionCredential(attempt, req.user, result.score, transaction, module);
     }
-    const completed = final && passed ? await finalizeAttempt(attempt, req.user, transaction) : false;
-    if (passed && (pretest || !final)) continuation = resumeHref(plain(attempt));
-    req.flash(passed || pretest ? 'success_msg' : 'error_msg', `${pretest ? 'Pre-test' : final ? 'Final assessment' : 'Module quiz'}: ${result.score}% (${result.correct}/${result.total} correct). ${pretest ? 'Starting knowledge recorded. Continue with the lessons.' : completed ? 'Course completed! View your achievements.' : passed ? final ? 'Passed. Complete any practical tasks and required feedback to finish the course.' : 'Passed. Moving to your next lesson or quiz.' : 'Review the lessons, then try again.'}`);
-  }); delete req.session.careerAi; res.redirect(continuation || `/student/learn/${req.params.id}`);
+    if (final && passed) await finalizeAttempt(attempt, req.user, transaction);
+  });
+  delete req.session.careerAi;
+  res.redirect(`/student/learn/${req.params.id}/result/${nonce}`);
+};
+export const quizResult = async (req, res) => {
+  const attempt = await CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id } });
+  const result = attempt?.quizAttempts.find(item => item.nonce === req.params.nonce && !item.expired);
+  if (!result) return fail(res, 'Assessment result not found.', 404);
+  const { scope } = result;
+  const final = scope === 'final', pretest = scope === 'pretest';
+  const passed = result.score >= attempt.snapshot.passingScore;
+  const completed = attempt.status === 'completed';
+  const limit = attempt.snapshot.policy?.attemptLimit;
+  const submitted = attempt.quizAttempts.filter(item => item.scope === scope);
+  const retry = !passed && !pretest && !completed && submitted.at(-1)?.nonce === result.nonce &&
+    (!limit || submitted.length < limit) && scopeAllowed(attempt, scope);
+  const courseUrl = `/student/learn/${attempt.id}`;
+  render(res, 'quiz-result', {
+    title: pretest ? 'Pre-test result' : final ? 'Final assessment result' : 'Module quiz result',
+    courseTitle: attempt.snapshot.title, passingScore: attempt.snapshot.passingScore,
+    result, passed, pretest, final, completed, retry, courseUrl,
+    continueUrl: passed || pretest ? (final ? courseUrl : resumeHref(plain(attempt))) : courseUrl,
+    retryUrl: final ? `${courseUrl}/final` : `${courseUrl}/quiz/${scope}`
+  });
 };
 export const assessmentPage = async (req, res) => {
   if (!await requireProfile(req, res)) return;

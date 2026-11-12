@@ -5,8 +5,8 @@
 <p role="status" aria-live="polite" data-job-status>Checking generation status…</p>
 <progress aria-label="Teaching material batches analyzed" style="width:100%;margin:24px 0"></progress>
 <p class="small muted">Each source batch is analyzed before the complete draft is saved. You can return from Upload &amp; Generate → Generation history. Faculty reviews the content and answers before publishing to students.</p>
-<div class="actions space-top" data-job-actions hidden>{{#unless progress.moduleTitle}}<a class="button" data-job-preview href="#">Review &amp; publish</a>{{/unless}}<a class="button" data-job-edit href="#">Review topic areas &amp; assessment</a></div>
+<div class="actions space-top" data-job-actions hidden>{{#unless progress.moduleTitle}}<a class="button" data-job-preview href="#">Review &amp; publish</a>{{/unless}}<a class="button" data-job-edit href="#">Review &amp; edit draft</a></div>
 <section class="card space-top" data-blueprint-review hidden><p class="eyebrow">FACULTY REVIEW REQUIRED</p><h2>Review your course outline</h2><p class="small muted">Edit the title, outcomes, competency areas and outline sections. Lesson and assessment generation begins only after you approve this blueprint.</p><form data-blueprint-form><div data-blueprint-fields></div><div class="actions"><button class="button" type="submit">Approve blueprint &amp; generate course</button></div><p class="small" data-blueprint-error role="status"></p></form></section>
 <button class="button space-top" type="button" data-job-resume hidden>Resume generation</button>
-<a class="button secondary space-top" data-job-retry hidden href="/faculty/sources/{{progress.sourceId}}">Open saved materials &amp; retry</a>
+<a class="button secondary space-top" data-job-retry hidden href="/faculty/sources/{{progress.sourceId}}?job={{progress.id}}">Open saved materials &amp; retry</a>
 </section><script src="/js/course-job.js" defer></script>{{> studentBottom}}
