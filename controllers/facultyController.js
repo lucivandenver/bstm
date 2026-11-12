@@ -19,7 +19,7 @@ import { generateCourse, aiConfiguration, sourceSections } from '../services/cou
 import { generationError, safeGenerationError } from '../services/courseGenerationErrors.js';
 import { extractSource } from '../services/sourceExtraction.js';
 import { progress, careerMatches, publicQuestions } from '../services/learning.js';
-import { finalizeAttempt } from '../services/portalLearning.js';
+import { finalizeAttempt, syncPublishedAttempt } from '../services/portalLearning.js';
 function savedArray(value) {
   if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }
   return Array.isArray(value) ? value : [];
@@ -929,14 +929,25 @@ export const evaluations = async (req, res) => {
 export const gradeTask = async (req, res) => {
   const students = await assignedStudents(req); let userId;
   await sequelize.transaction(async transaction => {
-    const submission = await PracticalSubmission.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!submission || !students.some(s => s.id === submission.userId)) fail('Submission not found.', 404);
-    const attempt = await CourseAttempt.findByPk(submission.attemptId, { transaction, lock: transaction.LOCK.UPDATE }); if (attempt.status === 'completed') fail('Completed attempts are immutable. Contact Admin about a credential review.');
+    const initial = await PracticalSubmission.findByPk(req.params.id, { transaction });
+    if (!initial || !students.some(student => student.id === initial.userId)) fail('Submission not found.', 404);
+    const initialAttempt = await CourseAttempt.findByPk(initial.attemptId, { transaction });
+    if (!initialAttempt) fail('Submission not found.', 404);
+    const course = await Course.findOne({
+      where: { id: initialAttempt.courseId, ownerId: req.user.id }, transaction, lock: transaction.LOCK.UPDATE
+    });
+    if (!course) fail('Submission not found.', 404);
+    const attempt = await CourseAttempt.findByPk(initial.attemptId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!attempt || attempt.status === 'completed') fail('Completed attempts are immutable. Contact Admin about a credential review.');
+    const submission = await PracticalSubmission.findByPk(initial.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!submission) fail('Submission not found.', 404);
+    if (course.published) await syncPublishedAttempt(attempt, course, transaction);
     const task = attempt.snapshot.tasks?.find(t => t.id === submission.taskId); if (!task) fail('Task not found.'); const scores = {};
     for (const r of task.rubric) { const n = Number(req.body.scores?.[r.id]); if (req.body.scores?.[r.id] === '' || !Number.isFinite(n) || n < 0 || n > r.max) fail(`Enter a score from 0 to ${r.max} for ${r.label}.`); scores[r.id] = n; }
     const feedback = text(req.body.feedback, 3000); if (!feedback) fail('Provide feedback with the grade.'); const grade = Math.round(Object.values(scores).reduce((a,b) => a+b, 0) / task.rubric.reduce((a,r) => a+r.max,0) * 100);
     await submission.update({ scores, grade, feedback, status: 'graded', gradedBy: req.user.id, gradedAt: new Date() }, { transaction });
     await attempt.update({ quizScores: { ...attempt.quizScores, [`task:${task.id}`]: grade } }, { transaction });
-    const user = students.find(s => s.id === submission.userId); userId = user.id; await finalizeAttempt(attempt, user, transaction);
+    const user = students.find(s => s.id === submission.userId); userId = user.id; if (course.published) await finalizeAttempt(attempt, user, transaction);
     await Notification.create({ userId, title: 'Practical task graded', message: `${task.title}: ${grade}%. Review your rubric feedback.`, href: `/student/learn/${attempt.id}/activities` }, { transaction });
     await audit(req.user.id, 'practical.graded', 'attempt', attempt.id, { taskId: task.id, grade }, transaction);
   }); req.flash('success_msg', 'Rubric grade and feedback saved. Completion eligibility was recalculated.'); res.redirect('/faculty/evaluations');

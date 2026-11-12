@@ -8,17 +8,40 @@ export function progress(attempt) {
   const quizzes = course.modules.length;
   const tasks = (course.tasks || []).filter(t => t.required !== false);
   const extras = (course.policy?.pretest ? 1 : 0) + (course.policy?.feedbackRequired ? 1 : 0) + tasks.length;
-  const done = attempt.completedLessons.length + course.modules.filter(m => attempt.quizScores[m.id] >= course.passingScore).length + (attempt.finalScore !== null && attempt.finalScore >= course.passingScore ? 1 : attempt.status === 'completed' ? 1 : 0) + tasks.filter(t => attempt.quizScores[`task:${t.id}`] >= course.passingScore).length + (course.policy?.pretest && attempt.quizAttempts.some(q => q.scope === 'pretest') ? 1 : 0) + (course.policy?.feedbackRequired && attempt.quizScores.feedback === 100 ? 1 : 0);
+  const done = lessonList(course).filter(lesson => attempt.completedLessons.includes(lesson.id)).length + course.modules.filter(m => attempt.quizScores[m.id] >= course.passingScore).length + (attempt.finalScore !== null && attempt.finalScore >= course.passingScore ? 1 : attempt.status === 'completed' ? 1 : 0) + tasks.filter(t => attempt.quizScores[`task:${t.id}`] >= course.passingScore).length + (course.policy?.pretest && attempt.quizAttempts.some(q => q.scope === 'pretest') ? 1 : 0) + (course.policy?.feedbackRequired && attempt.quizScores.feedback === 100 ? 1 : 0);
   return { done, total: lessons + quizzes + 1 + extras, percent: Math.round(done / (lessons + quizzes + 1 + extras) * 100) };
 }
-export function moduleAvailable(attempt, index) {
-  return index === 0 || attempt.quizScores[attempt.snapshot.modules[index - 1].id] >= attempt.snapshot.passingScore;
+export function publishedAttemptSnapshot(attempt, course) {
+  const previous = attempt.snapshot;
+  const existing = new Map(previous.modules.map(module => [module.id, module]));
+  const modules = course.modules.map(module => ({
+    ...(existing.get(module.id) || module),
+    number: module.number
+  }));
+  const added = new Set(modules.filter(module => !existing.has(module.id)).map(module => module.id));
+  const visible = new Set(modules.map(module => module.id));
+  const scopeChanged = added.size > 0 || previous.modules.some(module => !visible.has(module.id));
+  if (!scopeChanged && course.version === attempt.courseVersion) return null;
+  return {
+    snapshot: {
+      ...previous, modules,
+      awardsApproved: course.awardsApproved,
+      finalAssessmentRevision: (previous.finalAssessmentRevision || 0) + Number(scopeChanged),
+      questions: [
+        ...previous.questions.filter(question => visible.has(question.moduleId)),
+        ...course.questions.filter(question => added.has(question.moduleId))
+      ]
+    },
+    courseVersion: course.version,
+    finalScore: scopeChanged ? null : attempt.finalScore
+  };
 }
 export function canTakeQuiz(attempt, moduleId) {
-  const index = attempt.snapshot.modules.findIndex(m => m.id === moduleId);
-  return index >= 0 && moduleAvailable(attempt, index) && attempt.snapshot.modules[index].lessons.every(l => attempt.completedLessons.includes(l.id));
+  const module = attempt.snapshot.modules.find(item => item.id === moduleId);
+  return Boolean(module && module.lessons.every(lesson => attempt.completedLessons.includes(lesson.id)));
 }
-export const canTakeFinal = attempt => attempt.snapshot.modules.every(m => attempt.quizScores[m.id] >= attempt.snapshot.passingScore);
+export const canTakeFinal = attempt => attempt.snapshot.modules.length > 0 &&
+  attempt.snapshot.modules.every(module => attempt.quizScores[module.id] >= attempt.snapshot.passingScore);
 export function grade(questions, input) {
   if (!questions.length) throw new Error('This assessment has no questions.');
   const answers = questions.map(q => {

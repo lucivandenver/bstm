@@ -99,7 +99,11 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const section=await Section.findOne({where:{name:'BSTM 4-1'}});await f.get('/faculty/assignments');r=await f.post('/faculty/assignments',{courseId:c.id,sectionId:section.id,required:'true',dueAt:'2027-01-10T12:00'});assert.equal(r.status,302);
     const moduleUrl = `/student/courses/${c.id}/modules/m1`;
     assert.equal((await s.post(moduleUrl + '/save', {})).status, 302);
-    assert.match((await s.get('/student/courses?view=saved')).html, /View modules/);
+    const savedModulePage = await s.get('/student/courses?view=saved');
+    assert.match(savedModulePage.html, /saved-module-card/);
+    assert.match(savedModulePage.html, /Module 1/);
+    assert.match(savedModulePage.html, /Service fundamentals/);
+    assert.doesNotMatch(savedModulePage.html, /View modules/);
     assert.match((await s.get(`/student/courses/${c.id}`)).html, /Remove saved module/);
     assert.equal((await s.post(moduleUrl + '/unsave', {})).status, 302);
     r=await s.get('/student/courses');assert.match(r.html,/Required learning/);r=await s.post(`/student/courses/${c.id}/enroll`);assert.equal(r.status,302);const attempt=await CourseAttempt.findOne({where:{userId:student.id}}),id=attempt.id;
@@ -384,6 +388,59 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const toDelete = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });
     assert.equal((await f2.post(singleAction + '/delete-module', { revisionId: toDelete.id })).status, 302);
     assert.equal((await toDelete.reload()).action, 'module-deleted');
+
+    const studentCourse = await Course.create({
+      ...draft, ownerId: otherFaculty.id, slug: 'student-independent-module-access', published: true,
+      certificateEnabled: false, policy: { quizWeight: 0, finalWeight: 100, practicalWeight: 0 }, tasks: [], prerequisites: [singleCourse.id], enrollUntil: new Date('2020-01-01')
+    });
+    const catalogUrl = `/student/courses/${studentCourse.id}`;
+    const firstStart = await s.post(catalogUrl + '/enroll', { moduleId: 'm1' });
+    assert.equal(firstStart.status, 302);
+    const learnerAttempt = await CourseAttempt.findOne({ where: { courseId: studentCourse.id, userId: student.id } });
+    const learnUrl = `/student/learn/${learnerAttempt.id}`;
+    await learnerAttempt.update({ completedLessons: ['l1'], quizScores: { m1: 50 } });
+    const moduleTwo = c.modules.find(module => module.id === 'm2');
+    const moduleTwoQuestions = c.questions.filter(question => question.moduleId === moduleTwo.id);
+    const pending = await CourseRevision.create({
+      courseId: studentCourse.id, actorId: otherFaculty.id, version: studentCourse.version, action: 'module-pending',
+      snapshot: { module: moduleTwo, questions: moduleTwoQuestions }
+    });
+    assert.doesNotMatch((await s.get(catalogUrl)).html, /Independent module/);
+    assert.equal((await a.post(`/admin/courses/${studentCourse.id}/approve-publication`, { revisionId: pending.id })).status, 302);
+    const published = await s.get(catalogUrl);
+    assert.match(published.html, /Independent module/);
+    assert.equal((published.html.match(/Take assessment/g) || []).length, 2);
+    assert.equal((await s.post(catalogUrl + '/enroll', { moduleId: 'm2' })).location, learnUrl + '?lesson=' + moduleTwo.lessons[0].id);
+    assert.match((await s.get('/student/learning')).html, /Independent module/);
+    assert.equal((await learnerAttempt.reload()).quizScores.m1, 50);
+    assert.deepEqual(learnerAttempt.completedLessons, ['l1']);
+    await learnerAttempt.update({ completedLessons: ['l1', ...moduleTwo.lessons.map(lesson => lesson.id)] });
+    assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 200);
+    const answers = Object.fromEntries(moduleTwoQuestions.map(question => [`answers[${question.id}]`, String(question.answer)]));
+    const submitted = await s.post(learnUrl + '/quiz/m2', {
+      challenge: issueChallenge(student.id, `${learnerAttempt.id}:m2`), ...answers
+    });
+    assert.match(submitted.location, /\/result\//);
+    assert.equal((await learnerAttempt.reload()).quizScores.m2, 100);
+    assert.equal((await s.get(learnUrl + '/final')).status, 403);
+    assert.equal((await s.post(catalogUrl + '/modules/m2/save', {})).status, 302);
+    assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
+
+    assert.equal((await f2.post(`/faculty/courses/${studentCourse.id}/module/m2/unpublish`, {})).status, 302);
+    assert.doesNotMatch((await s.get(catalogUrl)).html, /Independent module/);
+    assert.doesNotMatch((await s.get('/student/courses?view=saved')).html, /Independent module/);
+    assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 403);
+    assert.equal((await s.post(catalogUrl + '/enroll', { moduleId: 'm2' })).status, 404);
+
+    await learnerAttempt.update({ status: 'completed', finalScore: 100, completedLessons: ['l1'], quizScores: { m1: 100 } });
+    const archived = await CourseRevision.findOne({ where: { courseId: studentCourse.id, action: 'module-archived' } });
+    assert.equal((await a.post(`/admin/courses/${studentCourse.id}/republish`, { revisionId: archived.id })).status, 302);
+    assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
+    const nextStart = await s.post(catalogUrl + '/enroll', { moduleId: 'm2' });
+    const nextAttempt = await CourseAttempt.findOne({ where: { courseId: studentCourse.id, userId: student.id, attemptNumber: 2 } });
+    assert.equal(nextStart.location, `/student/learn/${nextAttempt.id}?lesson=${moduleTwo.lessons[0].id}`);
+    assert.equal(nextAttempt.quizScores.m1, 100);
+    assert.equal((await learnerAttempt.reload()).status, 'completed');
 
     const courseSubmission = await Course.create({
       ...draft, ownerId: otherFaculty.id, slug: 'whole-course-decision', published: false, certificateEnabled: false

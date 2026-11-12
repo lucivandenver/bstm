@@ -64,7 +64,8 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     await student.post('/student/courses/1/enroll');
     assert.equal(await CourseAttempt.count(), 1, 'duplicate enrollment resumes current attempt');
     response = await student.get('/student/learn/1/final'); assert.equal(response.r.status, 403);
-    response = await student.get('/student/learn/1?lesson=cost'); assert.equal(response.r.status, 403);
+    response = await student.get('/student/learn/1?lesson=cost'); assert.equal(response.r.status, 200);
+    response = await student.get('/student/learn/1/quiz/responsible'); assert.equal(response.r.status, 403, 'the selected module still requires its own lessons');
     const other = new Browser(); await other.get('/register');
     await other.post('/register', { ...signup, name: 'Student Two', email: 'two@example.com', student_id: '2026-002' });
     await other.get('/student/profile');

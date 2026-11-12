@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { starterCourses, baselineQuestions, domains } from '../data/starterCourses.js';
-import { grade, publicQuestions, progress, moduleAvailable, canTakeFinal, canTakeQuiz, careerMatches, issueChallenge, checkChallenge, starsFor } from '../services/learning.js';
+import { grade, publicQuestions, progress, publishedAttemptSnapshot, canTakeFinal, canTakeQuiz, careerMatches, issueChallenge, checkChallenge, starsFor } from '../services/learning.js';
 import { registrationInput, profileInput } from '../services/validation.js';
 const course = starterCourses[0];
 const fresh = () => ({ snapshot: course, completedLessons: [], quizScores: {}, status: 'ongoing' });
@@ -15,17 +15,17 @@ test('answer keys stay server-side and grading rejects missing / invalid answers
   const wrong = grade(course.questions, Object.fromEntries(course.questions.map(q => [q.id, String((q.answer + 1) % q.options.length)])));
   assert.equal(wrong.score, 0);
 });
-test('module prerequisites and completion gates cannot be skipped', () => {
+test('module quizzes open independently while final completion gates remain', () => {
   const a = fresh();
-  assert.equal(moduleAvailable(a, 1), false);
   assert.equal(canTakeQuiz(a, 'planning'), false);
   assert.equal(canTakeFinal(a), false);
   a.completedLessons = course.modules[0].lessons.map(l => l.id);
   assert.equal(canTakeQuiz(a, 'planning'), true);
   a.quizScores.planning = 50;
-  assert.equal(moduleAvailable(a, 1), false);
+  a.completedLessons.push(...course.modules[1].lessons.map(lesson => lesson.id));
+  assert.equal(canTakeQuiz(a, course.modules[1].id), true);
+  assert.equal(canTakeFinal(a), false);
   a.quizScores.planning = 100;
-  assert.equal(moduleAvailable(a, 1), true);
   assert.equal(canTakeQuiz(a, 'unknown'), false);
   assert.ok(progress(a).percent < 100);
   a.completedLessons = course.modules.flatMap(m => m.lessons.map(l => l.id));
@@ -33,6 +33,28 @@ test('module prerequisites and completion gates cannot be skipped', () => {
   assert.equal(canTakeFinal(a), true);
   a.status = 'completed';
   assert.equal(progress(a).percent, 100);
+});
+test('ongoing attempts follow published module changes and keep earlier lesson and quiz progress', () => {
+  const a = { ...fresh(), courseVersion: 1, finalScore: 90 };
+  const [first, second] = course.modules;
+  a.snapshot = { ...course, modules: [first], questions: course.questions.filter(question => question.moduleId === first.id) };
+  a.completedLessons = first.lessons.map(lesson => lesson.id);
+  a.quizScores[first.id] = 50;
+  const updated = { ...a, ...publishedAttemptSnapshot(a, { ...course, version: 2 }) };
+  assert.deepEqual(updated.snapshot.modules.map(module => module.id), [first.id, second.id]);
+  assert.equal(updated.snapshot.questions.length, course.questions.length);
+  assert.equal(updated.quizScores[first.id], 50);
+  assert.equal(updated.finalScore, null);
+  assert.equal(updated.snapshot.finalAssessmentRevision, 1);
+  assert.equal(publishedAttemptSnapshot(updated, { ...course, version: 2 }), null);
+
+  const archived = { ...updated, ...publishedAttemptSnapshot(updated, { ...course, version: 3, modules: [second] }) };
+  assert.equal(canTakeQuiz(archived, first.id), false);
+  assert.ok(archived.snapshot.questions.every(question => question.moduleId === second.id));
+  assert.equal(progress(archived).done, 0);
+  const restored = { ...archived, ...publishedAttemptSnapshot(archived, { ...course, version: 4 }) };
+  assert.equal(canTakeQuiz(restored, first.id), true);
+  assert.equal(restored.quizScores[first.id], 50);
 });
 test('career evidence excludes ongoing / unlocked courses and uses latest completed retake once', () => {
   const complete = (courseId, score, completedAt) => ({ courseId, status: 'completed', snapshot: course, finalScore: score, completedAt });

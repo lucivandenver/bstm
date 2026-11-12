@@ -26,7 +26,7 @@ export const Course = sequelize.define('Course', {
 export const CourseAttempt = sequelize.define('CourseAttempt', {
   userId: { type: DataTypes.INTEGER, allowNull: false }, courseId: { type: DataTypes.INTEGER, allowNull: false },
   attemptNumber: { type: DataTypes.INTEGER, allowNull: false }, courseVersion: DataTypes.INTEGER,
-  // Snapshot freezes the requirements for this attempt when a course is later edited.
+  // Ongoing attempts follow published module membership. Completed snapshots preserve learning history.
   snapshot: json({}), completedLessons: json([]), lastLessonId: DataTypes.STRING(100), quizScores: json({}),
   quizAttempts: json([]), status: { type: DataTypes.STRING(30), defaultValue: 'ongoing' },
   finalScore: DataTypes.INTEGER, completedAt: DataTypes.DATE, activeSeconds: { type: DataTypes.INTEGER, defaultValue: 0 },
