@@ -312,9 +312,28 @@ export const confirmModuleReading = async (req, res) => {
 export const learn = async (req, res) => {
   const row = await ownedAttempt(req); if (!row) return fail(res, 'Learning attempt not found.', 404);
   const attempt = plain(row); const course = attempt.snapshot;
-  const modules = course.modules.map((m, i) => ({ ...m, number: i + 1, available: moduleAvailable(attempt, i),
-    submitted: attempt.quizAttempts.some(quiz => quiz.scope === m.id), passed: attempt.quizScores[m.id] >= course.passingScore, score: attempt.quizScores[m.id],
-    quizAvailable: scopeAllowed(attempt, m.id), lessons: m.lessons.map((l, j) => ({ ...l, number: `${i + 1}.${j + 1}`, completed: attempt.completedLessons.includes(l.id) })) }));
+  const drafts = await QuizDraft.findAll({ where: { userId: req.user.id, attemptId: attempt.id } });
+  const draftsByScope = new Map(drafts.map(draft => [draft.scope, draft]));
+  const modules = course.modules.map((module, index) => {
+    const draft = draftsByScope.get(module.id);
+    const topics = assessmentTopics(module, scopeQuestions(attempt, module.id), draft || { answers: {} });
+    const canOpenQuiz = attempt.status !== 'completed' && topicDraftAllowed(attempt, module.id);
+    const passed = attempt.quizScores[module.id] >= course.passingScore;
+    return {
+      ...module, number: index + 1, available: moduleAvailable(attempt, index), passed,
+      submitted: attempt.quizAttempts.some(quiz => quiz.scope === module.id),
+      score: attempt.quizScores[module.id], quizAvailable: scopeAllowed(attempt, module.id),
+      lessons: module.lessons.map((lesson, lessonIndex) => {
+        const completed = attempt.completedLessons.includes(lesson.id);
+        const questions = topics.find(topic => topic.id === lesson.id)?.questions || [];
+        return {
+          ...lesson, number: `${index + 1}.${lessonIndex + 1}`, completed,
+          questions, quizOpen: questions.length && completed && canOpenQuiz && !passed && !attempt.snapshot.policy?.quizMinutes,
+          quizDone: questions.length && (passed || questions.every(question => question.options.some(option => option.checked)))
+        };
+      })
+    };
+  });
   let selected;
   if (req.query.lesson) {
     for (const m of modules) {
@@ -338,12 +357,9 @@ export const learn = async (req, res) => {
     attributes: ['filename', 'sourceId', 'documentKey']
   }) : [];
   const readingConfirmed = Boolean(attempt.quizScores[`read:${current?.id}`]);
-  const selectedModule = course.modules.find(module => module.id === selected?.moduleId);
-  const topicQuizHref = selectedModule && selected?.completed && attempt.status !== 'completed' &&
-    topicDraftAllowed(attempt, selectedModule.id) &&
-    assessmentTopics(selectedModule, scopeQuestions(attempt, selectedModule.id), { answers: {} }).some(topic => topic.id === selected.id)
-    ? `/student/learn/${attempt.id}/quiz/${selectedModule.id}?topic=${encodeURIComponent(selected.id)}` : null;
-  render(res, 'learn', { topicQuizHref, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${current.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: current?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
+  const topicDraft = draftsByScope.get(selected?.moduleId);
+  const topicRevision = selected?.quizOpen ? (topicDraft || await draftFor(req.user.id, attempt, selected.moduleId)).revision : null;
+  render(res, 'learn', { topicRevision, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${current.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: current?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: course.title, attempt: decorate(attempt), modules, selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || ''), finalAvailable: canTakeFinal(attempt), completed: attempt.status === 'completed' });
 };
 export const completeLesson = async (req, res) => {
   const next = await sequelize.transaction(async transaction => {
@@ -362,10 +378,7 @@ export const completeLesson = async (req, res) => {
       await attempt.update({ completedLessons: [...attempt.completedLessons, req.body.lessonId], lastActivityAt: new Date() }, { transaction });
     }
     if (req.body.continueToTopic === 'yes') {
-      const module = attempt.snapshot.modules[index];
-      if (topicDraftAllowed(attempt, module.id) && assessmentTopics(module, scopeQuestions(attempt, module.id), { answers: {} }).some(topic => topic.id === req.body.lessonId)) {
-        return `/student/learn/${attempt.id}/quiz/${module.id}?topic=${encodeURIComponent(req.body.lessonId)}`;
-      }
+      return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(req.body.lessonId)}#topic-quiz`;
     }
     return resumeHref(attempt);
   });
@@ -404,19 +417,24 @@ function assessmentTopics(module, questions, draft) {
     id: lesson.id, title: lesson.title, number: index + 1, questions: [],
     titleTerms: terms(lesson.title), bodyTerms: terms(lesson.body), reference: lesson.sourceReference
   }));
-  const general = { id: 'overview', title: 'Module review', questions: [] };
+  if (!topics.length) return [{ questions: questions.map(toPublic) }];
   for (const question of questions) {
-    const words = terms(question.prompt);
-    let best = general;
-    let bestScore = 0;
+    const assignedTopic = topics.find(topic => topic.id === question.lessonId);
+    if (assignedTopic) {
+      assignedTopic.questions.push(toPublic(question));
+      continue;
+    }
+    const words = terms(`${question.prompt} ${question.sourceQuote || ''}`);
+    let best = topics[0];
+    let bestScore = -1;
     for (const topic of topics) {
       const score = [...words].reduce((total, word) => total + (topic.titleTerms.has(word) ? 4 : topic.bodyTerms.has(word) ? 1 : 0), 0) +
         (question.sourceReference && question.sourceReference === topic.reference ? 3 : 0);
-      if (score > bestScore) { best = topic; bestScore = score; }
+      if (score > bestScore || (score === bestScore && topic.questions.length < best.questions.length)) { best = topic; bestScore = score; }
     }
     best.questions.push(toPublic(question));
   }
-  return [...topics, general].filter(topic => topic.questions.length);
+  return topics.filter(topic => topic.questions.length);
 }
 export const quizPage = async (req, res) => {
   const attempt = plain(await ownedAttempt(req)); if (!attempt) return fail(res, 'Attempt not found.', 404);
@@ -424,14 +442,17 @@ export const quizPage = async (req, res) => {
   const scope = req.params.moduleId || 'final', final = scope === 'final';
   if (!topicDraftAllowed(attempt, scope)) return fail(res, 'Complete the required pre-test, lessons and quizzes first.', 403);
   const draft = await draftFor(req.user.id, attempt, scope);
-  let questions = scopeQuestions(attempt, scope);
+  const questions = scopeQuestions(attempt, scope);
   const retries = attempt.quizAttempts.filter(entry => entry.scope === scope).length;
-  if (retries || attempt.snapshot.policy?.randomize) { const rank = q => createHash('sha256').update(`${attempt.id}:${scope}:${retries}:${q.id}`).digest('hex'); questions = [...questions].sort((a,b) => rank(a).localeCompare(rank(b))); }
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
   const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && attempt.quizAttempts.filter(q => q.scope === scope).length >= attempt.snapshot.policy.attemptLimit;
   const module = attempt.snapshot.modules.find(item => item.id === scope);
   const canSubmit = scopeAllowed(attempt, scope);
   const topics = assessmentTopics(module, questions, draft).filter(topic => canSubmit || attempt.completedLessons.includes(topic.id));
+  if (retries || attempt.snapshot.policy?.randomize) {
+    const rank = question => createHash('sha256').update(`${attempt.id}:${scope}:${retries}:${question.id}`).digest('hex');
+    for (const topic of topics) topic.questions.sort((a, b) => rank(a).localeCompare(rank(b)));
+  }
   const nextLesson = !canSubmit && module?.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
   if (!topics.length && nextLesson) return res.redirect(`/student/learn/${attempt.id}?lesson=${encodeURIComponent(nextLesson.id)}`);
   render(res, 'quiz', { timed, blocked: limited || timed && remaining === 0, blockedReason: limited ? 'Assessment submission limit reached. Review the lessons and contact your faculty for remediation.' : 'Time expired. Your saved answers remain visible; use the restart action below if you have attempts remaining.', title: scope === 'pretest' ? 'Course pre-test' : final ? 'Final assessment' : 'Module quiz', topics, canSubmit, activeTopic: req.query.topic, nextLesson, attempt, scope, final, pretest: scope === 'pretest', draftRevision: draft.revision, draftUrl: `/student/learn/${attempt.id}/draft/${scope}`, remainingSeconds: attempt.snapshot.policy?.quizMinutes ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null, challenge: issueChallenge(req.user.id, `${attempt.id}:${scope}`) });
@@ -443,7 +464,15 @@ export const saveDraft = async (req, res) => {
     const scope = req.params.scope; if (!topicDraftAllowed(a, scope)) error('Assessment locked.', 403);
     const draft = await draftFor(req.user.id, a, scope, transaction); checkQuizLimits(a, scope, draft);
     if (Number(req.body.revision) !== draft.revision) error('Answers changed in another tab. Reload before continuing.', 409);
-    const answers = validateDraftAnswers(scopeQuestions(a, scope), req.body.answers);
+    const questions = scopeQuestions(a, scope);
+    let answers = validateDraftAnswers(questions, req.body.answers);
+    if (req.query.topic) {
+      const module = selectedMaterialModule(a, scope);
+      const topic = module && assessmentTopics(module, questions, draft).find(item => item.id === req.query.topic);
+      if (!topic || !a.completedLessons.includes(topic.id) ||
+          Object.keys(answers).some(id => !topic.questions.some(question => question.id === id))) error('Topic unavailable.', 403);
+      answers = { ...draft.answers, ...answers };
+    }
     await draft.update({ answers, revision: draft.revision + 1 }, { transaction }); saved = { saved: true, revision: draft.revision };
   }); res.json(saved);
 };

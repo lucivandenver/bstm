@@ -50,6 +50,7 @@ const draft = () => ({
   ],
   questions: [1, 2, 3].map(() => ({
     moduleIndex: 0,
+    lessonIndex: 0,
     prompt: "What should you do before recommending a service?",
     options: ["Confirm requirements", "Ignore the request"],
     answer: 0,
@@ -82,6 +83,7 @@ await test("AI responses are grounded, mapped to server IDs and always require r
   assert.equal(result.questions.length, 3);
   assert.equal(result.questions[0].reviewed, false);
   assert.equal(result.questions[0].moduleId, result.modules[0].id);
+  assert.equal(result.questions[0].lessonId, result.modules[0].lessons[0].id);
   assert.equal(result.domain, domains[0]);
   const bad = draft();
   bad.questions[0].sourceQuote = "A completely invented source statement.";

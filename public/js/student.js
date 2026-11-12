@@ -129,3 +129,16 @@ for (const navigation of document.querySelectorAll('.assessment-topic-actions'))
     showTopic();
   }, true);
 }
+
+for (const form of document.querySelectorAll('[data-inline-topic]')) {
+  const outline = [...document.querySelectorAll('[data-outline-quiz]')]
+    .find(link => link.dataset.outlineQuiz === form.dataset.inlineTopic);
+  form.addEventListener('draftsaved', () => {
+    if (!outline || [...form.querySelectorAll('fieldset')].some(question => !question.querySelector('input:checked'))) return;
+    const circle = outline.querySelector('.check-circle');
+    circle.classList.remove('is-empty');
+    circle.classList.add('is-complete');
+    circle.textContent = '✓';
+    outline.querySelector('[data-topic-state]').textContent = 'Answered';
+  });
+}

@@ -141,8 +141,11 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await s.get(`/student/learn/${id}/quiz/m1`)).status, 403);
     assert.equal((await s.post(confirmUrl, { read: 'yes' })).location, `/student/learn/${id}/quiz/m1`);
     r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`,'Continue from completed lesson opens pending quiz');
+    const inlineQuiz = await s.get(`/student/learn/${id}?lesson=l1`);
+    assert.match(inlineQuiz.html, /1\.1 Quiz/);
+    assert.match(inlineQuiz.html, /name="answers\[q1\]"/);
     await s.get(`/student/learn/${id}/quiz/m1`);
-    r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
+    r=await s.request(`/student/learn/${id}/draft/m1?topic=l1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'0'}})});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).revision,1);
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'1'}})});assert.equal(r.status,409,'stale tab cannot overwrite');
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.match(r.html,/value="0"\s+checked/,'saved answer restored');
     assert.equal((await o.get(`/student/learn/${id}/quiz/m1`)).status,404);

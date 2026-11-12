@@ -14,14 +14,23 @@
     let revision=Number(form.dataset.revision),timer,busy=false,dirty=false,blocked=false;
     const label=form.querySelector('.quiz-draft');
     const save=async()=>{if(busy||!dirty||blocked)return;busy=true;dirty=false;const answers={};for(const i of form.querySelectorAll('input[type=radio]:checked'))answers[i.name.match(/^answers\[(.+)\]$/)[1]]=i.value;
-      try{const r=await fetch(form.dataset.draftUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:JSON.stringify({revision,answers})});if(r.status===409){blocked=true;throw new Error('This assessment changed or expired. Reload the page to continue.');}if(!r.ok)throw new Error('Answers pending · check your connection or sign in again.');const d=await r.json();revision=d.revision;label.textContent=dirty?'Saving newer answers…':'Saved to your account ✓';label.classList.toggle('saved',!dirty);}
+      try{const r=await fetch(form.dataset.draftUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:JSON.stringify({revision,answers})});if(r.status===409){blocked=true;throw new Error('This assessment changed or expired. Reload the page to continue.');}if(!r.ok)throw new Error('Answers pending · check your connection or sign in again.');const d=await r.json();revision=d.revision;label.textContent=dirty?'Saving newer answers…':'Saved to your account ✓';label.classList.toggle('saved',!dirty);
+        if (!dirty) form.dispatchEvent(new Event('draftsaved'));}
       catch(e){dirty=true;label.textContent=e.message;label.classList.remove('saved');}finally{busy=false;if(dirty&&!blocked)timer=setTimeout(save,3000);}};
     form.addEventListener('change',()=>{dirty=true;label.textContent='Saving answers…';label.classList.remove('saved');clearTimeout(timer);timer=setTimeout(save,350);});
     window.addEventListener('online',save);window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
     form.addEventListener('submit',()=>{dirty=false;clearTimeout(timer);});
   }
   for(const timer of document.querySelectorAll('[data-timer]')){let seconds=Number(timer.dataset.timer);const tick=()=>{timer.textContent=seconds>0?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} remaining`:'Time expired · restart below';seconds=Math.max(0,seconds-1);};tick();setInterval(tick,1000);}
-  const outline=document.querySelector('.lesson-outline');if(outline&&matchMedia('(max-width: 800px)').matches)outline.open=false;
+  const outline = document.querySelector('.lesson-outline');
+  if (outline && matchMedia('(max-width: 800px)').matches) {
+    outline.addEventListener('toggle', () => {
+      if (!outline.open) return;
+      const active = outline.querySelector('[aria-current="step"]');
+      if (active) outline.scrollTop = Math.max(0, active.offsetTop - 48);
+    });
+    outline.open = false;
+  }
 })();
 (() => {
   const menus = [...document.querySelectorAll('[data-account-menu]')];

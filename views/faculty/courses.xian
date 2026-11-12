@@ -1,19 +1,20 @@
 {{> facultyTop}}{{#if databaseNotice}}<p class="notice info" role="status">{{databaseNotice}}</p>{{/if}}<div class="toolbar"><p class="muted">Draft privately. Review the questions. Publish when ready. Unpublishing makes course content editable and keeps learner history.</p><div class="actions"><a class="button" href="/faculty/upload">Upload &amp; generate</a></div></div><nav class="course-list-tabs" aria-label="Course lists">
-  <a class="button {{#if archived}}secondary{{/if}}" href="{{activeUrl}}" {{#unless archived}}aria-current="page"{{/unless}}>My Courses</a>
+  <a class="button {{#unless (eq list 'active')}}secondary{{/unless}}" href="{{activeUrl}}" {{#if (eq list 'active')}}aria-current="page"{{/if}}>Published &amp; pending</a>
+  <a class="button {{#unless drafts}}secondary{{/unless}}" href="{{draftsUrl}}" {{#if drafts}}aria-current="page"{{/if}}>Drafts</a>
   <a class="button {{#unless archived}}secondary{{/unless}}" href="{{archiveUrl}}" {{#if archived}}aria-current="page"{{/if}}>Archive</a>
 </nav>
 {{#if archived}}<p class="notice info">Use Delete permanently on an archived course to remove it and its associated learner records.</p>{{/if}}
 <form class="card course-list-search" action="/faculty/courses" method="get" role="search">
   <label class="field">Search courses or modules<input type="search" name="q" value="{{query}}" maxlength="160" placeholder="Enter a course or module title"></label>
-  <input type="hidden" name="list" value="{{#if archived}}archive{{else}}active{{/if}}">
-  {{#unless archived}}<label class="field">Status<select name="status">
+  <input type="hidden" name="list" value="{{list}}">
+  {{#if (eq list 'active')}}<label class="field">Status<select name="status">
     <option value="">All statuses</option>
     <option value="pending" {{selected status "pending"}}>Pending Admin review</option>
     <option value="approved" {{selected status "approved"}}>Approved / Published</option>
-    <option value="draft" {{selected status "draft"}}>Draft</option>
-  </select></label>{{/unless}}
+  </select></label>{{/if}}
   <button class="button">Search</button>
 </form>
+{{#if moduleDrafts}}<section class="card space-top"><h2>Draft modules</h2><ul>{{#each moduleDrafts}}<li><a href="/faculty/courses/{{courseId}}/edit#module-submissions">{{title}}</a> <small>{{courseTitle}}</small></li>{{/each}}</ul></section>{{/if}}
 <div class="grid cols-2">{{#each courses}}<article class="card course-card"><div class="course-art"><span>{{areaLabels competencyAreas domain}}</span><strong>{{level}}</strong><h2>{{title}}</h2></div><div class="row between"><span class="chip">{{#if published}}Published{{else}}{{#if ../archived}}Archived{{else}}{{#if pendingReview}}Pending Admin review{{else}}Draft{{/if}}{{/if}}{{/if}}</span></div><details><summary aria-label="{{title}}">View modules</summary>
 <h2>Course modules</h2>
 <ul>{{#each modules}}<li>Module {{number}} · {{title}} {{#if ../pendingReview}}<span class="chip">Pending Admin review</span>{{/if}}</li>{{else}}<li>No modules yet.</li>{{/each}}</ul>
