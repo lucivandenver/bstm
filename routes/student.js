@@ -31,6 +31,7 @@ router.get('/learn/:id/result/:nonce', asyncRoute(student.quizResult));
 router.get('/learn/:id/quiz/:moduleId', asyncRoute(student.quizPage));
 router.post('/learn/:id/quiz/:moduleId', assessmentLimit, asyncRoute(student.submitQuiz));
 router.post('/learn/:id/draft/:scope', asyncRoute(student.saveDraft));
+router.post('/learn/:id/retake/:moduleId', asyncRoute(student.retakeModule));
 router.post('/learn/:id/restart/:scope', asyncRoute(student.restartQuiz));
 router.get('/learn/:id/activities', asyncRoute(student.activities));
 router.post('/learn/:id/activities/:taskId', asyncRoute(student.submitTask));

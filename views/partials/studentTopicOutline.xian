@@ -32,11 +32,14 @@
       {{#if passed}}
       <p class="small muted">Module quiz · Passed ({{score}}%)</p>
       {{#if reviewAvailable}}<a class="small text-link" href="/student/learn/{{../attempt.id}}/review/{{id}}">Review quiz feedback →</a>{{/if}}
+      {{else}}{{#if failed}}
+      <p class="small module-failed-result">Module quiz · Failed ({{score}}%)</p>
+      {{> moduleRetake}}
       {{else}}{{#if quizAvailable}}{{#unless ../completed}}
       <a class="lesson-link" href="/student/learn/{{../attempt.id}}/quiz/{{id}}" {{#if (eq id ../currentScope)}}aria-current="step"{{/if}}>
-        {{#if answered}}Module quiz · Failed ({{score}}%) · Retry{{else}}Review and submit module answers{{/if}}
+        Review and submit module answers
       </a>
-      {{/unless}}{{/if}}{{/if}}
+      {{/unless}}{{/if}}{{/if}}{{/if}}
     </section>
     {{/each}}
     {{#unless moduleOnly}}<section class="module">
