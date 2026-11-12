@@ -98,6 +98,10 @@
 .catalog-card-link p { margin: 0; }
 .catalog-card-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
 .catalog-card-meta:last-child { margin-top: auto; color: var(--green); }
+.saved-module-card { display: flex; flex-direction: column; gap: 1rem; }
+.saved-module-course { text-transform: uppercase; overflow-wrap: anywhere; }
+.saved-module-heading { text-align: center; overflow-wrap: anywhere; }
+.saved-module-card .actions { margin-top: auto; flex-wrap: wrap; }
 .module-card { scroll-margin-top: 6rem; }
 
 .module-page-heading { flex-wrap: wrap; gap: 1rem; }

@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { buildEvidence } from '../services/evidence.js';
 import QRCode from 'qrcode';
 import { Op } from 'sequelize';
-import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest, SourceFilePart, CourseRevision } from '../models/portalModels.js';
+import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest, SourceFilePart } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
-import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
+import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess, assessmentSubmissions, syncPublishedAttempt } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
 import { CareerPath } from '../models/adminModels.js';
 import { setting, genders } from '../services/accounts.js';
@@ -14,7 +14,7 @@ import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notifica
 import { User } from '../models/userModel.js';
 import { text, email as normalizeEmail, profileInput } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
-import { progress, moduleAvailable, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
+import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
@@ -69,9 +69,7 @@ export const dashboard = async (req, res) => {
   const approvedOwners = ownerIds.length ? await User.findAll({ where: { id: { [Op.in]: ownerIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
   const approvedOwnerIds = new Set(approvedOwners.map(user => user.id));
   const completed = attempts.filter(a => a.status === 'completed');
-  const completedCourseIds = new Set(completed.map(a => a.courseId));
-  const available = await availableAttemptCourses(attempts);
-  const ongoing = attempts.filter(a => available.has(a.courseId) && a.status === 'ongoing' && !completedCourseIds.has(a.courseId)).map(decorate);
+  const ongoing = (await visibleOngoingAttempts(attempts)).map(decorate);
   const evidence = await buildEvidence(attempts, plain(baseline));
   render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
     requiredCourses: requiredCourses.filter(c => approvedOwnerIds.has(c.ownerId)).map(c => ({ ...plain(c), done: attempts.some(a => a.courseId === c.id && a.status === 'completed'), due: date(required.find(r => r.courseId === c.id)?.dueAt) })), ongoing, completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
@@ -109,39 +107,49 @@ export const saveProfile = async (req, res) => {
   req.flash('success_msg', 'Your profile has been saved.'); res.redirect('/student/profile');
 };
 export const catalog = async (req, res) => {
-  const [courses, attempts, savedRows, savedModules] = await Promise.all([
+  const [courses, attempts, savedRows] = await Promise.all([
     Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } }, order: [['title', 'ASC']] }),
     attemptsFor(req.user.id),
-    SavedCourse.findAll({ where: { userId: req.user.id } }),
     SavedModule.findAll({ where: { userId: req.user.id } })
   ]);
-  const savedIds = new Set(savedRows.map(row => row.courseId));
-  const courseById = new Map(courses.map(course => [course.id, course]));
-  for (const row of savedModules) {
-    if (courseById.get(row.courseId)?.modules.some(module => module.id === row.moduleId)) savedIds.add(row.courseId);
-  }
-  const ownerIds = [...new Set(courses.map(c => c.ownerId).filter(Boolean))];
+  const ownerIds = [...new Set(courses.map(course => course.ownerId))];
   const facultyRows = ownerIds.length ? await User.findAll({ where: { id: { [Op.in]: ownerIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id', 'name'] }) : [];
   const facultyById = new Map(facultyRows.map(user => [user.id, user.name]));
+  const visible = courses.filter(course => facultyById.has(course.ownerId) && course.modules.length);
+  const savedByCourse = new Map();
+  for (const row of savedRows) {
+    if (!savedByCourse.has(row.courseId)) savedByCourse.set(row.courseId, new Set());
+    savedByCourse.get(row.courseId).add(row.moduleId);
+  }
   const view = ['saved', 'enrolled'].includes(req.query.view) ? req.query.view : 'all';
   const enrolledIds = new Set(attempts.map(attempt => attempt.courseId));
-  const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
-  const query = text(req.query.q, 100).toLowerCase(); const domain = text(req.query.domain, 60);
+  const query = text(req.query.q, 100);
+  const search = query.toLowerCase();
+  const domain = text(req.query.domain, 60);
+  const matchesDomain = course => !domain || (course.competencyAreas?.length ? course.competencyAreas : [course.domain]).includes(domain);
+  const matchesModule = (course, module) => [course.title, module.title, ...module.lessons.map(lesson => lesson.title)]
+    .some(value => value.toLowerCase().includes(search));
+  const saved = visible.flatMap(course => course.modules.flatMap((module, index) =>
+    savedByCourse.get(course.id)?.has(module.id)
+      ? [{ courseId: course.id, courseTitle: course.title, id: module.id, title: module.title,
+        number: module.number ?? index + 1, matches: matchesDomain(course) && matchesModule(course, module) }]
+      : []));
   const section = await Section.findOne({ where: { name: req.user.section } });
   const assignments = section ? await CourseAssignment.findAll({ where: { sectionId: section.id } }) : [];
-  const cards = courses.filter(c => facultyById.has(c.ownerId))
-    .filter(c => view !== 'saved' || savedIds.has(c.id))
-    .filter(c => view !== 'enrolled' || enrolledIds.has(c.id))
-    .filter(c => (!query || `${c.title} ${c.description} ${c.modules.flatMap(module => [module.title, ...module.lessons.map(lesson => lesson.title)]).join(" ")}`.toLowerCase().includes(query)) && (!domain || (c.competencyAreas || [c.domain]).includes(domain)))
-    .map(row => {
-    const c = plain(row);
-    const done = completedIds.has(c.id);
-    const active = done ? null : attempts.find(a => a.courseId === c.id && a.status === 'ongoing');
-    const locked = (c.prerequisites || []).some(id => !completedIds.has(Number(id)));
-    return { ...c, author: facultyById.get(c.ownerId), saved: savedIds.has(c.id), required: assignments.some(a => a.courseId === c.id && a.required), due: date(assignments.find(a => a.courseId === c.id)?.dueAt), active, locked, done, moduleCount: c.modules.length, lessonCount: c.modules.reduce((sum, m) => sum + m.lessons.length, 0) };
+  const cards = view === 'saved' ? [] : visible
+    .filter(course => view !== 'enrolled' || enrolledIds.has(course.id))
+    .filter(course => matchesDomain(course) && (!search ||
+      (course.description || '').toLowerCase().includes(search) || course.modules.some(module => matchesModule(course, module))))
+    .map(course => ({
+      ...plain(course), author: facultyById.get(course.ownerId), moduleCount: course.modules.length,
+      required: assignments.some(assignment => assignment.courseId === course.id && assignment.required),
+      due: date(assignments.find(assignment => assignment.courseId === course.id)?.dueAt)
+    }));
+  render(res, 'catalog', {
+    title: 'Explore courses', courses: cards, savedModules: saved.filter(module => module.matches),
+    hasRequired: cards.some(course => course.required), domains, query, selectedDomain: domain, view,
+    savedCount: saved.length, enrolledCount: visible.filter(course => enrolledIds.has(course.id)).length
   });
-  const visibleCourseIds = new Set(courses.filter(course => facultyById.has(course.ownerId)).map(course => course.id));
-  render(res, 'catalog', { title: 'Explore courses', courses: cards, hasRequired: cards.some(course => course.required), domains, query: text(req.query.q, 100), selectedDomain: domain, view, savedCount: [...savedIds].filter(id => visibleCourseIds.has(id)).length, enrolledCount: [...enrolledIds].filter(id => visibleCourseIds.has(id)).length });
 };
 export const saveCourse = async (req, res) => {
   const course = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
@@ -164,79 +172,107 @@ export const saveModule = async (req, res) => {
 };
 export const unsaveModule = async (req, res) => {
   await SavedModule.destroy({ where: { userId: req.user.id, courseId: req.params.id, moduleId: req.params.moduleId } });
-  res.redirect(`/student/courses/${encodeURIComponent(req.params.id)}`);
+  res.redirect(req.body.returnTo === 'saved' ? '/student/courses?view=saved' : `/student/courses/${encodeURIComponent(req.params.id)}`);
 };
 export const courseDetail = async (req, res) => {
   const courseRow = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
   const owner = courseRow && await User.findOne({ where: { id: courseRow.ownerId, role: 'faculty', approvalStatus: 'approved', active: true } });
   const course = owner ? plain(courseRow) : null;
   if (!course) return fail(res, 'Course not found.', 404);
-  const [attemptRows, savedCourse, savedModules] = await Promise.all([
+  const [attemptRows, savedModules] = await Promise.all([
     CourseAttempt.findAll({ where: { userId: req.user.id, courseId: course.id }, order: [['attemptNumber', 'DESC']] }),
-    SavedCourse.findOne({ where: { userId: req.user.id, courseId: course.id } }),
     SavedModule.findAll({ where: { userId: req.user.id, courseId: course.id } })
   ]);
   const attempts = attemptRows.map(plain);
-  const completed = attempts.find(a => a.status === 'completed');
-  const active = completed ? null : attempts.find(a => a.status === 'ongoing');
-  render(res, 'course', { title: course.title, course, active, completed, saved: Boolean(savedCourse), attempts: attempts.map(decorate),
+  const completed = attempts.find(attempt => attempt.status === 'completed');
+  const active = attempts.find(attempt => attempt.status === 'ongoing');
+  render(res, 'course', { title: course.title, course, attempts: attempts.map(decorate),
     author: owner.name || 'CareerBridge faculty', prerequisites: (await Course.findAll({ where: { id: { [Op.in]: course.prerequisites } }, attributes: ['id', 'title'] })).map(plain),
     modules: course.modules.map((module, index) => ({
       ...module, number: module.number ?? index + 1,
       saved: savedModules.some(row => row.moduleId === module.id),
-      href: active && moduleStartHref(active, module.id),
-      unavailable: Boolean(active && !moduleStartHref(active, module.id))
+      reviewHref: !active && completed && moduleReviewHref(completed, module.id)
     })) });
 };
+function moduleReviewHref(attempt, moduleId) {
+  const lesson = attempt.snapshot.modules.find(module => module.id === moduleId)?.lessons[0];
+  return lesson ? `/student/learn/${attempt.id}?lesson=${encodeURIComponent(lesson.id)}` : null;
+}
+async function publishedCourse(id, transaction) {
+  const course = await Course.findOne({
+    where: { id, published: true, ownerId: { [Op.not]: null } },
+    transaction, lock: transaction.LOCK.UPDATE
+  });
+  if (!course?.modules.length) return null;
+  const owner = await User.findOne({
+    where: { id: course.ownerId, role: 'faculty', approvalStatus: 'approved', active: true }, transaction
+  });
+  return owner ? course : null;
+}
 export const enroll = async (req, res) => {
   if (!await requireProfile(req, res)) return;
-  const course = await Course.findOne({ where: { id: req.params.id, published: true, ownerId: { [Op.not]: null } } });
-  if (!course) return fail(res, 'Course not found.', 404);
-  if (!await User.findOne({ where: { id: course.ownerId, role: 'faculty', approvalStatus: 'approved', active: true } })) return fail(res, 'This faculty course is not currently available.', 404);
-  // Faculty grading follows the course owner. Sections are not assigned to individual faculty.
-  const now = Date.now();
-  if ((course.enrollFrom && new Date(course.enrollFrom) > now) || (course.enrollUntil && new Date(course.enrollUntil) < now)) return fail(res, 'Enrollment is currently closed for this course.');
-  let attempt;
-  await sequelize.transaction(async transaction => {
-    // Lock the student row to serialize enrollment/retake requests for this user.
+  const moduleId = req.body.moduleId;
+  const attempt = await sequelize.transaction(async transaction => {
     await User.findByPk(req.user.id, { transaction, lock: transaction.LOCK.UPDATE });
-    const previous = await CourseAttempt.findAll({ where: { userId: req.user.id, courseId: course.id }, order: [['attemptNumber', 'DESC']], transaction });
-    const completed = previous.find(a => a.status === 'completed');
-    if (completed) { attempt = completed; return; }
-    attempt = previous.find(a => a.status === 'ongoing');
-    if (attempt) return;
-    for (const prerequisite of course.prerequisites) {
-      if (!await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: Number(prerequisite), status: 'completed' }, transaction })) {
-        const error = new Error('Complete the prerequisite courses first.'); error.status = 400; throw error;
+    const course = await publishedCourse(req.params.id, transaction);
+    if (!course) error('Course not found.', 404);
+    if (moduleId && !course.modules.some(module => module.id === moduleId)) error('Module not found.', 404);
+
+    const previous = await CourseAttempt.findAll({
+      where: { userId: req.user.id, courseId: course.id }, order: [['attemptNumber', 'DESC']], transaction, lock: transaction.LOCK.UPDATE
+    });
+    const active = previous.find(attempt => attempt.status === 'ongoing');
+    if (active) return syncPublishedAttempt(active, course, transaction);
+    const completed = previous.find(attempt => attempt.status === 'completed');
+    if (completed && course.modules.every(module => completed.snapshot.modules.some(item => item.id === module.id))) return completed;
+
+    if (!moduleId) {
+      const now = Date.now();
+      if ((course.enrollFrom && new Date(course.enrollFrom) > now) || (course.enrollUntil && new Date(course.enrollUntil) < now)) {
+        error('Enrollment is currently closed for this course.');
+      }
+      for (const prerequisite of course.prerequisites) {
+        if (!await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: Number(prerequisite), status: 'completed' }, transaction })) {
+          error('Complete the prerequisite courses first.');
+        }
       }
     }
-    const latestCourse = await Course.findOne({
-      where: { id: course.id, published: true, ownerId: course.ownerId }, transaction, lock: transaction.LOCK.UPDATE
-    });
-    if (!latestCourse) error('Course not found.', 404);
-    attempt = await CourseAttempt.create({ userId: req.user.id, courseId: course.id, attemptNumber: (previous[0]?.attemptNumber || 0) + 1,
-      courseVersion: latestCourse.version, snapshot: plain(latestCourse), completedLessons: [], quizScores: {}, quizAttempts: [], lastActivityAt: new Date() }, { transaction });
-    await Notification.create({ userId: req.user.id, title: 'Your course is ready', message: `You started ${course.title}, attempt ${attempt.attemptNumber}.`, href: `/student/learn/${attempt.id}` }, { transaction });
+    const moduleScoreKeys = course.modules.flatMap(module => [module.id, `read:${module.id}`]);
+    const carriedScores = Object.fromEntries(Object.entries(completed?.quizScores || {})
+      .filter(([key]) => moduleScoreKeys.includes(key)));
+    const created = await CourseAttempt.create({
+      userId: req.user.id, courseId: course.id, attemptNumber: (previous[0]?.attemptNumber || 0) + 1,
+      courseVersion: course.version, snapshot: plain(course),
+      completedLessons: completed?.completedLessons || [], quizScores: carriedScores, quizAttempts: [],
+      lastActivityAt: new Date()
+    }, { transaction });
+    await Notification.create({ userId: req.user.id, title: 'Your course is ready', message: `You started ${course.title}, attempt ${created.attemptNumber}.`, href: `/student/learn/${created.id}` }, { transaction });
+    return created;
   });
-  if (attempt.status === 'completed') req.flash('success_msg', 'You have already completed this course. You can review your lessons and results, but a new attempt is not available.');
-  res.redirect(moduleStartHref(plain(attempt), req.body.moduleId) || `/student/learn/${attempt.id}`);
+  const href = attempt.status === 'completed' ? moduleReviewHref(attempt, moduleId) : moduleStartHref(attempt, moduleId);
+  res.redirect(href || `/student/learn/${attempt.id}`);
 };
-async function availableAttemptCourses(attempts, transaction) {
-  const ids = [...new Set(attempts.filter(attempt => attempt.status === 'ongoing').map(attempt => attempt.courseId))];
-  if (!ids.length) return new Set();
-  const courses = await Course.findAll({ where: { id: ids, ownerId: { [Op.not]: null } }, attributes: ['id', 'published', 'modules'], transaction });
-  const hidden = courses.filter(course => !course.published && !course.modules.length).map(course => course.id);
-  const archived = hidden.length ? await CourseRevision.findAll({
-    where: { courseId: hidden, action: 'last-module-archived' }, attributes: ['courseId'], transaction
-  }) : [];
-  return new Set([...courses.filter(course => course.published).map(course => course.id), ...archived.map(row => row.courseId)]);
+async function visibleOngoingAttempts(attempts) {
+  const ongoing = attempts.filter(attempt => attempt.status === 'ongoing');
+  if (!ongoing.length) return [];
+  const courses = await Course.findAll({ where: {
+    id: ongoing.map(attempt => attempt.courseId), published: true, ownerId: { [Op.not]: null }
+  } });
+  const owners = await User.findAll({ where: {
+    id: courses.map(course => course.ownerId), role: 'faculty', approvalStatus: 'approved', active: true
+  }, attributes: ['id'] });
+  const approved = new Set(owners.map(owner => owner.id));
+  const visible = new Map(courses.filter(course => course.modules.length && approved.has(course.ownerId)).map(course => [course.id, course]));
+  return ongoing.flatMap(attempt => {
+    const course = visible.get(attempt.courseId);
+    return course ? [{ ...attempt, ...publishedAttemptSnapshot(attempt, course) }] : [];
+  });
 }
 function moduleStartHref(attempt, moduleId) {
   if (attempt.status === 'completed') return null;
   const modules = attempt.snapshot.modules;
-  const index = modules.findIndex(module => module.id === moduleId);
-  if (index < 0 || !moduleAvailable(attempt, index)) return null;
-  const module = modules[index];
+  const module = modules.find(item => item.id === moduleId);
+  if (!module) return null;
   if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(quiz => quiz.scope === 'pretest')) return resumeHref(attempt);
   if (scopeAllowed(attempt, module.id)) return `/student/learn/${attempt.id}/quiz/${module.id}`;
   const lesson = module.lessons.find(item => !attempt.completedLessons.includes(item.id)) || module.lessons[0];
@@ -244,26 +280,22 @@ function moduleStartHref(attempt, moduleId) {
 }
 
 export const myLearning = async (req, res) => {
-  const attempts = (await attemptsFor(req.user.id)).map(decorate);
-  const completedCourseIds = new Set(attempts.filter(a => a.completed).map(a => a.courseId));
-  const available = await availableAttemptCourses(attempts);
-  render(res, 'learning', { title: 'My learning', ongoing: attempts.filter(a => available.has(a.courseId) && !a.completed && !completedCourseIds.has(a.courseId)).flatMap(attempt => {
-    const pending = attempt.snapshot.modules.filter((module, index) => moduleAvailable(attempt, index) &&
-      !(attempt.quizScores[module.id] >= attempt.snapshot.passingScore));
+  const attempts = await attemptsFor(req.user.id);
+  const ongoing = (await visibleOngoingAttempts(attempts)).map(decorate);
+  render(res, 'learning', { title: 'My learning', ongoing: ongoing.flatMap(attempt => {
+    const pending = attempt.snapshot.modules.filter(module => !(attempt.quizScores[module.id] >= attempt.snapshot.passingScore));
     return pending.length ? pending.map(module => {
       const total = module.lessons.length + 1;
       const done = module.lessons.filter(lesson => attempt.completedLessons.includes(lesson.id)).length;
-      return { ...attempt, moduleTitle: module.title, done, total, percent: Math.round(done / total * 100), resumeHref: resumeHref(attempt) };
+      return { ...attempt, moduleTitle: module.title, done, total, percent: Math.round(done / total * 100), resumeHref: moduleStartHref(attempt, module.id) };
     }) : [{ ...attempt, moduleTitle: 'Course completion', resumeHref: resumeHref(attempt) }];
-  }), completed: attempts.filter(a => a.completed),
-    learningHistory: attempts.flatMap(a => a.quizAttempts.map(result => ({ title: a.title, attemptNumber: a.attemptNumber, scope: result.scope === 'final' ? 'Final assessment' : result.scope === 'pretest' ? 'Course pre-test' : `Module quiz · ${a.snapshot.modules.find(m => m.id === result.scope)?.title || result.scope}`, score: result.score, passed: result.score >= a.snapshot.passingScore, date: date(result.at) }))).slice(0, 30) });
+  }), completed: attempts.filter(a => a.status === 'completed').map(decorate),
+    learningHistory: attempts.map(decorate).flatMap(a => a.quizAttempts.map(result => ({ title: a.title, attemptNumber: a.attemptNumber, scope: result.scope === 'final' ? 'Final assessment' : result.scope === 'pretest' ? 'Course pre-test' : `Module quiz · ${a.snapshot.modules.find(m => m.id === result.scope)?.title || result.scope}`, score: result.score, passed: result.score >= a.snapshot.passingScore, date: date(result.at) }))).slice(0, 30) });
 };
 function resumeHref(attempt) {
   if (attempt.status === 'completed') return `/student/learn/${attempt.id}`;
   if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(q => q.scope === 'pretest')) return `/student/learn/${attempt.id}/quiz/pretest`;
   for (const module of attempt.snapshot.modules) {
-    const available = moduleAvailable(attempt, attempt.snapshot.modules.indexOf(module));
-    if (!available) continue;
     if (module.materials?.length && !attempt.quizScores[`read:${module.id}`]) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(module.lessons[0].id)}`;
     const unfinished = module.lessons.find(lesson => !attempt.completedLessons.includes(lesson.id));
     if (unfinished) return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(unfinished.id)}`;
@@ -273,15 +305,17 @@ function resumeHref(attempt) {
   return `/student/learn/${attempt.id}`;
 }
 async function ownedAttempt(req, transaction) {
-  const options = transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {};
-  const attempt = await CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id }, ...options });
+  if (!transaction) return sequelize.transaction(tx => ownedAttempt(req, tx));
+  const where = { id: req.params.id, userId: req.user.id };
+  const initial = await CourseAttempt.findOne({ where, transaction });
+  if (!initial || initial.status === 'completed') return initial;
+  const course = await publishedCourse(initial.courseId, transaction);
+  const attempt = await CourseAttempt.findOne({ where, transaction, lock: transaction.LOCK.UPDATE });
   if (!attempt || attempt.status === 'completed') return attempt;
-  if (!(await availableAttemptCourses([attempt], transaction)).has(attempt.courseId)) return null;
-  return await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: attempt.courseId, status: 'completed' }, order: [['completedAt', 'DESC']], ...options }) || attempt;
+  return course ? syncPublishedAttempt(attempt, course, transaction) : null;
 }
 function selectedMaterialModule(attempt, moduleId) {
-  const index = attempt.snapshot.modules.findIndex(module => module.id === moduleId);
-  return index >= 0 && moduleAvailable(attempt, index) ? attempt.snapshot.modules[index] : null;
+  return attempt.snapshot.modules.find(module => module.id === moduleId);
 }
 export const moduleMaterial = async (req, res) => {
   const attempt = await ownedAttempt(req);
@@ -309,7 +343,7 @@ export const confirmModuleReading = async (req, res) => {
     const module = attempt && selectedMaterialModule(attempt, req.params.moduleId);
     if (!module?.materials?.length || attempt.status === 'completed' || req.body.read !== 'yes') error('Confirm that you read the module materials.', 400);
     await attempt.update({ quizScores: { ...attempt.quizScores, [`read:${module.id}`]: 1 }, lastActivityAt: new Date() }, { transaction });
-    return resumeHref(plain(attempt));
+    return moduleStartHref(plain(attempt), module.id) || resumeHref(attempt);
   });
   res.redirect(href);
 };
@@ -324,14 +358,14 @@ export const learn = async (req, res) => {
     const canOpenQuiz = attempt.status !== 'completed' && topicDraftAllowed(attempt, module.id);
     const passed = attempt.quizScores[module.id] >= course.passingScore;
     return {
-      ...module, number: index + 1, available: moduleAvailable(attempt, index), passed,
+      ...module, number: module.number ?? index + 1, passed,
       submitted: attempt.quizAttempts.some(quiz => quiz.scope === module.id),
       score: attempt.quizScores[module.id], quizAvailable: scopeAllowed(attempt, module.id),
       lessons: module.lessons.map((lesson, lessonIndex) => {
         const completed = attempt.completedLessons.includes(lesson.id);
         const questions = topics.find(topic => topic.id === lesson.id)?.questions || [];
         return {
-          ...lesson, number: `${index + 1}.${lessonIndex + 1}`, completed,
+          ...lesson, number: `${module.number ?? index + 1}.${lessonIndex + 1}`, completed,
           questions, quizOpen: questions.length && completed && canOpenQuiz && !passed && !attempt.snapshot.policy?.quizMinutes,
           quizDone: questions.length && (passed || questions.every(question => question.options.some(option => option.checked)))
         };
@@ -342,12 +376,12 @@ export const learn = async (req, res) => {
   if (req.query.lesson) {
     for (const m of modules) {
       const lesson = m.lessons.find(l => l.id === req.query.lesson);
-      if (lesson && m.available) selected = { ...lesson, moduleTitle: m.title, moduleId: m.id };
+      if (lesson) selected = { ...lesson, moduleTitle: m.title, moduleId: m.id };
     }
-    if (!selected) return fail(res, 'This lesson is locked or unavailable.', 403);
+    if (!selected) return fail(res, 'This lesson is unavailable.', 403);
   } else {
-    const savedLesson = modules.filter(m => m.available).flatMap(m => m.lessons).find(l => l.id === attempt.lastLessonId && !l.completed);
-    const m = savedLesson ? modules.find(m => m.lessons.some(l => l.id === savedLesson.id)) : modules.find(m => m.available && m.lessons.some(l => !l.completed)) || modules[0];
+    const savedLesson = modules.flatMap(m => m.lessons).find(l => l.id === attempt.lastLessonId && !l.completed);
+    const m = savedLesson ? modules.find(m => m.lessons.some(l => l.id === savedLesson.id)) : modules.find(m => m.lessons.some(l => !l.completed)) || modules[0];
     selected = { ...(savedLesson || m.lessons.find(l => !l.completed) || m.lessons[0]), moduleTitle: m.title, moduleId: m.id };
   }
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
@@ -372,7 +406,7 @@ export const completeLesson = async (req, res) => {
     if (attempt.status === 'completed') return resumeHref(attempt);
     if (attempt.snapshot.policy?.pretest && !attempt.quizAttempts.some(q => q.scope === 'pretest')) error('Complete the course pre-test first.',403);
     const index = attempt.snapshot.modules.findIndex(m => m.lessons.some(l => l.id === req.body.lessonId));
-    if (index < 0 || !moduleAvailable(attempt, index)) { const err = new Error('Lesson is locked.'); err.status = 403; throw err; }
+    if (index < 0) error('This lesson is unavailable.', 403);
     if (!attempt.completedLessons.includes(req.body.lessonId)) {
       try {
         checkChallenge(req.body.lessonChallenge, req.user.id, `lesson:${attempt.id}:${req.body.lessonId}`);
@@ -384,7 +418,7 @@ export const completeLesson = async (req, res) => {
     if (req.body.continueToTopic === 'yes') {
       return `/student/learn/${attempt.id}?lesson=${encodeURIComponent(req.body.lessonId)}#topic-quiz`;
     }
-    return resumeHref(attempt);
+    return moduleStartHref(attempt, attempt.snapshot.modules[index].id) || resumeHref(attempt);
   });
   res.redirect(next);
 };
@@ -447,9 +481,9 @@ export const quizPage = async (req, res) => {
   if (!topicDraftAllowed(attempt, scope)) return fail(res, 'Complete the required pre-test, lessons and quizzes first.', 403);
   const draft = await draftFor(req.user.id, attempt, scope);
   const questions = scopeQuestions(attempt, scope);
-  const retries = attempt.quizAttempts.filter(entry => entry.scope === scope).length;
+  const retries = assessmentSubmissions(attempt, scope).length;
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
-  const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && attempt.quizAttempts.filter(q => q.scope === scope).length >= attempt.snapshot.policy.attemptLimit;
+  const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && retries >= attempt.snapshot.policy.attemptLimit;
   const module = attempt.snapshot.modules.find(item => item.id === scope);
   const canSubmit = scopeAllowed(attempt, scope);
   const topics = assessmentTopics(module, questions, draft).filter(topic => canSubmit || attempt.completedLessons.includes(topic.id));
@@ -495,8 +529,8 @@ export const restartQuiz = async (req, res) => {
     const a = await ownedAttempt(req, transaction), scope = req.params.scope; if (!a || a.status === 'completed' || !scopeAllowed(a, scope)) error('Assessment unavailable.', 403);
     const d = await draftFor(req.user.id, a, scope, transaction), p = a.snapshot.policy || {};
     if (!p.quizMinutes || Date.now() - new Date(d.startedAt) <= p.quizMinutes * 60000) error('Only an expired timed assessment can be restarted.');
-    const history = [...a.quizAttempts, { scope, score: 0, expired: true, seconds: p.quizMinutes * 60, at: new Date().toISOString() }];
-    if (p.attemptLimit && history.filter(q => q.scope === scope).length >= p.attemptLimit) error('Attempt limit reached. Contact your faculty.', 403);
+    const history = [...a.quizAttempts, { scope, finalAssessmentRevision: a.snapshot.finalAssessmentRevision, score: 0, expired: true, seconds: p.quizMinutes * 60, at: new Date().toISOString() }];
+    if (p.attemptLimit && assessmentSubmissions(a, scope).length + 1 >= p.attemptLimit) error('Attempt limit reached. Contact your faculty.', 403);
     await a.update({ quizAttempts: history }, { transaction }); await d.update({ startedAt: new Date(), answers: {}, revision: d.revision + 1 }, { transaction });
   }); res.redirect(`/student/learn/${req.params.id}/${req.params.scope === 'final' ? 'final' : 'quiz/' + req.params.scope}`);
 };
@@ -509,7 +543,7 @@ export const submitQuiz = async (req, res) => {
     if (!scopeAllowed(attempt, scope)) error('Requirements are incomplete.', 403);
     const draft = await draftFor(req.user.id, attempt, scope, transaction); checkQuizLimits(attempt, scope, draft);
     const result = grade(scopeQuestions(attempt, scope), req.body.answers || {}), passed = result.score >= attempt.snapshot.passingScore;
-    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, score: result.score, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
+    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, finalAssessmentRevision: attempt.snapshot.finalAssessmentRevision, score: result.score, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
     if (final) update.finalScore = result.score;
     else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: Math.max(attempt.quizScores[scope] || 0, result.score) };
     await attempt.update(update, { transaction });
@@ -532,15 +566,16 @@ export const quizResult = async (req, res) => {
   const passed = result.score >= attempt.snapshot.passingScore;
   const completed = attempt.status === 'completed';
   const limit = attempt.snapshot.policy?.attemptLimit;
-  const submitted = attempt.quizAttempts.filter(item => item.scope === scope);
+  const current = completed ? attempt : await ownedAttempt(req);
+  const submitted = current ? assessmentSubmissions(current, scope) : [];
   const retry = !passed && !pretest && !completed && submitted.at(-1)?.nonce === result.nonce &&
-    (!limit || submitted.length < limit) && scopeAllowed(attempt, scope);
+    (!limit || submitted.length < limit) && scopeAllowed(current, scope);
   const courseUrl = `/student/learn/${attempt.id}`;
   render(res, 'quiz-result', {
     title: pretest ? 'Pre-test result' : final ? 'Final assessment result' : 'Module quiz result',
     courseTitle: attempt.snapshot.title, passingScore: attempt.snapshot.passingScore,
     result, passed, pretest, final, completed, retry, courseUrl,
-    continueUrl: passed || pretest ? (final ? courseUrl : resumeHref(plain(attempt))) : courseUrl,
+    continueUrl: passed || pretest ? (final ? courseUrl : resumeHref(plain(current || attempt))) : courseUrl,
     retryUrl: final ? `${courseUrl}/final` : `${courseUrl}/quiz/${scope}`
   });
 };
@@ -804,7 +839,7 @@ export const saveDiagnosticDraft = async (req, res) => {
 };
 export const reviewAnswers = async (req,res) => {
   const a = await ownedAttempt(req), scope = req.params.scope;
-  if (!a || !a.quizAttempts.some(q => q.scope === scope)) return fail(res, 'Submit this assessment before reviewing its answers.',403);
+  if (!a || !assessmentSubmissions(a, scope).length || !scopeQuestions(a, scope).length) return fail(res, 'Submit this assessment before reviewing its answers.',403);
   if (a.snapshot.policy?.feedbackTiming === 'after-completion' && a.status !== 'completed') return fail(res,'Answer explanations are released after course completion.',403);
   render(res,'review',{ title:'Assessment feedback', attempt: decorate(plain(a)), questions: scopeQuestions(a,scope).map(q => ({ prompt:q.prompt, answer:q.options[q.answer], explanation:q.explanation, sourceReference:q.sourceReference })) });
 };

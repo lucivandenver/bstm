@@ -1,6 +1,6 @@
 import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
-import { starsFor, canTakeFinal, grade } from './learning.js';
+import { starsFor, canTakeFinal, grade, publishedAttemptSnapshot } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
 export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction, module = null) {
@@ -21,6 +21,16 @@ export async function ensureCompletionCredential(attempt, user, score = attempt.
   const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id, moduleId: module?.id || '' }, defaults, transaction });
   if (created) await Notification.create({ userId: user.id, title: module ? 'Module certificate issued' : 'Course certificate issued', message: `You met the completion rules for ${module?.title || attempt.snapshot.title}. Your certificate and badge are ready.`, href: '/student/achievements' }, { transaction });
   return credential;
+}
+export async function syncPublishedAttempt(attempt, course, transaction) {
+  const update = publishedAttemptSnapshot(attempt, course);
+  if (!update) return attempt;
+  if (update.snapshot.finalAssessmentRevision !== (attempt.snapshot.finalAssessmentRevision || 0)) {
+    const draft = await QuizDraft.findOne({ where: { attemptId: attempt.id, scope: 'final' }, transaction, lock: transaction.LOCK.UPDATE });
+    if (draft) await draft.update({ answers: {}, revision: draft.revision + 1, startedAt: new Date() }, { transaction });
+  }
+  await attempt.update(update, { transaction });
+  return attempt;
 }
 export async function finalizeAttempt(attempt, user, transaction) {
   if (attempt.status === 'completed' || attempt.finalScore === null || attempt.finalScore < attempt.snapshot.passingScore || !canTakeFinal(attempt)) return false;
@@ -51,8 +61,12 @@ export function quizAccess(attempt, scope) {
   if (p.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest')) return false;
   return true;
 }
+export const assessmentSubmissions = (attempt, scope) => attempt.quizAttempts.filter(result =>
+  result.scope === scope && (scope !== 'final' ||
+    (result.finalAssessmentRevision || 0) === (attempt.snapshot.finalAssessmentRevision || 0)));
+
 export async function draftFor(userId, attempt, scope, transaction) {
-  const lastResult = attempt.quizAttempts.findLast(item => item.scope === scope && !item.expired);
+  const lastResult = assessmentSubmissions(attempt, scope).findLast(item => !item.expired);
   const [draft] = await QuizDraft.findOrCreate({
     where: { userId, attemptId: attempt.id, scope },
     defaults: { answers: {}, startedAt: new Date(), revision: lastResult?.nextDraftRevision ?? 0 },
@@ -61,7 +75,7 @@ export async function draftFor(userId, attempt, scope, transaction) {
   return draft;
 }
 export function checkQuizLimits(attempt, scope, draft) {
-  const p = attempt.snapshot.policy || {}, taken = attempt.quizAttempts.filter(q => q.scope === scope).length;
+  const p = attempt.snapshot.policy || {}, taken = assessmentSubmissions(attempt, scope).length;
   if (scope !== 'pretest' && p.attemptLimit && taken >= p.attemptLimit) fail('Assessment attempt limit reached. Ask your faculty for a new learning attempt or remediation.', 403);
   if (p.quizMinutes && Date.now() - new Date(draft.startedAt) > p.quizMinutes * 60000) fail('Assessment time expired. Your saved answers are retained; restart the assessment to use another permitted attempt.', 409);
 }
