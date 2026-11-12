@@ -31,3 +31,9 @@ export function profileInput(body) {
   if (!/^20\d{2}$/.test(data.graduationYear)) throw new Error('Enter a valid graduation year.');
   return { ...data, complete: true };
 }
+
+export function topicTitle(title) {
+  if (typeof title !== 'string') return title;
+  const unnumbered = title.replace(/^\s*(?:(?:topic(?: area)?|lesson|module)\s+\d+(?:\.\d+)*|\d+\.\d+(?:\.\d+)*)(?:\s*[.·:–—-]\s*|\s+)/i, '').trim();
+  return unnumbered || title;
+}

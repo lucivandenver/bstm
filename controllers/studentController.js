@@ -12,7 +12,7 @@ import { setting, genders } from '../services/accounts.js';
 import PDFDocument from 'pdfkit';
 import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notification, SavedCourse, SavedModule, sequelize } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
-import { text, email as normalizeEmail, profileInput } from '../services/validation.js';
+import { text, email as normalizeEmail, profileInput, topicTitle } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
@@ -358,14 +358,14 @@ export const learn = async (req, res) => {
     const canOpenQuiz = attempt.status !== 'completed' && topicDraftAllowed(attempt, module.id);
     const passed = attempt.quizScores[module.id] >= course.passingScore;
     return {
-      ...module, number: module.number ?? index + 1, passed,
+      ...module, title: topicTitle(module.title), passed,
       submitted: attempt.quizAttempts.some(quiz => quiz.scope === module.id),
       score: attempt.quizScores[module.id], quizAvailable: scopeAllowed(attempt, module.id),
       lessons: module.lessons.map((lesson, lessonIndex) => {
         const completed = attempt.completedLessons.includes(lesson.id);
         const questions = topics.find(topic => topic.id === lesson.id)?.questions || [];
         return {
-          ...lesson, number: `${module.number ?? index + 1}.${lessonIndex + 1}`, completed,
+          ...lesson, title: topicTitle(lesson.title), number: `${module.number ?? index + 1}.${lessonIndex + 1}`, completed,
           questions, quizOpen: questions.length && completed && canOpenQuiz && !passed && !attempt.snapshot.policy?.quizMinutes,
           quizDone: questions.length && (passed || questions.every(question => question.options.some(option => option.checked)))
         };
@@ -452,7 +452,7 @@ function assessmentTopics(module, questions, draft) {
   if (!module) return [{ questions: questions.map(toPublic) }];
   const terms = value => new Set(String(value || '').toLowerCase().match(/[a-z]{4,}/g) || []);
   const topics = module.lessons.map((lesson, index) => ({
-    id: lesson.id, title: lesson.title, number: index + 1, questions: [],
+    id: lesson.id, title: topicTitle(lesson.title), number: index + 1, questions: [],
     titleTerms: terms(lesson.title), bodyTerms: terms(lesson.body), reference: lesson.sourceReference
   }));
   if (!topics.length) return [{ questions: questions.map(toPublic) }];
@@ -484,9 +484,12 @@ export const quizPage = async (req, res) => {
   const retries = assessmentSubmissions(attempt, scope).length;
   const timed = Boolean(attempt.snapshot.policy?.quizMinutes), remaining = timed ? Math.max(0, Math.floor((new Date(draft.startedAt).getTime() + attempt.snapshot.policy.quizMinutes * 60000 - Date.now()) / 1000)) : null;
   const limited = scope !== 'pretest' && attempt.snapshot.policy?.attemptLimit && retries >= attempt.snapshot.policy.attemptLimit;
-  const module = attempt.snapshot.modules.find(item => item.id === scope);
+  const moduleIndex = attempt.snapshot.modules.findIndex(item => item.id === scope);
+  const module = attempt.snapshot.modules[moduleIndex];
   const canSubmit = scopeAllowed(attempt, scope);
-  const topics = assessmentTopics(module, questions, draft).filter(topic => canSubmit || attempt.completedLessons.includes(topic.id));
+  const topics = assessmentTopics(module, questions, draft)
+    .filter(topic => canSubmit || attempt.completedLessons.includes(topic.id))
+    .map(topic => module && topic.number ? { ...topic, number: `${module.number ?? moduleIndex + 1}.${topic.number}` } : topic);
   if (retries || attempt.snapshot.policy?.randomize) {
     const rank = (question, attemptNumber) => createHash('sha256').update(`${attempt.id}:${scope}:${attemptNumber}:${question.id}`).digest('hex');
     for (const topic of topics) {
