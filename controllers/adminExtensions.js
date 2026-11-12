@@ -8,7 +8,7 @@ import { text } from '../services/validation.js';
 import { domains } from '../data/starterCourses.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
 const plain = r => r.get({ plain: true });
-const render = (res, view, data) => res.render(`admin/${view}`, { adminNav: view, ...data });
+const render = (res, view, data) => res.render(`admin/${view}`, { adminNav: view, backUrl: view === 'history' ? '/admin/courses' : '/admin/settings', ...data });
 export const academic = async (req, res) => {
   const corrections = await ProfileCorrection.findAll({ include: [{ model: User, attributes: ['id', 'name', 'studentId', 'section'] }], order: [['createdAt', 'DESC']], limit: 100 });
   render(res, 'academic', { title: 'Academic record corrections', corrections: corrections.map(r => ({ ...plain(r), pending: r.status === 'pending' })) });

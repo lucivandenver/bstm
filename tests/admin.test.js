@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { browser } from './httpHelpers.js';
@@ -65,12 +66,18 @@ await test('Admin management is protected and Faculty/Student registration remai
     r = await faculty.get('/faculty'); assert.ok(!r.html.includes('Student notice'));
     await admin.post('/admin/careers', { title: 'Visitor Services Assistant', focus: 'Visitor services', required: ['Communication', 'Workplace'], active: 'true' });
     assert.equal(await CareerPath.count({ where: { title: 'Visitor Services Assistant' } }), 1);
-    r = await outsider.get('/student/careers'); assert.ok(r.html.includes('Your matches will appear here')); assert.ok(!r.html.includes('Visitor Services Assistant'));
-    r = await outsider.get('/student/careers?find=matches'); assert.ok(r.html.includes('Visitor Services Assistant'));
+    r = await outsider.get('/student/careers'); assert.ok(r.html.includes('Pass a module to see career matches')); assert.ok(!r.html.includes('Visitor Services Assistant'));
+    r = await outsider.get('/student/careers?find=matches'); assert.ok(!r.html.includes('Visitor Services Assistant'));
     const firstPath = await CareerPath.findOne(); const previousTitle = firstPath.title;
     await firstPath.update({ title: 'Renamed validated pathway' }); await seedAdministration();
     assert.equal(await CareerPath.count({ where: { title: previousTitle } }), 0, 'seed must preserve admin renames');
-    r = await admin.get('/admin/reports/export'); assert.equal(r.status, 200); assert.ok(r.html.includes('Learner')); assert.ok(!r.html.includes('DummyChangedStudent'));
+    const download = await fetch(base + '/admin/reports/export', { headers: { cookie: admin.cookie } });
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('content-disposition'), /\.xlsx/);
+    const workbook = await JSZip.loadAsync(await download.arrayBuffer());
+    const sheet = await workbook.file('xl/worksheets/sheet1.xml').async('string');
+    assert.match(sheet, /Learner/);
+    assert.doesNotMatch(sheet, /DummyChangedStudent/);
     await admin.post('/admin/settings', { institutionName: 'MinSU', academicYear: '2026-2027', certificateFooter: 'Course completion record', registrationEnabled: 'false', facultyRegistrationEnabled: 'false' });
     assert.equal((await Setting.findOne({ where: { key: 'registrationEnabled' } })).value, 'false');
     const fresh = browser(base); await fresh.get('/register'); await fresh.post('/register', { ...studentData, email: 'blocked@example.com', identityId: '2026-NO' });

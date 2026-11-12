@@ -1,9 +1,14 @@
 import { Setting } from '../models/adminModels.js';
 import { CredentialRequest } from '../models/portalModels.js';
 
-export async function facultySignature(facultyId, transaction) {
+export async function profileFacultySignature(facultyId, transaction) {
   const saved = await Setting.findOne({ where: { key: `facultySignature:${facultyId}` }, transaction });
-  if (saved?.value) return saved.value;
+  return saved?.value;
+}
+
+export async function facultySignature(facultyId, transaction) {
+  const saved = await profileFacultySignature(facultyId, transaction);
+  if (saved) return saved;
   const legacy = await CredentialRequest.findOne({
     where: { facultyId, status: 'approved' }, order: [['updatedAt', 'DESC']], transaction
   });

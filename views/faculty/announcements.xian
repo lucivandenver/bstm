@@ -1,1 +1,21 @@
-{{> facultyTop}}<section class="card"><h2>Send an update to assigned students</h2><p class="small muted">Delivered to their notification inbox. This does not publish a system-wide announcement.</p><form method="post" action="/faculty/announcements"><input type="hidden" name="_csrf" value="{{csrf}}"><label class="field">Title<input name="title" maxlength="160" required></label><label class="field">Message<textarea name="body" maxlength="3000" required rows="5"></textarea></label><button class="button">Send announcement</button></form></section><section class="card space-top"><h2>Sent announcements</h2>{{#each announcements}}<article class="feedback-item"><h3>{{title}}</h3><p class="lesson-body">{{body}}</p></article>{{else}}<p class="empty">No announcements sent.</p>{{/each}}</section>{{> studentBottom}}
+{{> facultyTop}}
+<section class="card">
+  <h2>Send an update to assigned students</h2>
+  <form method="post" action="/faculty/announcements" class="stack">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label class="field">Title<input name="title" maxlength="160" required></label>
+    <label class="field">Message<textarea name="body" maxlength="3000" required rows="5"></textarea></label>
+    <fieldset class="field"><legend>Send to</legend>
+      <label><input type="radio" name="audience" value="section" required> A section</label>
+      <label class="field">Section<select name="section"><option value="">Select a section</option>{{#each sections}}<option>{{this}}</option>{{/each}}</select></label>
+      <label><input type="radio" name="audience" value="students" required> Specific students</label>
+      <label class="field">Students<select name="studentIds" multiple size="6">{{#each students}}<option value="{{id}}">{{name}} · {{section}} · {{studentId}}</option>{{/each}}</select></label>
+      <p class="small muted">Hold Ctrl or Command to select more than one student.</p>
+    </fieldset>
+    <button class="button">Send announcement</button>
+  </form>
+</section>
+<section class="card space-top"><h2>Sent announcements</h2>
+  {{#each announcements}}<article class="feedback-item"><h3>{{title}}</h3><p class="small muted">{{date}}</p><p class="lesson-body">{{body}}</p></article>{{else}}<p class="empty">No announcements sent.</p>{{/each}}
+</section>
+{{> studentBottom}}

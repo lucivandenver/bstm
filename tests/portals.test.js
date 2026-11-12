@@ -101,7 +101,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await s.post(moduleUrl + '/save', {})).status, 302);
     const savedModulePage = await s.get('/student/courses?view=saved');
     assert.match(savedModulePage.html, /saved-module-card/);
-    assert.match(savedModulePage.html, /Module 1/);
+    assert.doesNotMatch(savedModulePage.html, /Module 1/);
     assert.match(savedModulePage.html, /Service fundamentals/);
     assert.doesNotMatch(savedModulePage.html, /View modules/);
     assert.match((await s.get(`/student/courses/${c.id}`)).html, /Remove saved module/);
@@ -195,10 +195,16 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 1 })).status, 400);
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 400);
     const signature='data:image/png;base64,'+(await readFile(new URL('../public/images/icons/careerbridge-192.png',import.meta.url))).toString('base64');
+    await Setting.upsert({ key: `facultySignature:${faculty.id}`, value: signature });
     const credentialRequest = await CredentialRequest.create({ courseId:c.id, facultyId:faculty.id, facultySignature:signature, status:'pending' });
     assert.equal((await a.post('/admin/courses/' + c.id + '/approve-publication', { version: 2 })).status, 302);
     assert.equal((await credentialRequest.reload()).status, 'approved');
     assert.equal(credentialRequest.badge.label, 'UPDATED COURSE VERSION');
+    const duplicate = await Course.create({ ...draft, title: 'Updated course version', slug: 'duplicate-course-test', ownerId: faculty.id, published: false });
+    assert.match((await a.get('/admin/courses')).html, new RegExp(`/admin/courses/${duplicate.id}/delete-duplicate`));
+    assert.equal((await a.post(`/admin/courses/${duplicate.id}/delete-duplicate`)).status, 302);
+    assert.equal(await Course.findByPk(duplicate.id), null);
+    assert.equal((await a.post(`/admin/courses/${c.id}/delete-duplicate`)).status, 400);
     assert.equal((await Course.findByPk(c.id)).published, true);
     r=await s.post(`/student/learn/${id}/activities/t1`,{response:'Thank you for your request. Could you confirm the travel dates, number of guests and accessibility requirements?',link:'https://example.test/evidence'});assert.equal(r.status,302);const sub=await PracticalSubmission.findOne();
     await f2.get('/faculty/evaluations');assert.equal((await f2.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'10','scores[communication]':'10',feedback:'Good evidence.'})).status,404);
@@ -217,7 +223,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await f.post(`/faculty/evaluations/${sub.id}`,{'scores[accuracy]':'5','scores[communication]':'5',feedback:'Changed.'});assert.equal(r.status,400,'completed records immutable');
     await f.get('/faculty/students/'+student.id);await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Keep practicing itinerary explanations.',remediation:'Review digital tools.',visibility:'student'});r=await s.get('/student/results');assert.match(r.html,/Keep practicing/);
     await f.post('/faculty/students/'+student.id+'/notes',{feedback:'Private intervention note.',visibility:'internal'});r=await s.get('/student/results');assert.ok(!r.html.includes('Private intervention note'));
-    await f.get('/faculty/announcements');await f.post('/faculty/announcements',{title:'Assigned update',body:'Your next learning task is ready.'});assert.ok(await Notification.count({where:{userId:student.id,title:'Assigned update'}}));assert.equal(await Notification.count({where:{userId:outsider.id,title:'Assigned update'}}),0);
+    await f.get('/faculty/announcements');await f.post('/faculty/announcements',{title:'Assigned update',body:'Your next learning task is ready.',audience:'students',studentIds:[student.id]});assert.match((await Notification.findOne({where:{userId:student.id,title:'Assigned update'}})).message, /From /);assert.equal(await Notification.count({where:{userId:outsider.id,title:'Assigned update'}}),0);
     r=await s.get('/notifications/count');assert.ok(JSON.parse(r.html).unread>0);
     const notification=await Notification.create({userId:student.id,title:'Read one notice',message:'A single notification should update this account count.',href:'/student'});
     await new Promise(resolve=>setTimeout(resolve,3));
@@ -259,6 +265,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match((await a.get('/admin/courses?status=pending')).html, /Pending module · Independent module/);
     assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: moduleDraft.id })).status, 302);
     assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1', 'm2']);
+    assert.ok(await Notification.findOne({ where: { userId: faculty.id, title: 'Module publication approved' } }));
+    assert.match((await Notification.findOne({ where: { userId: student.id, title: 'New module published' } })).message, /published Independent module/);
     assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: moduleDraft.id })).status, 400);
     r=await a.post(`/admin/courses/${c.id}/ownership`,{ownerId:otherFaculty.id});assert.equal(r.status,302);assert.equal((await f.get(`/faculty/courses/${c.id}/edit`)).status,404);assert.equal((await f2.get(`/faculty/courses/${c.id}/edit`)).status,200);
     for (let index = 1; index <= 5; index++) {
@@ -277,8 +285,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const archiveTarget = await Course.findOne({ where: { slug: 'outline-1' } });
     const moduleCards = await f2.get('/faculty/courses?page=2&course=' + archiveTarget.id);
     assert.equal(moduleCards.status, 200);
-    assert.match(moduleCards.html, /Module 1 · Searchable Module 1/);
-    assert.match(moduleCards.html, /class="eyebrow">Outline Course 1/);
+    assert.match(moduleCards.html, /<h2>Searchable Module 1<\/h2>/);
+    assert.doesNotMatch(moduleCards.html, /class="eyebrow">Outline Course 1/);
     assert.equal((await f.get('/faculty/courses?course=' + archiveTarget.id)).status, 404);
     assert.equal((await f2.post('/faculty/courses/' + archiveTarget.id + '/archive', {})).status, 302);
     assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<h2>OUTLINE COURSE 1/);
@@ -492,7 +500,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const attached = archiveTarget.modules.find(module => module.number === 7);
     assert.equal(attached.title, 'Advanced Module');
     assert.ok(archiveTarget.questions.some(question => question.moduleId === attached.id && !question.reviewed));
-    assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module&course=' + archiveTarget.id)).html, /Module 7/);
+    assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module&course=' + archiveTarget.id)).html, /<h2>Advanced Module<\/h2>/);
     const legacyReview = await f2.post(`/faculty/courses/${generatedModuleDraft.id}/module/m1/review`, {});
     assert.equal(legacyReview.status, 302);
     const legacyRevision = new URL(legacyReview.location, 'http://local').searchParams.get('revision');

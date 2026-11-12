@@ -1,3 +1,5 @@
+import { profileFacultySignature } from '../services/publicationCredentials.js';
+import { studentCareerEvidence } from '../services/moduleEvidence.js';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { buildEvidence } from '../services/evidence.js';
@@ -15,14 +17,16 @@ import { User } from '../models/userModel.js';
 import { text, email as normalizeEmail, profileInput, topicTitle } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
-import { explainCareer, careerLearningContext, careerFingerprint } from '../services/careerAi.js';
+import { explainCareer, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
 import { appUrl } from '../config/env.js';
 import { readFile } from 'node:fs/promises';
 const plain = row => row?.get({ plain: true });
 const date = value => value ? new Date(value).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-const render = (res, view, data = {}) => res.render(`student/${view}`, { nav: view, ...data });
+const studentBack = { careers: '/student', profile: '/student', assessment: '/student/results',
+  results: '/student', achievements: '/student/learning', notifications: '/student', activities: '/student/learning' };
+const render = (res, view, data = {}) => res.render(`student/${view}`, { nav: view, backUrl: studentBack[view], ...data });
 const fail = (res, message, status = 400) => res.status(status).render('student/message', { title: 'Unable to continue', message });
 async function activeCareerTracks() {
   const configured = (await CareerPath.findAll({ where: { active: true } })).map(plain);
@@ -299,7 +303,7 @@ export const myLearning = async (req, res) => {
     }] : [];
   }));
   const courseCompletion = ongoing.filter(canTakeFinal).map(attempt => ({
-    ...attempt, moduleTitle: 'Course completion', statusLabel: 'In progress', resumeHref: resumeHref(attempt)
+    ...attempt, moduleTitle: attempt.title, statusLabel: 'Course completion', resumeHref: resumeHref(attempt)
   }));
   render(res, 'learning', { title: 'My learning', ongoing: [...activeModules.filter(module => !module.passed), ...courseCompletion],
     passedModules: activeModules.filter(module => module.passed), completed: attempts.filter(a => a.status === 'completed').map(decorate),
@@ -636,7 +640,7 @@ export const submitQuiz = async (req, res) => {
     }
     const draft = await draftFor(req.user.id, attempt, scope, transaction); checkQuizLimits(attempt, scope, draft);
     const result = grade(scopeQuestions(attempt, scope), req.body.answers || {}), passed = result.score >= attempt.snapshot.passingScore;
-    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, finalAssessmentRevision: attempt.snapshot.finalAssessmentRevision, score: result.score, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
+    const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, finalAssessmentRevision: attempt.snapshot.finalAssessmentRevision, score: result.score, scores: result.scores, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
     if (final) update.finalScore = result.score;
     else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: Math.max(attempt.quizScores[scope] || 0, result.score) };
     await attempt.update(update, { transaction });
@@ -711,66 +715,43 @@ async function careerProvider() {
 }
 export const careers = async (req, res) => {
   if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
-  const showCareerMatches = req.session.careerMatchSearchUserId === req.user.id;
-  const [attempts, baseline, profile, courses] = await Promise.all([
-    attemptsFor(req.user.id), Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
-    StudentProfile.findOne({ where: { userId: req.user.id } }), Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } } })
-  ]);
-  const facultyIds = [...new Set(courses.map(course => course.ownerId).filter(Boolean))];
-  const approvedFaculty = facultyIds.length ? await User.findAll({ where: { id: { [Op.in]: facultyIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
-  const visibleIds = new Set(approvedFaculty.map(user => user.id));
-  const eligibleCourses = courses.filter(course => visibleIds.has(course.ownerId));
-  const evidence = await buildEvidence(attempts, plain(baseline), profile?.careerInterest, await activeCareerTracks());
-  const credentialRows = (await Credential.findAll({ where: { userId: req.user.id, revoked: false } })).map(plain);
-  const credentialAttemptIds = new Set(credentialRows.map(row => Number(row.attemptId)));
-  const learningContext = careerLearningContext(attempts, credentialRows);
-  const fingerprint = careerFingerprint(evidence, learningContext);
-  if (req.session.careerAi && req.session.careerAi.fingerprint !== fingerprint) delete req.session.careerAi;
-  const completedIds = new Set(attempts.filter(a => a.status === 'completed').map(a => a.courseId));
-  const ongoingIds = new Set(attempts.filter(a => a.status === 'ongoing').map(a => a.courseId));
-  const recommendations = eligibleCourses.filter(course => !completedIds.has(course.id) && !ongoingIds.has(course.id)).map(row => {
-    const course = plain(row), areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
-    const gaps = areas.filter(area => !Number.isFinite(evidence.scores[area]) || evidence.scores[area] < 75);
-    const relatedPaths = evidence.tracks.filter(track => track.required.some(area => areas.includes(area)));
-    return { ...course, locked: (course.prerequisites || []).some(id => !completedIds.has(Number(id))), gapCount: gaps.length, relatedPathCount: relatedPaths.length };
-  }).filter(course => course.gapCount > 0).sort((a, b) => b.gapCount - a.gapCount || b.relatedPathCount - a.relatedPathCount || a.title.localeCompare(b.title)).slice(0, 6);
-  const tracks = evidence.tracks.map(track => ({ ...track, relatedCourses: eligibleCourses.filter(course => {
-    const areas = Array.isArray(course.competencyAreas) && course.competencyAreas.length ? course.competencyAreas : [course.domain];
-    return areas.some(area => track.required.includes(area));
-  }).map(course => { const done = completedIds.has(course.id); const active = !done && ongoingIds.has(course.id); return { ...plain(course), learningStatus: done ? 'Completed' : active ? 'In progress' : 'Available', done, active }; }) }));
-  const provider = await careerProvider();
-  render(res, 'careers', { showCareerMatches, evidenceDate: date(new Date()), baselineDate: baseline ? date(baseline.createdAt) : null,
-    evidenceSources: attempts.filter(a => a.status === 'completed').map(a => ({ title: a.snapshot.title, version: a.courseVersion, date: date(a.completedAt), score: a.finalScore,
-      areas: Array.isArray(a.snapshot.competencyAreas) && a.snapshot.competencyAreas.length ? a.snapshot.competencyAreas.join(', ') : a.snapshot.domain,
-      award: credentialAttemptIds.has(Number(a.id)) ? 'Certificate earned' : 'Course completed' })),
-    hasBaseline: Boolean(baseline), title: 'Find My Career', tracks, recommendations,
-    developingCourses:learningContext.developing, aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi || null });
+  const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks());
+  const { learning } = evidence;
+  const fingerprint = careerFingerprint(evidence, learning);
+  if (req.session.careerAi?.fingerprint !== fingerprint) delete req.session.careerAi;
+  const hasPassedModule = evidence.completed.length > 0;
+  const showCareerMatches = hasPassedModule && req.session.careerMatchSearchUserId === req.user.id;
+  const provider = hasPassedModule ? await careerProvider() : {};
+  render(res, 'careers', { title: 'Find My Career', hasPassedModule, showCareerMatches, tracks: evidence.tracks,
+    passedModules: evidence.completed, developingCourses: evidence.developing,
+    aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi });
 };
 export const generateGuidance = async (req, res) => {
-  const json=req.get('accept')?.includes('application/json');
-  const reject=(message,status=400)=>{if(json)return res.status(status).json({ok:false,message});req.flash('error_msg',message);return res.redirect('/student/careers');};
-  if(req.body.consent!=='yes')return reject('Confirm permission to share your anonymised learning evidence.');
-  const [attempts,baseline,profile]=await Promise.all([
-    attemptsFor(req.user.id),
-    Assessment.findOne({where:{userId:req.user.id},order:[['createdAt','DESC']]}),
-    StudentProfile.findOne({where:{userId:req.user.id}}),
-  ]);
-  if(!baseline&&!attempts.some(a=>a.status==='completed'||a.completedLessons?.length||Object.keys(a.quizScores||{}).length))return reject('Start learning and save some course progress, or complete an assessment, before finding career directions.');
-  try{
-    const evidence=await buildEvidence(attempts,plain(baseline),profile?.careerInterest,await activeCareerTracks());
-    if(!evidence.tracks.length)return reject('No career pathways are configured yet. Ask Admin to add the pathway rules.');
-    const learning=careerLearningContext(attempts,(await Credential.findAll({where:{userId:req.user.id,revoked:false}})).map(plain));
+  const json = req.get('accept')?.includes('application/json');
+  const reject = (message, status = 400) => {
+    if (json) return res.status(status).json({ ok: false, message });
+    req.flash('error_msg', message);
+    return res.redirect('/student/careers');
+  };
+  if (req.body.consent !== 'yes') return reject('Confirm permission to share your anonymised learning evidence.');
+  try {
+    const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks());
+    if (!evidence.completed.length) return reject('Pass at least one module before finding career matches.');
+    if (!evidence.tracks.length) return reject('Your passed modules do not yet have a scored competency linked to a configured pathway.');
+    const { learning } = evidence;
     const provider = await careerProvider();
     if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
-    const ai=await explainCareer(evidence,learning,provider);
-    if(!ai)return reject('AI is not configured. Ask Admin to configure the provider.',503);
-    req.session.careerAi={...ai,generatedAt:date(new Date()),fingerprint:careerFingerprint(evidence,learning)};
+    const ai = await explainCareer(evidence, learning, provider, { moduleOnly: true });
+    if (!ai) return reject('AI is not configured. Ask Admin to configure the provider.', 503);
+    req.session.careerAi = { ...ai, generatedAt: date(new Date()), fingerprint: careerFingerprint(evidence, learning) };
     req.session.careerMatchSearchUserId = req.user.id;
-    req.flash('success_msg','Career recommendations generated from your learning evidence.');
-    if(json)return res.json({ok:true,redirect:'/student/careers#ai-results'});
+    if (json) return res.json({ ok: true, redirect: '/student/careers#ai-results' });
     res.redirect('/student/careers#ai-results');
-  }catch(error){return reject(error.code?error.message:'AI guidance is temporarily unavailable. Your previous results and rule-based pathways remain available.',error.status||503);}
+  } catch (error) {
+    return reject(error.code ? error.message : 'AI guidance is temporarily unavailable. Your rule-based pathways remain available.', error.status || 503);
+  }
 };
+
 export const achievements = async (req, res) => {
   const allAttempts = await attemptsFor(req.user.id);
   const completed = allAttempts.filter(a => a.status === 'completed').sort((a,b) => new Date(a.completedAt) - new Date(b.completedAt));
@@ -796,8 +777,8 @@ export const certificate = async (req, res) => {
   const c = await ownedCredential(req); if (!c) return fail(res, 'Certificate not found.', 404);
   const attempt = await CourseAttempt.findByPk(c.attemptId);
   const request = attempt && await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' } });
-  const facultyAccount = await User.findByPk(request?.facultyId || attempt?.snapshot?.ownerId || (await Course.findByPk(attempt?.courseId))?.ownerId);
-  const facultySignature = c.facultySignature || request?.facultySignature || '';
+  const facultyAccount = await User.findByPk(attempt?.snapshot?.ownerId || request?.facultyId || (await Course.findByPk(attempt?.courseId))?.ownerId);
+  const signatureImage = (facultyAccount && await profileFacultySignature(facultyAccount.id)) || c.facultySignature || request?.facultySignature || '';
   const facultyName = c.facultyName || facultyAccount?.name || 'Course Faculty';
   const facultyPosition = c.facultyPosition || facultyAccount?.facultyPosition || 'Course Faculty';
   const logos = await Promise.all([
@@ -826,9 +807,9 @@ export const certificate = async (req, res) => {
   fitted(c.moduleTitle || c.courseTitle, 316, 23, 15, 48);
   doc.fillColor('#64748b').fontSize(8).text(footer, 75, 374, { width: 690, height: 22, align: 'center' });
   doc.moveTo(65, 425).lineTo(777, 425).lineWidth(0.6).stroke('#cbd5e1');
-  if (facultySignature) {
+  if (signatureImage) {
     try {
-      doc.image(Buffer.from(String(facultySignature).split(',').pop(), 'base64'), 65, 448, { fit: [150, 53], valign: 'center' });
+      doc.image(Buffer.from(String(signatureImage).split(',').pop(), 'base64'), 65, 448, { fit: [150, 53], valign: 'center' });
     } catch { /* Older credentials can contain an unreadable signature image. */ }
   }
   doc.fillColor('#172533').fontSize(10).text(facultyName, 65, 506, { width: 225, height: 15, ellipsis: true });

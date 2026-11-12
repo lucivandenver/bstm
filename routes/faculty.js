@@ -9,7 +9,7 @@ import * as c from '../controllers/facultyController.js';
 import {streamJob,issueTicket} from '../services/courseLive.js';
 const r = Router(); r.use(requireUser, requireFaculty);
 const upload = multer({ storage: sourceUploadStorage(), limits: { fileSize: sourceLimits.fileBytes + 1, files: sourceLimits.requestFiles, fields: 8 } });
-r.get('/', asyncRoute(c.dashboard)); r.get('/profile', c.profile); r.post('/profile', asyncRoute(c.saveProfile)); r.post('/connect-google', googleStart);
+r.get('/', asyncRoute(c.dashboard)); r.get('/profile', asyncRoute(c.profile)); r.post('/profile/signature', asyncRoute(c.saveFacultySignature)); r.post('/profile', asyncRoute(c.saveProfile)); r.post('/connect-google', googleStart);
 r.get('/courses', asyncRoute(c.courses)); r.get('/courses/new', (req,res)=>res.redirect('/faculty/upload')); r.post('/courses', asyncRoute(c.createCourse));
 r.post('/courses/:id/material', (req, res, next) => upload.single('material')(req, res, error => {
   if (error) return res.status(413).json({ message: 'Upload one PDF of up to 100 MB.' });

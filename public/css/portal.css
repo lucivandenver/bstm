@@ -114,5 +114,10 @@
 
 .card.publication-pending { border: 2px solid #c33b47; }
 .chip.pending-publication-label { margin-inline-start: auto; color: #a21b29; background: #fff0f1; }
-.card.publication-needs-review { border: 2px solid #cf650c; }
+.publication-needs-review { border: 2px solid #cf650c; }
 .chip.publication-review-label { color: #883600; background: #fff1e4; }
+
+.faculty-progress-actions { align-items: end; justify-content: flex-start; }
+.faculty-progress-actions .button.secondary { border-color: var(--green); }
+.faculty-progress-actions .button.secondary:is(:active, :focus-visible) { background: var(--green); color: #fff; }
+.faculty-module-progress { width: 100%; accent-color: var(--green); }

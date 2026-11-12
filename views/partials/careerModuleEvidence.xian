@@ -1,0 +1,7 @@
+<ul class="list-clean small">
+  {{#each supportingModules}}
+  <li><strong>{{title}}</strong> · Quiz {{score}}% · {{percent}}% progress
+    <ul>{{#each areas}}<li>{{name}} · {{score}}%</li>{{/each}}</ul>
+  </li>
+  {{/each}}
+</ul>

@@ -2,7 +2,7 @@
 <p class="small"><a href="/student/courses">← Back to catalog</a></p><div class="page-heading"><div><span class="chip">{{areaLabels course.competencyAreas course.domain}}</span><h1 class="space-top">{{course.title}}</h1><p class="muted">{{course.description}}</p></div></div><section class="space-top" aria-label="Course modules">
 <div class="grid cols-3">{{#each modules}}
 <article class="card module-card" id="module-{{id}}">
-<p class="eyebrow">Module {{number}}</p><h2>{{title}}</h2>
+<h2>{{title}}</h2>
 <p class="small muted">{{lessons.length}} topics</p>
 <details><summary>View topics</summary><ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol></details>
 {{#if progress}}
