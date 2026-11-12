@@ -121,3 +121,23 @@
 .faculty-progress-actions .button.secondary { border-color: var(--green); }
 .faculty-progress-actions .button.secondary:is(:active, :focus-visible) { background: var(--green); color: #fff; }
 .faculty-module-progress { width: 100%; accent-color: var(--green); }
+
+.app-header .workspace-title {
+  margin: 0;
+  color: var(--navy);
+  font-size: clamp(16px, 1.65vw, 24px);
+  font-weight: 800;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-role-dashboard] :is(.card, .stat-card) { border-color: #7db29a; }
+[data-role-dashboard] .publication-needs-review { border-color: #cf650c; }
+[data-role-dashboard="faculty"] .hero-banner { padding: clamp(16px, 2.1vw, 26px); }
+[data-role-dashboard="faculty"] .hero-banner h2 { font-size: clamp(22px, 2.1vw, 28px); }
+[data-role-dashboard="faculty"] .hero-banner p { margin: 6px 0 12px; }
+
+@media (max-width: 800px) {
+  .app-header .workspace-title { max-width: 44vw; }
+}
