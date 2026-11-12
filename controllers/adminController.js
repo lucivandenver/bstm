@@ -265,6 +265,7 @@ export const courses = async (req, res) => {
     return {
       ...plain(course), duplicateDraft: !course.published && !requests.length && courses.some(row =>
         row.published && row.ownerId === course.ownerId && duplicateTitle(row.title) === duplicateTitle(course.title)), moduleCount: course.modules.length, hasPending: requests.length > 0,
+      questionsByModule: Object.groupBy(course.questions, question => question.moduleId),
       pendingReview: requests.some(row => row.action === 'pending-review'),
       moduleSubmissions: requests.filter(row => row.action === 'module-pending').map(plain),
       archivedModules: archived.filter(row => row.courseId === course.id && row.snapshot?.module &&
@@ -447,17 +448,25 @@ export const declinePublication = async (req, res) => {
   res.redirect('/admin/courses?status=pending');
 };
 export const saveCourse = async (req, res) => {
-  const title = text(req.body.title, 160), domain = text(req.body.domain, 60), score = Number(req.body.passingScore);
-  if (!title || !domains.includes(domain) || !Number.isInteger(score) || score < 50 || score > 100) fail('Check course title, area and passing score (50–100).');
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE }); if (!course) fail('Course not found.');
+    const unpublishing = req.body.unpublish === 'yes';
+    if (unpublishing && req.body.version !== undefined && Number(req.body.version) !== course.version) fail('The course changed. Reload before unpublishing.');
+    const settings = unpublishing ? {} : {
+      title: text(req.body.title, 160), description: text(req.body.description, 2000),
+      domain: text(req.body.domain, 60), passingScore: Number(req.body.passingScore)
+    };
+    if (!unpublishing && (!settings.title || !domains.includes(settings.domain) ||
+        !Number.isInteger(settings.passingScore) || settings.passingScore < 50 || settings.passingScore > 100)) {
+      fail('Check course title, area and passing score (50-100).');
+    }
     const latest = !course.published && await latestCoursePublication(course, transaction);
     if (latest?.action === 'pending-review' && latest.version === course.version) fail('Resolve the pending submission first.');
-    const published = req.body.unpublish !== 'yes' && (course.published || !course.ownerId && req.body.published === 'true');
+    const published = !unpublishing && (course.published || !course.ownerId && req.body.published === 'true');
     const archivedForRepublication = !published && (course.published || await archivedCourseCanRepublish(course, transaction));
     if (published) publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-before-edit', snapshot: plain(course) }, { transaction });
-    await course.update({ title, description: text(req.body.description, 2000), domain, passingScore: score, published, version: course.version + 1 }, { transaction });
+    await course.update({ ...settings, published, version: course.version + 1 }, { transaction });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: course.published ? 'admin-published' : 'admin-archived', snapshot: { ...plain(course), archivedForRepublication } }, { transaction });
     await audit(req.user.id, 'course.updated', 'course', course.id, { version: course.version, published: course.published }, transaction);
   });

@@ -60,26 +60,18 @@ export const requireCompleteProfile = async (req, res, next) => {
   next();
 };
 export const dashboard = async (req, res) => {
-  const [attempts, profile, credentials, baseline, courses] = await Promise.all([
+  const [attempts, profile, credentials, baseline] = await Promise.all([
     attemptsFor(req.user.id), StudentProfile.findOne({ where: { userId: req.user.id } }),
     Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] }),
-    Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
-    Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } }, limit: 4 })
+    Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] })
   ]);
-  const section = await Section.findOne({ where: { name: req.user.section } });
-  const required = section ? await CourseAssignment.findAll({ where: { sectionId: section.id, required: true } }) : [];
-  const requiredCourses = await Course.findAll({ where: { id: { [Op.in]: required.map(r => r.courseId) }, published: true, ownerId: { [Op.not]: null } } });
-  const ownerIds = [...new Set([...courses, ...requiredCourses].map(course => course.ownerId).filter(Boolean))];
-  const approvedOwners = ownerIds.length ? await User.findAll({ where: { id: { [Op.in]: ownerIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id'] }) : [];
-  const approvedOwnerIds = new Set(approvedOwners.map(user => user.id));
   const completed = attempts.filter(a => a.status === 'completed');
-  const ongoing = (await visibleOngoingAttempts(attempts)).map(decorate);
+  const ongoing = await visibleOngoingAttempts(attempts);
   const { competencies } = moduleEvidence(attempts);
   render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
-    requiredCourses: requiredCourses.filter(c => approvedOwnerIds.has(c.ownerId)).map(c => ({ ...plain(c), done: attempts.some(a => a.courseId === c.id && a.status === 'completed'), due: date(required.find(r => r.courseId === c.id)?.dueAt) })), ongoing, completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
+    completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
     totalStars: credentials.reduce((sum, c) => sum + c.stars, 0), baseline: plain(baseline),
     competencies,
-    recommended: courses.filter(c => approvedOwnerIds.has(c.ownerId)).map(c => plain(c)),
     recentCredentials: credentials.slice(0, 3).map(c => ({ ...plain(c), date: date(c.issuedAt) })) });
 };
 export const profilePage = async (req, res) => {

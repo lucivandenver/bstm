@@ -1,40 +1,76 @@
-{{> adminTop}}<nav class="actions" aria-label="Course review filters"><a class="button {{#if pendingOnly}}secondary{{/if}}" href="/admin/courses">All courses</a><a class="button {{#unless pendingOnly}}secondary{{/unless}}" href="/admin/courses?status=pending">Pending publication ({{pendingCount}})</a></nav><div class="notice info">Faculty own the courses they create. Review submitted modules here before publishing them in the student catalog.</div><div class="stack">{{#each courses}}<details id="course-{{id}}" class="card editor-card {{#if hasPending}}publication-needs-review{{/if}}" {{#if hasPending}}open{{else}}{{#if canRepublish}}open{{else}}{{#if archivedModules.length}}open{{/if}}{{/if}}{{/if}}><summary>{{title}} {{#if hasPending}}<span class="chip publication-review-label">Pending</span>{{/if}} · {{#if published}}Published{{else}}{{#if pendingReview}}Pending review{{else}}Unpublished{{/if}}{{/if}}</summary>{{#if duplicateDraft}}<form class="space-top" method="post" action="/admin/courses/{{id}}/delete-duplicate" data-confirm="Delete this unpublished duplicate course?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button danger">Delete unpublished duplicate</button></form>{{/if}}<p class="small muted space-top">{{moduleCount}} modules{{#if starter}} · Starter content requiring faculty validation{{/if}}</p>{{#if canRepublish}}
-<form method="post" class="space-top" action="/admin/courses/{{id}}/republish" data-confirm="Republish this course and restore its modules to the student catalog?">
-<input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
-<button class="button">Republish course</button>
-</form>
-{{/if}}
-{{#each archivedModules}}
-<div class="row between space-top"><p>Archived module · {{snapshot.module.title}}</p>
+{{> adminTop}}<nav class="actions" aria-label="Course review filters"><a class="button {{#if pendingOnly}}secondary{{/if}}" href="/admin/courses">All courses</a><a class="button {{#unless pendingOnly}}secondary{{/unless}}" href="/admin/courses?status=pending">Pending publication ({{pendingCount}})</a></nav><div class="notice info">Faculty own the courses they create. Review submitted modules here before publishing them in the student catalog.</div><div class="stack">{{#each courses}}<article id="course-{{id}}" class="card oversight-card {{#if hasPending}}publication-needs-review{{/if}}">
+<div class="oversight-row">
+  <div class="oversight-title">
+    <h2>{{title}}</h2>
+    <span class="chip">{{#if published}}Published{{else}}{{#if pendingReview}}Pending review{{else}}Unpublished{{/if}}{{/if}}</span>
+  </div>
+  <div class="actions">
+  {{#unless ../pendingOnly}}
+  {{#if published}}<form method="post" action="/admin/courses/{{id}}" data-confirm="Unpublish this course from the student catalog?">
+    <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
+    <button class="button secondary" name="unpublish" value="yes">Unpublish</button>
+  </form>{{/if}}
+  {{#if canRepublish}}
+  <form method="post" action="/admin/courses/{{id}}/republish" data-confirm="Republish this course and restore its modules to the student catalog?">
+    <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
+    <button class="button">Republish course</button>
+  </form>
+  {{/if}}
+  {{/unless}}
+  </div>
+</div>
+{{#unless ../pendingOnly}}{{#each archivedModules}}
+<section class="oversight-module"><div class="oversight-row"><h3>{{snapshot.module.title}} <span class="chip">Archived</span></h3>
 <form method="post" action="/admin/courses/{{../id}}/republish" data-confirm="Restore this module to the student catalog?">
 <input type="hidden" name="_csrf" value="{{../../csrf}}"><input type="hidden" name="revisionId" value="{{id}}">
 <button class="button">Republish module</button>
 </form></div>
-{{/each}}{{#each moduleSubmissions}}<section class="card space-top publication-needs-review"><h3>Pending module · {{snapshot.module.title}}</h3>
-{{> badgePreview title=../title}}
-{{#if ../certificateEnabled}}{{> certificatePreview title=snapshot.module.title institution=../../institutionName signature=../signature name=../facultyName}}{{#unless ../signature}}<p class="notice info">Faculty signature missing.</p>{{/unless}}{{/if}}
+<details class="oversight-details"><summary><span class="oversight-show">View module content</span><span class="oversight-hide">Hide module content</span></summary>
 {{#each snapshot.module.lessons}}<details><summary>{{title}}</summary><p>{{body}}</p></details>{{/each}}
-<ol>{{#each snapshot.questions}}<li><strong>{{prompt}}</strong><ol>{{#each options}}<li>{{this}}{{#if (eq @index ../answer)}} <strong>Correct answer</strong>{{/if}}</li>{{/each}}</ol><p>{{explanation}}</p></li>{{/each}}</ol>
-<form method="post" action="/admin/courses/{{../id}}/approve-publication"><input type="hidden" name="_csrf" value="{{../../csrf}}"><input type="hidden" name="revisionId" value="{{id}}"><button class="button" {{#if ../certificateEnabled}}{{#unless ../signature}}disabled{{/unless}}{{/if}}>Approve &amp; publish module</button></form>
-<details class="space-top"><summary class="button secondary">Decline</summary>
+{{> oversightQuestions questions=snapshot.questions}}
+</details></section>
+{{/each}}{{/unless}}{{#each moduleSubmissions}}
+<section class="oversight-module">
+<div class="oversight-row"><h3>Pending module · {{snapshot.module.title}}</h3>
+<div class="actions"><form method="post" action="/admin/courses/{{../id}}/approve-publication"><input type="hidden" name="_csrf" value="{{../../csrf}}"><input type="hidden" name="revisionId" value="{{id}}"><button class="button" {{#if ../certificateEnabled}}{{#unless ../signature}}disabled{{/unless}}{{/if}}>Approve &amp; publish module</button></form>
+<details><summary class="button secondary">Decline</summary>
 <form class="space-top" method="post" action="/admin/courses/{{../id}}/decline-publication">
 <input type="hidden" name="_csrf" value="{{../../csrf}}"><input type="hidden" name="revisionId" value="{{id}}">
 <label class="field">Revision notes or reason for declining<textarea name="reason" maxlength="1000" rows="3" required></textarea></label>
 <button class="button module-delete">Confirm decline</button>
 </form></details>
-</section>{{/each}}{{#if pendingReview}}
-{{#if certificateEnabled}}{{> badgePreview title=title}}{{#unless signature}}<p class="notice info">Faculty signature missing. Ask the faculty member to save their signature before publishing.</p>{{/unless}}{{#each modules}}<details><summary>Certificate · {{title}}</summary>{{> certificatePreview title=title institution=../../institutionName signature=../signature name=../facultyName}}</details>{{/each}}{{/if}}<h3>Submitted modules</h3>
-{{#each modules}}<details><summary>{{title}}</summary>{{#each lessons}}<h4>{{title}}</h4><p>{{body}}</p>{{/each}}</details>{{/each}}
-<h3>Assessment questions</h3>
-<ol>{{#each questions}}<li>{{prompt}}<ul>{{#each options}}<li>{{this}}</li>{{/each}}</ul></li>{{/each}}</ol>
+</div></div>
+<details class="oversight-details"><summary><span class="oversight-show">View module content</span><span class="oversight-hide">Hide module content</span></summary>
+{{> badgePreview title=../title}}
+{{#if ../certificateEnabled}}{{> certificatePreview title=snapshot.module.title institution=../../institutionName signature=../signature name=../facultyName}}{{#unless ../signature}}<p class="notice info">Faculty signature missing.</p>{{/unless}}{{/if}}
+{{#each snapshot.module.lessons}}<details><summary>{{title}}</summary><p>{{body}}</p></details>{{/each}}
+{{> oversightQuestions questions=snapshot.questions}}
+</details>
+</section>{{/each}}
+{{#if pendingReview}}
+<div class="actions oversight-review-actions">
 <form method="post" action="/admin/courses/{{id}}/approve-publication">
 <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
 <button class="button" {{#if certificateEnabled}}{{#unless signature}}disabled{{/unless}}{{/if}}>Approve &amp; publish{{#if certificateEnabled}} with certificates{{/if}}</button>
 </form>
-<details class="space-top"><summary class="button secondary">Decline</summary>
+<details><summary class="button secondary">Decline</summary>
 <form class="space-top" method="post" action="/admin/courses/{{id}}/decline-publication">
 <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
 <label class="field">Revision notes or reason for declining<textarea name="reason" maxlength="1000" rows="3" required></textarea></label>
 <button class="button module-delete">Confirm decline</button>
 </form></details>
-{{/if}}{{#unless pendingReview}}<form method="post" action="/admin/courses/{{id}}"><input type="hidden" name="version" value="{{version}}"><input type="hidden" name="_csrf" value="{{../csrf}}"><div class="grid cols-2"><div class="field"><label>Title<input name="title" value="{{title}}" required maxlength="160"></label></div><div class="field"><label>Competency area<select name="domain">{{#each ../domains}}<option {{selected this ../domain}}>{{this}}</option>{{/each}}</select></label></div><div class="field"><label>Passing score<input name="passingScore" type="number" min="50" max="100" value="{{passingScore}}" required></label></div><div class="field"><label>Description<textarea name="description" rows="3" maxlength="2000">{{description}}</textarea></label></div></div>{{#if published}}<button class="button secondary" name="unpublish" value="yes">Unpublish</button>{{/if}}<button class="button">Save settings</button></form>{{/unless}}</details>{{else}}<div class="card empty">{{#if pendingOnly}}No courses are pending publication.{{else}}No courses yet.{{/if}}</div>{{/each}}</div>{{> adminBottom}}
+</div>
+<details class="oversight-details"><summary><span class="oversight-show">View submitted course content</span><span class="oversight-hide">Hide submitted course content</span></summary>
+{{#if certificateEnabled}}{{> badgePreview title=title}}{{#unless signature}}<p class="notice info">Faculty signature missing. Ask the faculty member to save their signature before publishing.</p>{{/unless}}{{#each modules}}<details><summary>Certificate · {{title}}</summary>{{> certificatePreview title=title institution=../../institutionName signature=../signature name=../facultyName}}</details>{{/each}}{{/if}}<h3>Submitted modules</h3>
+{{#each modules}}<details><summary>{{title}}</summary>{{#each lessons}}<h4>{{title}}</h4><p>{{body}}</p>{{/each}}</details>{{/each}}
+<h3>Assessment questions</h3>
+<ol>{{#each questions}}<li>{{prompt}}<ul>{{#each options}}<li>{{this}}</li>{{/each}}</ul></li>{{/each}}</ol>
+</details>
+{{/if}}
+{{#unless pendingReview}}{{#unless ../pendingOnly}}
+<details class="oversight-details"><summary><span class="oversight-show">View course content and settings</span><span class="oversight-hide">Hide course content and settings</span></summary>
+<p class="small muted">{{moduleCount}} modules{{#if starter}} · Starter content requiring faculty validation{{/if}}</p>
+{{#each modules}}<details><summary>{{title}}</summary>{{#each lessons}}<h4>{{title}}</h4><p>{{body}}</p>{{/each}}
+{{> oversightQuestions questions=(lookup ../questionsByModule id)}}
+</details>{{/each}}
+{{#if duplicateDraft}}<form class="space-top" method="post" action="/admin/courses/{{id}}/delete-duplicate" data-confirm="Delete this unpublished duplicate course?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button danger">Delete unpublished duplicate</button></form>{{/if}}<form method="post" action="/admin/courses/{{id}}"><input type="hidden" name="version" value="{{version}}"><input type="hidden" name="_csrf" value="{{../csrf}}"><div class="grid cols-2"><div class="field"><label>Title<input name="title" value="{{title}}" required maxlength="160"></label></div><div class="field"><label>Competency area<select name="domain">{{#each ../domains}}<option {{selected this ../domain}}>{{this}}</option>{{/each}}</select></label></div><div class="field"><label>Passing score<input name="passingScore" type="number" min="50" max="100" value="{{passingScore}}" required></label></div><div class="field"><label>Description<textarea name="description" rows="3" maxlength="2000">{{description}}</textarea></label></div></div><button class="button">Save settings</button></form></details>{{/unless}}{{/unless}}</article>{{else}}<div class="card empty">{{#if pendingOnly}}No courses are pending publication.{{else}}No courses yet.{{/if}}</div>{{/each}}</div>{{> adminBottom}}
