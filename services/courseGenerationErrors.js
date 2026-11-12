@@ -93,6 +93,10 @@ const messages = {
     503,
   ],
   COURSE_DUPLICATE_MODULE: ["A published module already uses this name or content.", 409],
+  COURSE_TARGET_NOT_MET: [
+    "The draft did not reach the requested counts after retrying missing items. Review the available counts, then retry, lower the target, or add supporting material.",
+    422,
+  ],
   COURSE_INPUT: [
     "Select one or more competency areas and choose 3–30 questions.",
     400,

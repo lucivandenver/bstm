@@ -115,6 +115,10 @@ export async function courseJobStatus(userId, id) {
     moduleTitle: job.state?.options?.moduleTitle || null,
     completed: job.state?.batches?.length || 0,
     total: job.state?.total || 0,
+    provider: job.state?.failureProvider || job.state?.provider,
+    model: job.state?.failureModel || job.state?.model,
+    phase: job.status,
+    counts: job.state?.counts,
     ...(progress || {}),
     ...(job.courseId
       ? {
@@ -126,6 +130,7 @@ export async function courseJobStatus(userId, id) {
     ...(job.status === "failed"
       ? {
           code: job.errorCode,
+          failureStage: job.state?.failureStage,
           message: generationError(job.errorCode).message,
           reference: job.state?.reference,
           retryAt: job.state?.retryAt,

@@ -187,6 +187,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     }
     const savedForm = await f.get(`/faculty/sources/${sourceId}`);
     assert.match(savedForm.html, /value="Saved material settings"/);
+    assert.doesNotMatch(savedForm.html, /name="topicCount"/);
     assert.match(savedForm.html, /Preserved outcome/);
     assert.match(savedForm.html, /value="12"/);
     let source = await SourceDocument.findByPk(sourceId);
@@ -240,6 +241,18 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const data = JSON.parse(JSON.parse(init.body).contents[0].parts[0].text);
       seen.push(data);
       await new Promise((r) => setTimeout(r, 60));
+      if (data.kind) {
+        const section = data.excerpts[0];
+        const items = Array.from({ length: data.moduleTitle === "Insufficient module" ? 0 : data.missing }, (_, index) => data.kind === "topics" ? {
+          title: `Booking topic ${data.accepted.length + index + 1}`, body: `${section.text.slice(0, 120)} Scenario ${data.accepted.length + index + 1}.`,
+          takeaways: ["Confirm requirements."], sourceReference: section.reference, sourceQuote: section.text.slice(0, 60)
+        } : {
+          moduleIndex: 0, lessonIndex: index % data.topics.length, prompt: `How should you confirm booking in example ${data.accepted.length + index + 1}?`,
+          options: ["Confirm requirements", "Ignore safety"], answer: 0, explanation: "Check the requirements before confirming.",
+          sourceReference: section.reference, sourceQuote: section.text.slice(0, 60)
+        });
+        return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ items }) }] } }] });
+      }
       if (data.selectedCompetencyAreas) return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: "Tourism information systems", description: "Understand tourism booking concepts.", outcomes: ["Verify guest requirements and safe bookings."], competencyAreas: data.selectedCompetencyAreas, modules: data.sections.slice(0, 3).map((section, index) => ({ title: `Tourism booking concepts ${index + 1}`, outcomes: ["Verify booking requirements."], sourceReference: section.reference })) }) }] } }] });
       return Response.json({
         candidates: [
@@ -362,7 +375,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const started = await f.request(`/faculty/sources/${sourceId}/generate`, {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
-        body: new URLSearchParams({ destinationId, moduleTitle, topicCount: 6, topicTitles: "Verify guest requirements", domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
+        body: new URLSearchParams({ destinationId, moduleTitle, ...(moduleTitle.startsWith("First") ? { topicCount: 6 } : {}), topicTitles: "Verify guest requirements", domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
       });
       assert.equal(started.status, 202, started.html);
       const { statusUrl: moduleStatusUrl } = JSON.parse(started.html);
@@ -375,17 +388,42 @@ test("three large files upload incrementally, retry without duplicates, and gene
       }
       assert.equal(moduleStatus.status, "completed", JSON.stringify(moduleStatus));
       assert.match(moduleStatus.redirect, new RegExp(`/faculty/courses/${destinationId}/edit\\?revision=\\d+`));
-      assert.match((await f.get(moduleStatus.redirect)).html, /data-module-editor/);
+      const explicitTopics = moduleTitle.startsWith("First");
+      assert.deepEqual(moduleStatus.counts, { requestedTopics: explicitTopics ? 6 : null, requestedQuestions: 8,
+        generatedTopics: explicitTopics ? 6 : 1, generatedQuestions: 8 });
+      const review = await f.get(moduleStatus.redirect);
+      assert.match(review.html, /data-module-editor/);
+      assert.match(review.html, explicitTopics ? /Requested: 6 topics, 8 questions/ : /Requested: 8 questions/);
     }
     const anchoredCourse = await Course.findByPk(destinationId);
     assert.equal(anchoredCourse.title, "FACULTY-OWNED COURSE");
     assert.deepEqual(anchoredCourse.modules.map(module => [module.number, module.title]), [[1, "First generated module"], [2, "Second generated module"]]);
     assert.equal(anchoredCourse.published, false);
     assert.ok(anchoredCourse.modules.every(module => module.materials.length === 3));
+    assert.ok(seen.some(payload => payload.kind === "topics" && payload.accepted.includes("Verify the booking")));
+    assert.ok(seen.some(payload => payload.kind === "questions" && payload.missing < 8 && payload.accepted.length));
     assert.ok(anchoredCourse.questions.every(question => anchoredCourse.modules
       .find(module => module.id === question.moduleId).lessons.some(lesson => lesson.id === question.lessonId)));
     assert.ok(seen.some(payload => payload.moduleTitle === "Second generated module" &&
       payload.preferredTopicTitles?.includes("Verify guest requirements")));
+    const insufficientStart = await f.request(`/faculty/sources/${sourceId}/generate`, {
+      method: "POST",
+      headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
+      body: new URLSearchParams({ destinationId, moduleTitle: "Insufficient module",
+        domain: "Tourism knowledge", questionCount: 8, consent: "yes", background: "yes" })
+    });
+    assert.equal(insufficientStart.status, 202);
+    const insufficientUrl = JSON.parse(insufficientStart.html).statusUrl;
+    let insufficient;
+    for (let n = 0; n < 80; n++) {
+      insufficient = JSON.parse((await f.request(insufficientUrl, { headers: { Accept: "application/json" } })).html);
+      if (insufficient.status !== "running") break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(insufficient.code, "COURSE_TARGET_NOT_MET");
+    assert.ok(insufficient.counts.generatedQuestions < insufficient.counts.requestedQuestions);
+    assert.equal((await anchoredCourse.reload()).modules.length, 2);
+
     let failedCalls = 0;
     globalThis.fetch = async (url, init) => {
       if (!String(url).startsWith("https://generativelanguage.googleapis.com/"))

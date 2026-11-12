@@ -204,7 +204,7 @@ export const editor = async (req, res) => {
   const revision = req.query.revision ? moduleSubmissions[0] : null;
   const scopedDraft = revision?.action === 'module-draft';
   const editorCourse = scopedDraft ? { ...course, modules: [revision.snapshot.module], questions: revision.snapshot.questions } : course;
-  render(res, 'editor', { editorCourse, scopedDraft, editorEnabled: scopedDraft || !revision, revisionId: revision?.id, title: req.query.revision ? moduleSubmissions[0].snapshot.module.title : 'Revise course',
+  render(res, 'editor', { editorCourse, generation: revision?.snapshot.generation, scopedDraft, editorEnabled: scopedDraft || !revision, revisionId: revision?.id, title: req.query.revision ? moduleSubmissions[0].snapshot.module.title : 'Revise course',
     moduleOnly: Boolean(req.query.revision), moduleState, signatureMissing, moduleSubmissions: scopedDraft ? [] : moduleSubmissions.map(row => ({ ...plain(row), pending: row.action === 'module-pending' })), destinations: destinations.map(plain), backUrl: req.query.revision ? `/faculty/courses?list=${moduleSubmissions[0].action === 'module-pending' ? 'active' : 'drafts'}&course=${course.id}` : '/faculty/courses', course, domains, bank: bank.map(plain), otherCourses: otherCourses.map(plain), revisions: revisions.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
 };
 async function storeSourceFile(source, document, transaction) {
@@ -840,10 +840,10 @@ export const generate = async (req, res) => {
           const duplicate = duplicateModule(savedArray(destination.modules), { title: moduleTitle, materials });
           if (duplicate) throw generationError('COURSE_DUPLICATE_MODULE', duplicateModuleMessage(duplicate));
         }
-        const topicCount = Number(req.body.topicCount ?? 5);
-        if (!Number.isInteger(topicCount) || topicCount < 5 || topicCount > 30) throw generationError('COURSE_INPUT', 'Choose a topic target from 5 to 30.');
+        const topicCount = req.body.topicCount == null || req.body.topicCount === "" ? null : Number(req.body.topicCount);
+        if (topicCount !== null && (!Number.isInteger(topicCount) || topicCount < 5 || topicCount > 30)) throw generationError('COURSE_INPUT', 'Choose a topic target from 5 to 30.');
         const topicTitles = values.topicTitles.split(/\r?\n/).map(title => text(title, 160)).filter(Boolean);
-        if (topicTitles.length > topicCount) throw generationError('COURSE_INPUT', 'The preferred topic list exceeds the topic target.');
+        if (topicCount !== null && topicTitles.length > topicCount) throw generationError('COURSE_INPUT', 'The preferred topic list exceeds the topic target.');
         options.topicCount = topicCount;
         options.topicTitles = [...new Set(topicTitles)];
         options.destinationId = destination.id;
