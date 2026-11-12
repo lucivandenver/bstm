@@ -65,18 +65,22 @@ export const assessmentSubmissions = (attempt, scope) => attempt.quizAttempts.fi
   result.scope === scope && (scope !== 'final' ||
     (result.finalAssessmentRevision || 0) === (attempt.snapshot.finalAssessmentRevision || 0)));
 
-export async function draftFor(userId, attempt, scope, transaction) {
+export async function draftFor(userId, attempt, scope, transaction, startTimer = true) {
   const lastResult = assessmentSubmissions(attempt, scope).findLast(item => !item.expired);
   const [draft] = await QuizDraft.findOrCreate({
     where: { userId, attemptId: attempt.id, scope },
-    defaults: { answers: {}, startedAt: new Date(), revision: lastResult?.nextDraftRevision ?? 0 },
+    defaults: { answers: {}, startedAt: startTimer ? new Date() : null, revision: lastResult?.nextDraftRevision ?? 0 },
     transaction
   });
+  if (startTimer && !draft.startedAt) {
+    await QuizDraft.update({ startedAt: new Date() }, { where: { id: draft.id, startedAt: null }, transaction });
+    await draft.reload({ transaction });
+  }
   return draft;
 }
 export function checkQuizLimits(attempt, scope, draft) {
   const p = attempt.snapshot.policy || {}, taken = assessmentSubmissions(attempt, scope).length;
   if (scope !== 'pretest' && p.attemptLimit && taken >= p.attemptLimit) fail('Assessment attempt limit reached. Ask your faculty for a new learning attempt or remediation.', 403);
-  if (p.quizMinutes && Date.now() - new Date(draft.startedAt) > p.quizMinutes * 60000) fail('Assessment time expired. Your saved answers are retained; restart the assessment to use another permitted attempt.', 409);
+  if (p.quizMinutes && draft.startedAt && Date.now() - new Date(draft.startedAt) > p.quizMinutes * 60000) fail('Assessment time expired. Your saved answers are retained; restart the assessment to use another permitted attempt.', 409);
 }
 

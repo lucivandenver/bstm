@@ -111,6 +111,13 @@ for (const navigation of document.querySelectorAll('.assessment-topic-actions'))
     next.hidden = current === topics.length - 1;
     submit.hidden = !next.hidden;
     status.textContent = `Topic ${current + 1} of ${topics.length}`;
+    const activeId = topics[current].id.slice('topic-'.length);
+    for (const link of document.querySelectorAll('[data-outline-quiz]')) {
+      const active = link.dataset.outlineQuiz === activeId;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'step');
+      else link.removeAttribute('aria-current');
+    }
     if (focus) topics[current].querySelector('h2')?.focus();
   }
   navigation.hidden = false;
@@ -133,10 +140,17 @@ for (const navigation of document.querySelectorAll('.assessment-topic-actions'))
 for (const form of document.querySelectorAll('[data-inline-topic]')) {
   const outline = [...document.querySelectorAll('[data-outline-quiz]')]
     .find(link => link.dataset.outlineQuiz === form.dataset.inlineTopic);
+  const next = [...document.querySelectorAll('[data-topic-continue]')]
+    .find(item => item.dataset.topicContinue === form.dataset.inlineTopic)?.querySelector('button');
+  form.addEventListener('change', () => {
+    if (next) next.disabled = true;
+  });
   form.addEventListener('draftsaved', () => {
-    if (!outline || [...form.querySelectorAll('fieldset')].some(question => !question.querySelector('input:checked'))) return;
+    if ([...form.querySelectorAll('fieldset')].some(question => !question.querySelector('input:checked'))) return;
+    if (next) next.disabled = false;
+    if (!outline) return;
     const circle = outline.querySelector('.check-circle');
-    circle.classList.remove('is-empty');
+    circle.classList.remove('is-empty', 'is-current');
     circle.classList.add('is-complete');
     circle.textContent = '✓';
     outline.querySelector('[data-topic-state]').textContent = 'Answered';

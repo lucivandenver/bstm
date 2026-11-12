@@ -138,13 +138,18 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const answer=scope=>s.post(`/student/learn/${id}/${scope==='final'?'final':'quiz/'+scope}`,{challenge:token(scope),'answers[q1]':'0'});
     assert.equal((await answer('pretest')).status,302);
     r=await s.get(`/student/learn/${id}?lesson=l1`);
-    assert.match(r.html, /<button class="button" disabled>Complete/);
+    assert.doesNotMatch(r.html, /data-lesson-challenge=/);
+    assert.doesNotMatch((await s.get('/student/learning')).html, /class="card learning-card"/);
+    assert.equal((await s.get(`/student/learn/${id}/quiz/m1`)).status, 403);
+    assert.equal((await s.post(confirmUrl, { read: 'yes' })).location, `/student/learn/${id}?lesson=l1`);
+    assert.match((await s.get('/student/learning')).html, /Continue Learning/);
+    const startedCard = (await s.get(`/student/courses/${c.id}`)).html;
+    assert.match(startedCard, /role="progressbar"/);
+    assert.doesNotMatch(startedCard, /Save module/);
+    r=await s.get(`/student/learn/${id}?lesson=l1`);
     const lessonChallenge=r.html.match(/data-lesson-challenge="([^"]+)"/)[1];
     r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.status,400);
-    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}?lesson=l1`);
-    assert.equal((await s.get(`/student/learn/${id}/quiz/m1`)).status, 403);
-    assert.equal((await s.post(confirmUrl, { read: 'yes' })).location, `/student/learn/${id}/quiz/m1`);
-    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1'});assert.equal(r.location,`/student/learn/${id}/quiz/m1`,'Continue from completed lesson opens pending quiz');
+    r=await s.post(`/student/learn/${id}/complete`,{lessonId:'l1',lessonChallenge});assert.equal(r.location,`/student/learn/${id}?lesson=l1#topic-quiz`);
     const inlineQuiz = await s.get(`/student/learn/${id}?lesson=l1`);
     assert.match(inlineQuiz.html, /1\.1 Quiz/);
     assert.match(inlineQuiz.html, /name="answers\[q1\]"/);
@@ -167,6 +172,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal(failedFinal.status, 302);
     const failedResult = await s.get(failedFinal.location);
     assert.match(failedResult.html, /Below passing score/);
+    assert.equal((await s.get(`/student/learn/${id}/review/final`)).status, 403);
     assert.match(failedResult.html, /Would you like to try again/);
     assert.equal((await o.get(failedFinal.location)).status, 404);
     assert.equal(await Credential.count(), 0);
@@ -176,7 +182,8 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const passedFinal = await s.post(finalUrl, { challenge: token('final'), 'answers[q1]': '0', 'answers[q2]': '0' });
     assert.equal(passedFinal.status, 302);
     await assessmentAttempt.update({ snapshot: originalSnapshot });
-    assert.match((await s.get(passedFinal.location)).html, /Passed/);
+    assert.match((await s.get(passedFinal.location)).html, /Review submitted final feedback/);
+    assert.equal((await s.get(`/student/learn/${id}/review/final`)).status, 200);
     assert.equal((await CourseAttempt.findByPk(id)).status,'ongoing');assert.equal(await Credential.count(),0,'practical and feedback gate awards');
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,title:'Updated course version'}),action:'publish'});assert.equal(r.status,302);assert.equal((await Course.findByPk(c.id)).version,2);assert.equal((await CourseAttempt.findByPk(id)).snapshot.title,draft.title);assert.ok(await CourseRevision.count()>=3);
     assert.equal((await Course.findByPk(c.id)).published, false);
@@ -409,12 +416,30 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await a.post(`/admin/courses/${studentCourse.id}/approve-publication`, { revisionId: pending.id })).status, 302);
     const published = await s.get(catalogUrl);
     assert.match(published.html, /Independent module/);
-    assert.equal((published.html.match(/Take assessment/g) || []).length, 2);
+    assert.equal((published.html.match(/Take assessment/g) || []).length, 1);
+    assert.match(published.html, /Failed · Quiz score 50%/);
+    assert.match(published.html, /Continue Learning/);
     assert.equal((await s.post(catalogUrl + '/enroll', { moduleId: 'm2' })).location, learnUrl + '?lesson=' + moduleTwo.lessons[0].id);
-    assert.match((await s.get('/student/learning')).html, /Independent module/);
+    assert.doesNotMatch((await s.get('/student/learning')).html, /Independent module/);
+    assert.equal((await s.post(catalogUrl + '/modules/m2/save', {})).status, 302);
+    assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
     assert.equal((await learnerAttempt.reload()).quizScores.m1, 50);
     assert.deepEqual(learnerAttempt.completedLessons, ['l1']);
     await learnerAttempt.update({ completedLessons: ['l1', ...moduleTwo.lessons.map(lesson => lesson.id)] });
+    assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 302);
+    for (const lesson of moduleTwo.lessons) {
+      const page = await s.get(learnUrl + '?lesson=' + lesson.id);
+      assert.equal(page.status, 200);
+      const revision = page.html.match(/data-revision="([0-9]+)"/);
+      if (!revision) continue;
+      const ids = [...new Set([...page.html.matchAll(/name="answers\[([^\]]+)\]"/g)].map(match => match[1]))];
+      const answers = Object.fromEntries(ids.map(id => [id, String(moduleTwoQuestions.find(question => question.id === id).answer)]));
+      const saved = await s.request(learnUrl + '/draft/m2?topic=' + lesson.id, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': s.csrf },
+        body: JSON.stringify({ revision: Number(revision[1]), answers })
+      });
+      assert.equal(saved.status, 200);
+    }
     assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 200);
     const answers = Object.fromEntries(moduleTwoQuestions.map(question => [`answers[${question.id}]`, String(question.answer)]));
     const submitted = await s.post(learnUrl + '/quiz/m2', {
@@ -424,7 +449,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await learnerAttempt.reload()).quizScores.m2, 100);
     assert.equal((await s.get(learnUrl + '/final')).status, 403);
     assert.equal((await s.post(catalogUrl + '/modules/m2/save', {})).status, 302);
-    assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
+    assert.doesNotMatch((await s.get('/student/courses?view=saved')).html, /Independent module/);
 
     assert.equal((await f2.post(`/faculty/courses/${studentCourse.id}/module/m2/unpublish`, {})).status, 302);
     assert.doesNotMatch((await s.get(catalogUrl)).html, /Independent module/);
@@ -435,7 +460,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await learnerAttempt.update({ status: 'completed', finalScore: 100, completedLessons: ['l1'], quizScores: { m1: 100 } });
     const archived = await CourseRevision.findOne({ where: { courseId: studentCourse.id, action: 'module-archived' } });
     assert.equal((await a.post(`/admin/courses/${studentCourse.id}/republish`, { revisionId: archived.id })).status, 302);
-    assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
+    assert.doesNotMatch((await s.get('/student/courses?view=saved')).html, /Independent module/);
     const nextStart = await s.post(catalogUrl + '/enroll', { moduleId: 'm2' });
     const nextAttempt = await CourseAttempt.findOne({ where: { courseId: studentCourse.id, userId: student.id, attemptNumber: 2 } });
     assert.equal(nextStart.location, `/student/learn/${nextAttempt.id}?lesson=${moduleTwo.lessons[0].id}`);

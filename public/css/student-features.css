@@ -94,3 +94,10 @@ button.award-tile {
   .lesson-outline .lesson-link { min-height: 44px; }
   .lesson-outline summary { padding-block: .65rem; }
 }
+
+@media (min-width: 801px) {
+  .lesson-sidebar {
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+  }
+}
