@@ -92,6 +92,8 @@ export const courses = async (req, res) => {
   catch(error) { console.error('[Faculty course list]',JSON.stringify({resource:'courses',name:error.name,code:error.original?.code||error.parent?.code||null})); courses=[]; databaseNotice='The course list could not read course records. Ask Admin to check the database migration and connection, then refresh.'; }
   const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 160) : '';
   const archived = req.query.list === 'archive';
+  const drafts = req.query.list === 'drafts' || (!archived && req.query.status === 'draft');
+  const list = archived ? 'archive' : drafts ? 'drafts' : 'active';
   const status = !archived && ['pending', 'approved', 'draft'].includes(req.query.status) ? req.query.status : '';
   const revisions = courses.length ? await CourseRevision.findAll({
     where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] } },
@@ -108,17 +110,23 @@ export const courses = async (req, res) => {
     const historicalAttempts = await CourseAttempt.findAll({ where: { courseId: unpublishedIds }, attributes: ['courseId'], group: ['courseId'] });
     for (const attempt of historicalAttempts) previouslyPublished.add(attempt.courseId);
   }
+  const courseById = new Map(courses.map(course => [course.id, course]));
+  const moduleDrafts = drafts && !archived && courses.length ? (await CourseRevision.findAll({
+    where: { courseId: [...courseById.keys()], actorId: req.user.id, action: 'module-draft' }, order: [['id', 'DESC']]
+  })).map(row => ({
+    courseId: row.courseId, courseTitle: courseById.get(row.courseId).title, title: row.snapshot.module.title
+  })).filter(row => `${row.courseTitle} ${row.title}`.toLowerCase().includes(query.toLowerCase())) : [];
   const matches = courses.filter(course => {
     const revision = latest.get(course.id);
     const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
     const courseStatus = course.published ? 'approved' : pendingPublication(course, revision) ? 'pending' : 'draft';
-    return isArchived === archived && (!status || status === courseStatus) && [course.title, ...savedArray(course.modules).map(module => module.title)]
+    return isArchived === archived && (archived || drafts === (courseStatus === 'draft')) && (!status || status === courseStatus) && [course.title, ...savedArray(course.modules).map(module => module.title)]
       .some(title => String(title || '').toLowerCase().includes(query.toLowerCase()));
   });
   const pageCount = Math.max(1, Math.ceil(matches.length / 4));
   const page = Math.min(pageCount, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
-  const listUrl = (number, archive = archived) => '/faculty/courses?' + new URLSearchParams({
-    q: query, list: archive ? 'archive' : 'active', status: archive ? '' : status, page: String(number)
+  const listUrl = (number, tab = list) => '/faculty/courses?' + new URLSearchParams({
+    q: query, list: tab, status: tab === list ? status : '', page: String(number)
   });
   courses = matches.slice((page - 1) * 4, page * 4);
   const ids = courses.map(c => c.id);
@@ -127,8 +135,8 @@ export const courses = async (req, res) => {
     const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
     [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
   }
-  render(res, 'courses', { title: archived ? 'Archived courses' : 'My courses', databaseNotice, query, status, archived, page, pageCount,
-    activeUrl: listUrl(1, false), archiveUrl: listUrl(1, true),
+  render(res, 'courses', { title: archived ? 'Archived courses' : drafts ? 'Draft courses' : 'My courses', databaseNotice, query, status, archived, drafts, list, moduleDrafts, page, pageCount,
+    activeUrl: listUrl(1, 'active'), draftsUrl: listUrl(1, 'drafts'), archiveUrl: listUrl(1, 'archive'),
     previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), title: c.title.toUpperCase(), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !pendingPublication(c, latest.get(c.id)) && !hasHistory }; }) });
 };
 export const editor = async (req, res) => {
@@ -217,11 +225,12 @@ export const attachGeneratedModule = async (req, res) => {
     const number = Number(req.body.moduleNumber);
     const title = text(req.body.moduleTitle, 160) || module.title;
     const id = newModuleId();
+    const lessonIds = new Map(module.lessons.map(lesson => [lesson.id, newModuleId()]));
     const questions = savedArray(source.questions).filter(question => question.moduleId === module.id);
     const data = courseInput({
       ...plain(destination),
-      modules: [...modules, { ...module, id, title, number, lessons: module.lessons.map(lesson => ({ ...lesson, id: newModuleId(), sourceReviewed: false })) }],
-      questions: [...savedArray(destination.questions), ...questions.map(question => ({ ...question, id: newModuleId(), moduleId: id, reviewed: false }))]
+      modules: [...modules, { ...module, id, title, number, lessons: module.lessons.map(lesson => ({ ...lesson, id: lessonIds.get(lesson.id), sourceReviewed: false })) }],
+      questions: [...savedArray(destination.questions), ...questions.map(question => ({ ...question, id: newModuleId(), moduleId: id, lessonId: lessonIds.get(question.lessonId), reviewed: false }))]
     }, { draft: true });
     await CourseRevision.create({ courseId: destination.id, actorId: req.user.id, version: destination.version, action: 'before-edit', snapshot: plain(destination) }, { transaction });
     await destination.update({ modules: data.modules, questions: data.questions, awardsApproved: false, version: destination.version + 1 }, { transaction });

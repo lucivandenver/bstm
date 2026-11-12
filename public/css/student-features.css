@@ -92,3 +92,13 @@ button.award-tile {
 .module-card { scroll-margin-top: 6rem; }
 .learning-course-label { font-size: .8rem; color: var(--muted); text-transform: uppercase; }
 .assessment-topic-actions[hidden], .assessment-topic[hidden], [data-topic-next][hidden], [data-topic-submit][hidden] { display: none; }
+
+.outline-topic-quiz { padding-inline-start: 1.25rem; font-size: .875rem; }
+#topic-quiz { scroll-margin-top: 6rem; }
+
+.outline-current-topic { margin-inline-start: .5rem; color: var(--green); font-size: .8rem; }
+@media (max-width: 800px) {
+  .lesson-outline { position: relative; }
+  .lesson-outline .lesson-link { min-height: 44px; }
+  .lesson-outline summary { padding-block: .65rem; }
+}

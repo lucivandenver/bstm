@@ -7,7 +7,7 @@ const id = (value, label) => { if (!/^[a-zA-Z0-9_-]{1,60}$/.test(value)) fail(`I
 export function questionInput(q, domain) {
   const prompt = text(q.prompt, 1500), options = array(q.options, 6, 'answer choices').map(o => text(o, 500));
   if (prompt.length < 8 || options.length < 2 || options.some(o => !o) || new Set(options.map(o => o.toLowerCase())).size !== options.length || !Number.isInteger(Number(q.answer)) || Number(q.answer) < 0 || Number(q.answer) >= options.length) fail('Each question needs a clear prompt, distinct choices and one correct answer.');
-  return { id: id(q.id || randomUUID(), 'question'), prompt, options, answer: Number(q.answer), explanation: text(q.explanation, 2000), domain: domains.includes(q.domain) ? q.domain : domain, moduleId: text(q.moduleId, 60), sourceReference: text(q.sourceReference, 200), sourceQuote: text(q.sourceQuote, 1200), sourceNeedsReview: q.sourceNeedsReview === true, reviewed: q.reviewed === true };
+  return { id: id(q.id || randomUUID(), 'question'), prompt, options, answer: Number(q.answer), explanation: text(q.explanation, 2000), domain: domains.includes(q.domain) ? q.domain : domain, moduleId: text(q.moduleId, 60), ...(q.lessonId ? { lessonId: text(q.lessonId, 60) } : {}), sourceReference: text(q.sourceReference, 200), sourceQuote: text(q.sourceQuote, 1200), sourceNeedsReview: q.sourceNeedsReview === true, reviewed: q.reviewed === true };
 }
 export function courseAreas(value, primary) {
   const selected = Array.isArray(value) && value.length ? value : [primary];
