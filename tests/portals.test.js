@@ -329,6 +329,27 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const archivedModule = await CourseRevision.findOne({ where: { courseId: c.id, action: 'module-archived' } });
     assert.match((await f2.get(`/faculty/courses?list=archive&course=${c.id}`)).html, /Republish/);
     assert.equal((await f2.post(actionUrl + '/republish', { revisionId: archivedModule.id })).status, 302);
+    const pendingModuleCard = await f2.get(`/faculty/courses?status=pending&course=${c.id}`);
+    assert.match(pendingModuleCard.html, /publication-pending/);
+    assert.match(pendingModuleCard.html, /Cancel submission/);
+    assert.match((await f2.get('/faculty/courses?status=pending')).html, /pending-publication-label/);
+    assert.match((await a.get('/admin/courses?status=pending')).html, /Reason for declining/);
+    const publicationUrl = `/admin/courses/${c.id}`;
+    const submission = { revisionId: archivedModule.id };
+    assert.equal((await a.post(publicationUrl + '/decline-publication', { ...submission, reason: '   ' })).status, 400);
+    assert.equal((await f.post(actionUrl + '/cancel-submission', submission)).status, 404);
+    const cancelled = await f2.post(actionUrl + '/cancel-submission', submission);
+    assert.equal(cancelled.location, `/faculty/courses?list=drafts&course=${c.id}`);
+    assert.equal((await archivedModule.reload()).action, 'module-draft');
+    assert.equal((await a.post(publicationUrl + '/approve-publication', submission)).status, 400);
+    const resubmitUrl = `/faculty/courses/${c.id}/modules/${archivedModule.id}/submit`;
+    assert.equal((await f2.post(resubmitUrl, { confirmReview: 'yes' })).status, 302);
+    const reason = 'Add a source reference before publishing.';
+    assert.equal((await a.post(publicationUrl + '/decline-publication', { ...submission, reason })).status, 302);
+    assert.match((await f2.get(cancelled.location)).html, /Add a source reference before publishing/);
+    assert.ok(await Notification.findOne({ where: { userId: otherFaculty.id, title: 'Publication declined' } }));
+    assert.equal((await a.post(publicationUrl + '/approve-publication', submission)).status, 400);
+    assert.equal((await f2.post(resubmitUrl, { confirmReview: 'yes' })).status, 302);
     assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: archivedModule.id })).status, 302);
     assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1', 'm2']);
 
@@ -346,6 +367,23 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const toDelete = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });
     assert.equal((await f2.post(singleAction + '/delete-module', { revisionId: toDelete.id })).status, 302);
     assert.equal((await toDelete.reload()).action, 'module-deleted');
+
+    const courseSubmission = await Course.create({
+      ...draft, ownerId: otherFaculty.id, slug: 'whole-course-decision', published: false, certificateEnabled: false
+    });
+    const addPendingCourse = () => CourseRevision.create({
+      courseId: courseSubmission.id, actorId: otherFaculty.id, version: courseSubmission.version, action: 'pending-review'
+    });
+    await addPendingCourse();
+    const wholeAction = `/faculty/courses/${courseSubmission.id}/module/m1/cancel-submission`;
+    assert.equal((await f2.post(wholeAction, {})).status, 302);
+    assert.equal((await CourseRevision.findOne({ where: { courseId: courseSubmission.id } })).action, 'publication-cancelled');
+    await addPendingCourse();
+    assert.equal((await a.post(`/admin/courses/${courseSubmission.id}/decline-publication`, {
+      version: courseSubmission.version, reason: 'Clarify the whole-course objectives.'
+    })).status, 302);
+    assert.match((await f2.get(`/faculty/courses?list=drafts&course=${courseSubmission.id}`)).html, /Clarify the whole-course objectives/);
+    assert.equal((await courseSubmission.reload()).published, false);
 
     const attachFields = { destinationId: archiveTarget.id, moduleId: draft.modules[0].id, moduleNumber: 7, moduleTitle: 'Advanced Module' };
     assert.match((await f2.get('/faculty/courses/' + generatedModuleDraft.id + '/edit')).html, /Copy generated content into an existing course/);

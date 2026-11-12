@@ -252,6 +252,36 @@ export const approvePublication = async (req, res) => {
   req.flash('success_msg', 'Course approved and published.');
   res.redirect('/admin/courses');
 };
+export const declinePublication = async (req, res) => {
+  const reason = text(req.body.reason, 1000);
+  if (!reason) fail('Enter a reason for declining this submission.');
+  await sequelize.transaction(async transaction => {
+    const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!course?.ownerId) fail('Course submission not found.');
+    const moduleSubmission = Boolean(req.body.revisionId);
+    const where = { courseId: course.id, actorId: course.ownerId };
+    if (moduleSubmission) {
+      Object.assign(where, { id: req.body.revisionId, action: 'module-pending' });
+    } else {
+      if (course.published || Number(req.body.version) !== course.version) fail('This course is no longer pending review.');
+      Object.assign(where, { version: course.version, action: 'pending-review' });
+    }
+    const submission = await CourseRevision.findOne({ where, transaction });
+    if (!submission) fail('This submission is no longer pending review.');
+    const title = moduleSubmission ? submission.snapshot.module.title : course.title;
+    await submission.update({
+      action: moduleSubmission ? 'module-draft' : 'publication-declined',
+      snapshot: { ...submission.snapshot, declineReason: reason }
+    }, { transaction });
+    await Notification.create({
+      userId: course.ownerId, title: 'Publication declined',
+      message: `${title}: ${reason}`, href: `/faculty/courses?list=drafts&course=${course.id}`
+    }, { transaction });
+    await audit(req.user.id, 'publication.declined', 'course', course.id, { revisionId: submission.id, reason }, transaction);
+  });
+  req.flash('success_msg', 'Submission declined and returned to Faculty Drafts.');
+  res.redirect('/admin/courses?status=pending');
+};
 export const saveCourse = async (req, res) => {
   const title = text(req.body.title, 160), domain = text(req.body.domain, 60), score = Number(req.body.passingScore);
   if (!title || !domains.includes(domain) || !Number.isInteger(score) || score < 50 || score > 100) fail('Check course title, area and passing score (50–100).');

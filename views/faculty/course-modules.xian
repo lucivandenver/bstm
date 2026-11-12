@@ -1,14 +1,19 @@
 {{> facultyTop}}
+{{#if course.declineReason}}<p class="notice error"><strong>Admin declined this submission.</strong> {{course.declineReason}}</p>{{/if}}
 <div class="row between module-page-heading">
   <div><p class="chip">{{moduleListStatus}}</p><h2>Course modules</h2></div>
+  {{#if archived}}<p class="small muted">Use Republish to send an archived module for Admin approval. Students can access it again once approved.</p>{{/if}}
   {{#unless archived}}{{#unless course.pendingReview}}<a class="button" href="/faculty/upload?courseId={{course.id}}">Generate module</a>{{/unless}}{{/unless}}
 </div>
 <section class="space-top" aria-label="Course modules">
 <div class="grid cols-2">
 {{#each course.modules}}
-  <article class="card module-card faculty-module-card">
-    <p class="eyebrow">{{../course.title}}</p>
-    <div><span class="chip">{{status}}</span></div>
+  <article class="card module-card faculty-module-card {{#if pending}}publication-pending{{/if}}">
+    <div class="catalog-card-meta">
+      <p class="eyebrow">{{../course.title}}</p>
+      {{#if pending}}<span class="chip pending-publication-label">Pending</span>{{else}}<span class="chip">{{status}}</span>{{/if}}
+    </div>
+    {{#if declineReason}}<p class="notice error"><strong>Admin declined this submission.</strong> {{declineReason}}</p>{{/if}}
     <h2>Module {{number}} · {{title}}</h2>
     <details><summary>{{lessons.length}} topic areas</summary>
       <ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol>
@@ -26,6 +31,13 @@
       <form method="post" action="{{actionUrl}}/review"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-review">Review</button></form>
       {{else}}<a class="button module-review" href="{{editUrl}}">Review</a>{{/unless}}
       {{else}}<a class="button module-review" href="{{editUrl}}">Review</a>{{/if}}
+      {{#if pending}}
+      <form method="post" action="{{actionUrl}}/cancel-submission" data-confirm="Cancel Admin review and move this submission back to Drafts?">
+        <input type="hidden" name="_csrf" value="{{../csrf}}">
+        <input type="hidden" name="revisionId" value="{{revisionId}}">
+        <button class="button secondary">Cancel submission</button>
+      </form>
+      {{/if}}
       {{#if (eq status 'Draft')}}{{#if canDelete}}
       <form method="post" action="{{actionUrl}}/delete-draft" data-confirm="Delete this module draft?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-delete">Delete draft</button></form>
       {{/if}}{{/if}}
