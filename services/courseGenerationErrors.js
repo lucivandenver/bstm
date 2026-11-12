@@ -92,6 +92,7 @@ const messages = {
     "The course draft could not be saved. Ask Admin to check database connectivity and the reference in the service logs.",
     503,
   ],
+  COURSE_DUPLICATE_MODULE: ["A published module already uses this name or content.", 409],
   COURSE_INPUT: [
     "Select one or more competency areas and choose 3–30 questions.",
     400,
