@@ -1,6 +1,13 @@
 {{> facultyTop}}{{#if signatureMissing}}<p class="notice info">Faculty signature missing. <a href="/faculty/credentials">Save your reusable signature</a> before Admin can publish this course with certificates.</p>{{/if}}{{#if moduleSubmissions}}<section id="module-submissions" class="card space-top"><h2>New modules for this published course</h2>
-{{#each moduleSubmissions}}<details open><summary>{{snapshot.module.title}} · {{#if pending}}Pending Admin review{{else}}Draft{{/if}}</summary>
+{{#each moduleSubmissions}}<details open id="module-revision-{{id}}"><summary>{{snapshot.module.title}} · {{#if pending}}Pending Admin review{{else}}Draft{{/if}}</summary>
+{{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/topics">
+<input type="hidden" name="_csrf" value="{{../csrf}}">
+<label class="field">Module title<input name="moduleTitle" value="{{snapshot.module.title}}" minlength="4" maxlength="160" required></label>
+{{#each snapshot.module.lessons}}<label class="field">Topic area title<input name="topicTitle" value="{{title}}" maxlength="160" required></label><label class="field">Topic area content<textarea name="topicBody" minlength="30" maxlength="16000" rows="4" required>{{body}}</textarea></label>{{/each}}
+<button class="button secondary">Save topic areas</button>
+</form>{{else}}
 {{#each snapshot.module.lessons}}<h3>{{title}}</h3><p>{{body}}</p>{{/each}}
+{{/unless}}
 <ol>{{#each snapshot.questions}}<li><strong>{{prompt}}</strong><ol>{{#each options}}<li>{{this}}{{#if (eq @index ../answer)}} <strong>Correct answer</strong>{{/if}}</li>{{/each}}</ol><p>{{explanation}}</p></li>{{/each}}</ol>
 {{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/submit"><input type="hidden" name="_csrf" value="{{../csrf}}"><label><input type="checkbox" name="confirmReview" value="yes" required> I reviewed the topics and assessment.</label><button class="button">Submit module and certificate</button></form>{{/unless}}
 </details>{{/each}}</section>{{/if}}
@@ -14,13 +21,13 @@
 <button type="submit" class="button" disabled>Attach original file</button>
 <p role="status" data-material-status></p>
 <noscript><p>Enable JavaScript to attach the PDF.</p></noscript>
-</form></section><script src="/js/module-material.js" defer></script>{{/if}}<div class="notice info">Saving an edit returns this course to draft. Existing student attempts keep their original lessons, questions and grading requirements.</div><form method="post" action="/faculty/courses{{#if course.id}}/{{course.id}}{{/if}}" id="course-editor"><input type="hidden" name="_csrf" value="{{csrf}}"><textarea name="courseData" id="course-state" hidden>{{json course}}</textarea><textarea id="bank-state" hidden>{{json bank}}</textarea><textarea id="domains-state" hidden>{{json domains}}</textarea><textarea id="prerequisites-state" hidden>{{json otherCourses}}</textarea><div id="editor-fields"></div><div class="editor-savebar"><p id="editor-status" class="small" role="status">Draft changes are saved when you choose Save draft.</p><label class="check-label"><input type="checkbox" name="confirmReview" value="yes" required> I reviewed or edited the whole course, including every lesson, answer, and explanation.</label><div class="actions"><button class="button secondary" name="action" value="draft" formnovalidate>Save draft</button><button class="button" name="action" value="publish">Submit reviewed course for Admin approval</button></div></div></form>{{#if destinations}}<section class="card space-top"><h2>Attach a generated module to an existing course</h2>
-<p>Save edits to this draft first. The module and its questions will be copied under the selected course and its existing badge.</p>
+</form></section><script src="/js/module-material.js" defer></script>{{/if}}<div class="notice info">Saving an edit returns this course to draft. Existing student attempts keep their original lessons, questions and grading requirements.</div><form method="post" action="/faculty/courses{{#if course.id}}/{{course.id}}{{/if}}" id="course-editor"><input type="hidden" name="_csrf" value="{{csrf}}"><textarea name="courseData" id="course-state" hidden>{{json course}}</textarea><textarea id="bank-state" hidden>{{json bank}}</textarea><textarea id="domains-state" hidden>{{json domains}}</textarea><textarea id="prerequisites-state" hidden>{{json otherCourses}}</textarea><div id="editor-fields"></div><div class="editor-savebar"><p id="editor-status" class="small" role="status">Draft changes are saved when you choose Save draft.</p><label class="check-label"><input type="checkbox" name="confirmReview" value="yes" required> I reviewed or edited the whole course, including every lesson, answer, and explanation.</label><div class="actions"><button class="button secondary" name="action" value="draft" formnovalidate>Save draft</button><button class="button" name="action" value="publish">Submit reviewed course for Admin approval</button></div></div></form>{{#if destinations}}<section class="card space-top"><h2>Copy generated content into an existing course</h2>
+<p>Save edits to this draft first. Choose all generated content to combine its topics and questions into one new module. For a published course, the new module is saved as a draft for review.</p>
 <form method="post" action="/faculty/courses/{{course.id}}/attach-module">
 <input type="hidden" name="_csrf" value="{{csrf}}">
 <label class="field">Existing course<select name="destinationId" required><option value="">Select a course</option>{{#each destinations}}<option value="{{id}}">{{title}}</option>{{/each}}</select></label>
-<label class="field">Generated module<select name="moduleId" required><option value="">Select a module</option>{{#each course.modules}}<option value="{{id}}">{{title}}</option>{{/each}}</select></label>
-<label class="field">Module name (optional)<input name="moduleTitle" maxlength="160" placeholder="Keep generated name"></label>
-<label class="field">Module number<input type="number" name="moduleNumber" min="1" max="9999" required></label>
-<button class="button secondary">Attach module</button>
+<label class="field">Generated module<select name="moduleId" required><option value="">Select generated content</option><option value="all">All generated content as one module</option>{{#each course.modules}}<option value="{{id}}">{{title}}</option>{{/each}}</select></label>
+<label class="field">New module name (required when combining)<input name="moduleTitle" maxlength="160" placeholder="Keep generated name"></label>
+<label class="field">Module number<input type="number" name="moduleNumber" min="1" max="9999"></label>
+<button class="button secondary">Copy as module</button>
 </form></section>{{/if}}<noscript><p class="notice">Enable JavaScript to use the structured course editor.</p></noscript><script src="/js/course-editor.js" defer></script>{{> studentBottom}}

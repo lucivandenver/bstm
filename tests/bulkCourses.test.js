@@ -53,6 +53,7 @@ function responseFor(payload) {
     ],
     questions: Array.from({ length: payload.questionCount }, (_, i) => ({
       moduleIndex: 0,
+      lessonIndex: 0,
       prompt: `Which booking action is appropriate in situation ${i + 1}?`,
       options: ["Confirm requirements", "Ignore safety"],
       answer: 0,
@@ -355,7 +356,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const started = await f.request(`/faculty/sources/${sourceId}/generate`, {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
-        body: new URLSearchParams({ destinationId, moduleTitle, domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
+        body: new URLSearchParams({ destinationId, moduleTitle, topicCount: 6, topicTitles: "Verify guest requirements", domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
       });
       assert.equal(started.status, 202, started.html);
       const { statusUrl: moduleStatusUrl } = JSON.parse(started.html);
@@ -373,6 +374,10 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.deepEqual(anchoredCourse.modules.map(module => [module.number, module.title]), [[1, "First generated module"], [2, "Second generated module"]]);
     assert.equal(anchoredCourse.published, false);
     assert.ok(anchoredCourse.modules.every(module => module.materials.length === 3));
+    assert.ok(anchoredCourse.questions.every(question => anchoredCourse.modules
+      .find(module => module.id === question.moduleId).lessons.some(lesson => lesson.id === question.lessonId)));
+    assert.ok(seen.some(payload => payload.moduleTitle === "Second generated module" &&
+      payload.preferredTopicTitles?.includes("Verify guest requirements")));
     let failedCalls = 0;
     globalThis.fetch = async (url, init) => {
       if (!String(url).startsWith("https://generativelanguage.googleapis.com/"))
@@ -382,7 +387,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
         );
       if (payload.selectedCompetencyAreas) return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: "Tourism information systems", description: "Understand tourism booking concepts.", outcomes: ["Verify guest requirements and safe bookings."], competencyAreas: payload.selectedCompetencyAreas, modules: payload.sections.slice(0, 3).map((section, index) => ({ title: `Tourism booking concepts ${index + 1}`, outcomes: ["Verify booking requirements."], sourceReference: section.reference })) }) }] } }] });
       const draft = responseFor(payload);
-      if (++failedCalls === 2) draft.questions = [];
+      if (++failedCalls === 2 || failedCalls === 3) draft.questions = [];
       return Response.json({
         candidates: [{ content: { parts: [{ text: JSON.stringify(draft) }] } }],
       });

@@ -18,7 +18,7 @@
     panel.querySelector("h2").textContent = "Review your course outline";
     text.textContent = "The source review and blueprint are ready. Edit or confirm them before full course generation.";
     const b = data.blueprint || {}, fields = blueprintPanel.querySelector("[data-blueprint-fields]");
-    fields.innerHTML = `<label class="field">Course title<input name="title" required maxlength="160" value="${escape(b.title)}"></label><label class="field">Description<textarea name="description" required maxlength="2000" rows="3">${escape(b.description)}</textarea></label><label class="field">Learning outcomes · one per line<textarea name="outcomes" required rows="5">${escape((b.outcomes||[]).join("\n"))}</textarea></label><fieldset class="field"><legend>Competency areas</legend>${(data.options?.competencyAreas||b.competencyAreas||[]).map(a=>`<label class="check-label"><input type="checkbox" name="competencyAreas" value="${escape(a)}" ${b.competencyAreas?.includes(a)?"checked":""}>${escape(a)}</label>`).join("")}</fieldset>${(b.modules||[]).map((m,i)=>`<article class="editor-block"><h3>Section ${i+1}</h3><label class="field">Section title<input name="moduleTitle" required maxlength="160" value="${escape(m.title)}"></label><label class="field">Section learning outcomes · one per line<textarea name="moduleOutcomes" required rows="3">${escape((m.outcomes||[]).join("\n"))}</textarea></label><input type="hidden" name="moduleReference" value="${escape(m.sourceReference)}"><p class="small muted">Source evidence: ${escape(m.sourceReference)}</p>${m.sourceNeedsReview?'<p class="notice info">No searchable source text matched this module. Review its content against your source material before publishing.</p>':''}</article>`).join("")}`;
+    fields.innerHTML = `<label class="field">Course title<input name="title" required maxlength="160" value="${escape(b.title)}"></label><label class="field">Description<textarea name="description" required maxlength="2000" rows="3">${escape(b.description)}</textarea></label><label class="field">Learning outcomes · one per line<textarea name="outcomes" required rows="5">${escape((b.outcomes||[]).join("\n"))}</textarea></label><fieldset class="field"><legend>Competency areas</legend>${(data.options?.competencyAreas||b.competencyAreas||[]).map(a=>`<label class="check-label"><input type="checkbox" name="competencyAreas" value="${escape(a)}" ${b.competencyAreas?.includes(a)?"checked":""}>${escape(a)}</label>`).join("")}</fieldset>${(b.modules||[]).map((m,i)=>`<article class="editor-block"><h3>Topic Area ${i+1}</h3><label class="field">Topic area title<input name="moduleTitle" required maxlength="160" value="${escape(m.title)}"></label><label class="field">Topic area learning outcomes · one per line<textarea name="moduleOutcomes" required rows="3">${escape((m.outcomes||[]).join("\n"))}</textarea></label><input type="hidden" name="moduleReference" value="${escape(m.sourceReference)}"><p class="small muted">Source evidence: ${escape(m.sourceReference)}</p>${m.sourceNeedsReview?'<p class="notice info">No searchable source text matched this topic area. Review its content against your source material before publishing.</p>':''}</article>`).join("")}`;
   }
   blueprintForm?.addEventListener("submit", async event => {
     event.preventDefault(); const button=blueprintForm.querySelector('button[type="submit"]'),error=blueprintPanel.querySelector("[data-blueprint-error]");
@@ -45,13 +45,15 @@
       if (data.status === "completed") {
         stopped = true;
         panel.querySelector("h2").textContent =
-          "Your course is ready for review";
+          data.moduleTitle ? `${data.moduleTitle} is ready for review` : "Your course is ready for review";
         text.textContent =
-          "Your course draft is ready, with lessons, questions, correct answers and explanations. Preview it or open the editor before publishing.";
+          data.moduleTitle ? "Review the topic areas and assessment in the module draft." :
+          "Your course draft is ready. Review the lessons, questions and answers before submitting.";
         progress.value = 1;
         progress.max = 1;
         actions.hidden = false;
-        actions.querySelector("[data-job-preview]").href = data.preview;
+        const preview = actions.querySelector("[data-job-preview]");
+        if (preview) preview.href = data.preview;
         actions.querySelector("[data-job-edit]").href = data.redirect;
       } else if (data.status === "failed") {
         stopped = true;

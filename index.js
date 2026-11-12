@@ -47,7 +47,7 @@ app.disable('x-powered-by');
 if (production) app.set('trust proxy', 1);
 app.use(express.json({ limit: '500kb' }));
 // Existing imported drafts can contain a full collection of extracted text.
-app.post(/^\/faculty\/courses\/\d+\/?$/,express.urlencoded({extended:true,limit:'16mb'}));
+app.post(/^\/faculty\/courses\/\d+(?:\/modules\/\d+\/topics)?\/?$/,express.urlencoded({extended:true,limit:'16mb'}));
 app.use(express.urlencoded({ extended: true, limit: '500kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
