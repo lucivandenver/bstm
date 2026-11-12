@@ -327,13 +327,17 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await f2.post(actionUrl + '/unpublish', {})).status, 302);
     assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1']);
     const archivedModule = await CourseRevision.findOne({ where: { courseId: c.id, action: 'module-archived' } });
-    assert.match((await f2.get(`/faculty/courses?list=archive&course=${c.id}`)).html, /Republish/);
-    assert.equal((await f2.post(actionUrl + '/republish', { revisionId: archivedModule.id })).status, 302);
+    assert.doesNotMatch((await f2.get(`/faculty/courses?list=archive&course=${c.id}`)).html, /<button[^>]*>Republish/);
+    assert.equal((await f2.post(actionUrl + '/republish', { revisionId: archivedModule.id })).status, 409);
+    // A previously queued module remains reviewable after the Faculty republish action is retired.
+    await archivedModule.update({ action: 'module-pending' });
     const pendingModuleCard = await f2.get(`/faculty/courses?status=pending&course=${c.id}`);
     assert.match(pendingModuleCard.html, /publication-pending/);
     assert.match(pendingModuleCard.html, /Cancel submission/);
     assert.match((await f2.get('/faculty/courses?status=pending')).html, /pending-publication-label/);
-    assert.match((await a.get('/admin/courses?status=pending')).html, /Reason for declining/);
+    assert.match((await a.get('/admin/courses?status=pending')).html, /reason for declining/);
+    assert.match((await a.get('/admin')).html, /publication-needs-review/);
+    assert.match((await a.get('/admin/courses?status=pending')).html, /publication-needs-review/);
     const publicationUrl = `/admin/courses/${c.id}`;
     const submission = { revisionId: archivedModule.id };
     assert.equal((await a.post(publicationUrl + '/decline-publication', { ...submission, reason: '   ' })).status, 400);
@@ -356,12 +360,25 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const singleCourse = await Course.create({
       ...draft, ownerId: otherFaculty.id, slug: 'single-module-lifecycle', published: true, certificateEnabled: false
     });
+    const singleAdmin = `/admin/courses/${singleCourse.id}`;
+    assert.equal((await a.post(singleAdmin, {
+      title: singleCourse.title, domain: singleCourse.domain, passingScore: singleCourse.passingScore,
+      description: singleCourse.description, unpublish: 'yes'
+    })).status, 302);
+    await singleCourse.reload();
+    assert.equal((await s.get(`/student/courses/${singleCourse.id}`)).status, 404);
+    assert.match((await a.get('/admin/courses')).html, /Republish course/);
+    assert.equal((await a.post(singleAdmin + '/republish', { version: singleCourse.version })).status, 302);
+    assert.equal((await s.get(`/student/courses/${singleCourse.id}`)).status, 200);
     const singleAction = `/faculty/courses/${singleCourse.id}/module/m1`;
     assert.equal((await f2.post(singleAction + '/unpublish', {})).status, 302);
     assert.equal((await singleCourse.reload()).published, false);
     const singleArchived = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });
-    assert.equal((await f2.post(singleAction + '/republish', { revisionId: singleArchived.id })).status, 302);
-    assert.equal((await a.post(`/admin/courses/${singleCourse.id}/approve-publication`, { revisionId: singleArchived.id })).status, 302);
+    assert.match((await a.get('/admin/courses')).html, /Republish module/);
+    assert.equal((await f2.post(singleAdmin + '/republish', { revisionId: singleArchived.id })).status, 403);
+    assert.equal((await a.post(singleAdmin + '/republish', { revisionId: singleArchived.id })).status, 302);
+    assert.equal((await a.post(singleAdmin + '/republish', { revisionId: singleArchived.id })).status, 400);
+    assert.equal((await s.get(`/student/courses/${singleCourse.id}`)).status, 200);
     assert.equal((await singleCourse.reload()).published, true);
     assert.equal((await f2.post(singleAction + '/unpublish', {})).status, 302);
     const toDelete = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });

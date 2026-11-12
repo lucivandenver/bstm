@@ -2,7 +2,7 @@
 {{#if course.declineReason}}<p class="notice error"><strong>Admin declined this submission.</strong> {{course.declineReason}}</p>{{/if}}
 <div class="row between module-page-heading">
   <div><p class="chip">{{moduleListStatus}}</p><h2>Course modules</h2></div>
-  {{#if archived}}<p class="small muted">Use Republish to send an archived module for Admin approval. Students can access it again once approved.</p>{{/if}}
+  {{#if archived}}<p class="small muted">Admin can republish archived modules from Course oversight.</p>{{/if}}
   {{#unless archived}}{{#unless course.pendingReview}}<a class="button" href="/faculty/upload?courseId={{course.id}}">Generate module</a>{{/unless}}{{/unless}}
 </div>
 <section class="space-top" aria-label="Course modules">
@@ -24,7 +24,6 @@
       <form method="post" action="{{actionUrl}}/edit"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-edit">Edit</button></form>
       <form method="post" action="{{actionUrl}}/unpublish" data-confirm="Move this module to Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button secondary">Unpublish</button></form>
       {{else}}{{#if (eq status 'Archived')}}
-      <form method="post" action="{{actionUrl}}/republish" data-confirm="Submit this module to Admin for republication?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-review">Republish</button></form>
       <form method="post" action="{{actionUrl}}/delete-module" data-confirm="Delete this module from Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-delete">Delete module</button></form>
       {{else}}
       {{#if (eq status 'Draft')}}{{#unless revisionId}}

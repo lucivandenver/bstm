@@ -520,9 +520,9 @@ export const manageModule = async (req, res) => {
       (row.action === 'module-archived' || row.actorId === req.user.id));
     const revision = matching.find(row => String(row.id) === req.body.revisionId);
     if (req.body.revisionId && !revision) fail('Module revision not found.', 404);
-    const list = ['delete-draft', 'cancel-submission'].includes(action) ? 'drafts' : action === 'republish' ? 'active' : 'archive';
+    const list = ['delete-draft', 'cancel-submission'].includes(action) ? 'drafts' : 'archive';
     redirect = `/faculty/courses?list=${list}`;
-    if (action === 'unpublish' || action === 'republish') redirect += `&course=${course.id}`;
+    if (action === 'unpublish') redirect += `&course=${course.id}`;
     const snapshot = item => ({ module: { ...item, number: item.number ?? modules.indexOf(item) + 1 },
       questions: questions.filter(question => question.moduleId === item.id) });
     const create = (item, type, extra = {}) => CourseRevision.create({
@@ -540,9 +540,10 @@ export const manageModule = async (req, res) => {
         await revision.update({ action: 'module-draft' }, { transaction });
       } else if (!req.body.revisionId && !course.published && module) {
         const submission = await CourseRevision.findOne({
-          where: { courseId: course.id, actorId: req.user.id, version: course.version, action: 'pending-review' }, transaction
+          where: { courseId: course.id, action: [...publicationHistory, 'pending-review', 'draft', 'publication-declined', 'publication-cancelled'] },
+          order: [['id', 'DESC']], transaction
         });
-        if (!submission) fail('This publication is no longer pending.', 409);
+        if (!pendingPublication(course, submission) || submission.actorId !== req.user.id) fail('This publication is no longer pending.', 409);
         await submission.update({ action: 'publication-cancelled' }, { transaction });
       } else fail('This publication is no longer pending.', 409);
       redirect += `&course=${course.id}`;
@@ -562,11 +563,6 @@ export const manageModule = async (req, res) => {
       await revision.update({ action: 'module-deleted', snapshot: {} }, { transaction });
     } else if (action === 'delete-module' && revision?.action === 'module-archived') {
       await revision.update({ action: 'module-deleted', snapshot: {} }, { transaction });
-    } else if (action === 'republish' && revision?.action === 'module-archived' && !module) {
-      if (matching.some(row => row.action === 'module-pending')) fail('This module already has a revision awaiting Admin review.', 409);
-      const duplicate = duplicateModule(modules, revision.snapshot.module);
-      if (duplicate) fail(duplicateModuleMessage(duplicate), 409);
-      await revision.update({ action: 'module-pending', actorId: req.user.id }, { transaction });
     } else if (!revision && !course.published && module) {
       const latest = await CourseRevision.findOne({
         where: { courseId: course.id, action: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft', 'publication-declined', 'publication-cancelled'] },
@@ -580,23 +576,13 @@ export const manageModule = async (req, res) => {
         redirect = `/faculty/courses/${course.id}/edit?revision=${draft.id}#module-revision-${draft.id}`;
       } else if ((action === 'delete-draft' && !archived) || (action === 'delete-module' && archived)) {
         await remove([moduleId]);
-      } else if (action === 'republish' && archived) {
-        for (const item of modules) await create(item, item.id === moduleId ? 'module-pending' : 'module-archived');
-        await remove(modules.map(item => item.id));
       } else fail('This module action is unavailable.', 409);
     } else fail('This module action is unavailable.', 409);
-    if (action === 'republish') {
-      const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'], transaction });
-      if (admins.length) await Notification.bulkCreate(admins.map(admin => ({
-        userId: admin.id, title: 'Module ready for review', message: (revision?.snapshot.module || module).title,
-        href: '/admin/courses?status=pending'
-      })), { transaction });
-    }
     await audit(req.user.id, `module.${action}`, 'course', course.id, { moduleId }, transaction);
   });
   if (!['edit', 'review'].includes(req.params.action)) req.flash('success_msg', {
     unpublish: 'Module moved to Archive.', 'delete-draft': 'Module draft deleted.',
-    'delete-module': 'Archived module deleted.', 'cancel-submission': 'Submission cancelled. Open the draft to edit or resubmit it.', republish: 'Module submitted for Admin review.'
+    'delete-module': 'Archived module deleted.', 'cancel-submission': 'Submission cancelled. Open the draft to edit or resubmit it.'
   }[req.params.action]);
   res.redirect(redirect);
 };
@@ -607,7 +593,7 @@ export const archiveCourse = async (req, res) => {
     if (!course.published) return;
     await course.update({ published: false }, { transaction });
     await CourseRevision.create({
-      courseId: course.id, actorId: req.user.id, version: course.version, action: 'archived', snapshot: plain(course)
+      courseId: course.id, actorId: req.user.id, version: course.version, action: 'archived', snapshot: { ...plain(course), archivedForRepublication: true }
     }, { transaction });
     await audit(req.user.id, 'course.archived', 'course', course.id, undefined, transaction);
   });

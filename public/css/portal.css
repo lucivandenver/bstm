@@ -110,3 +110,5 @@
 
 .card.publication-pending { border: 2px solid #c33b47; }
 .chip.pending-publication-label { margin-inline-start: auto; color: #a21b29; background: #fff0f1; }
+.card.publication-needs-review { border: 2px solid #cf650c; }
+.chip.publication-review-label { color: #883600; background: #fff1e4; }
