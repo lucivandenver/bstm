@@ -65,6 +65,9 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     assert.equal(await CourseAttempt.count(), 1, 'duplicate enrollment resumes current attempt');
     response = await student.get('/student/learn/1/final'); assert.equal(response.r.status, 403);
     response = await student.get('/student/learn/1?lesson=cost'); assert.equal(response.r.status, 200);
+    assert.match(response.html, /Topic 1\.1 · /);
+    assert.match(response.html, /Topic 2\.1 · Understand tour costing/);
+    assert.doesNotMatch(response.html, /<h3>[^<]*Module [12] ·/);
     response = await student.get('/student/learn/1/quiz/responsible'); assert.equal(response.r.status, 403, 'the selected module still requires its own lessons');
     const other = new Browser(); await other.get('/register');
     await other.post('/register', { ...signup, name: 'Student Two', email: 'two@example.com', student_id: '2026-002' });
@@ -78,6 +81,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
       for (const lesson of module.lessons) { const page = await student.get(`/student/learn/1?lesson=${lesson.id}`); const lessonChallenge = page.html.match(/data-lesson-challenge="([^"]+)"/)[1]; await student.post('/student/learn/1/complete', { lessonId: lesson.id, lessonChallenge }); }
       const quiz = await student.get(`/student/learn/1/quiz/${module.id}`);
       assert.equal(quiz.r.status, 200);
+      assert.match(quiz.html, new RegExp(`Topic ${c.modules.indexOf(module) + 1}\\.\\d+ ·`));
       assert.ok(!quiz.html.includes(c.questions[0].explanation));
       const challenge = quiz.html.match(/name="challenge" value="([^"]+)"/)[1];
       const answers = Object.fromEntries(c.questions.filter(q => q.moduleId === module.id).map(q => [`answers[${q.id}]`, String(q.answer)]));

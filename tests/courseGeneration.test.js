@@ -79,7 +79,12 @@ await test("generation initializes isolated storage and source", async () => {
   await Setting.upsert({ key: "aiDailyLimit", value: "50" });
 });
 await test("AI responses are grounded, mapped to server IDs and always require review", () => {
-  const result = validateGeneratedDraft(draft(), sections, options);
+  const input = draft();
+  const topic = input.modules[0].lessons[0];
+  const title = topic.title;
+  topic.title = `Module 1.1 · ${title}`;
+  const result = validateGeneratedDraft(input, sections, options);
+  assert.equal(result.modules[0].lessons[0].title, title);
   assert.equal(result.questions.length, 3);
   assert.equal(result.questions[0].reviewed, false);
   assert.equal(result.questions[0].moduleId, result.modules[0].id);
