@@ -15,6 +15,8 @@ r.post('/courses/:id/material', (req, res, next) => upload.single('material')(re
   if (error) return res.status(413).json({ message: 'Upload one PDF of up to 100 MB.' });
   next();
 }), asyncRoute(c.attachOriginalFile));
+r.get('/courses/:id/module/:moduleId/preview', asyncRoute(c.preview));
+r.post('/courses/:id/module/:moduleId/:action', asyncRoute(c.manageModule));
 r.post('/courses/:id/modules/:revisionId/topics', asyncRoute(c.saveModuleTopics));
 r.post('/courses/:id/modules/:revisionId/submit', asyncRoute(c.submitModulePublication));
 r.post('/courses/:id/attach-module', asyncRoute(c.attachGeneratedModule)); r.get('/courses/:id/edit', asyncRoute(c.editor)); r.post('/courses/:id', asyncRoute(c.saveCourse)); r.post('/courses/:id/archive', asyncRoute(c.archiveCourse)); r.post('/courses/:id/archive/delete', asyncRoute(c.deleteArchivedCourse)); r.post('/courses/:id/delete', asyncRoute(c.deleteDraft)); r.get('/courses/:id/preview', asyncRoute(c.preview));

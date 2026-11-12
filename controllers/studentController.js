@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { buildEvidence } from '../services/evidence.js';
 import QRCode from 'qrcode';
 import { Op } from 'sequelize';
-import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest, SourceFilePart } from '../models/portalModels.js';
+import { DiagnosticDraft, CourseAssignment, QuizDraft, PracticalSubmission, CourseFeedback, FacultyNote, ProfileCorrection, StudentFile, CredentialRequest, SourceFilePart, CourseRevision } from '../models/portalModels.js';
 import { Section } from '../models/adminModels.js';
 import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
@@ -221,11 +221,15 @@ export const enroll = async (req, res) => {
   if (attempt.status === 'completed') req.flash('success_msg', 'You have already completed this course. You can review your lessons and results, but a new attempt is not available.');
   res.redirect(moduleStartHref(plain(attempt), req.body.moduleId) || `/student/learn/${attempt.id}`);
 };
-async function availableAttemptCourses(attempts) {
+async function availableAttemptCourses(attempts, transaction) {
   const ids = [...new Set(attempts.filter(attempt => attempt.status === 'ongoing').map(attempt => attempt.courseId))];
   if (!ids.length) return new Set();
-  const courses = await Course.findAll({ where: { id: ids, published: true, ownerId: { [Op.not]: null } }, attributes: ['id'] });
-  return new Set(courses.map(course => course.id));
+  const courses = await Course.findAll({ where: { id: ids, ownerId: { [Op.not]: null } }, attributes: ['id', 'published', 'modules'], transaction });
+  const hidden = courses.filter(course => !course.published && !course.modules.length).map(course => course.id);
+  const archived = hidden.length ? await CourseRevision.findAll({
+    where: { courseId: hidden, action: 'last-module-archived' }, attributes: ['courseId'], transaction
+  }) : [];
+  return new Set([...courses.filter(course => course.published).map(course => course.id), ...archived.map(row => row.courseId)]);
 }
 function moduleStartHref(attempt, moduleId) {
   if (attempt.status === 'completed') return null;
@@ -272,7 +276,7 @@ async function ownedAttempt(req, transaction) {
   const options = transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {};
   const attempt = await CourseAttempt.findOne({ where: { id: req.params.id, userId: req.user.id }, ...options });
   if (!attempt || attempt.status === 'completed') return attempt;
-  if (!await Course.count({ where: { id: attempt.courseId, published: true, ownerId: { [Op.not]: null } }, transaction })) return null;
+  if (!(await availableAttemptCourses([attempt], transaction)).has(attempt.courseId)) return null;
   return await CourseAttempt.findOne({ where: { userId: req.user.id, courseId: attempt.courseId, status: 'completed' }, order: [['completedAt', 'DESC']], ...options }) || attempt;
 }
 function selectedMaterialModule(attempt, moduleId) {

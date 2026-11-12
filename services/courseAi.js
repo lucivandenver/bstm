@@ -1,3 +1,4 @@
+import { duplicateModule, duplicateModuleMessage } from "./moduleDuplicates.js";
 import { sourceLimits as limits } from "./sourceLimits.js";
 import {
   courseAiConfiguration as aiConfiguration,
@@ -259,6 +260,8 @@ async function storeDraft(userId, source, draft, job, action) {
         lessons: draft.modules.flatMap(item => item.lessons.map(lesson => ({ ...lesson, id: lessonIds.get(lesson.id) }))),
         skills: [...new Set(draft.modules.flatMap(item => item.skills || []))].slice(0, 12),
       };
+      const duplicate = course.published && duplicateModule(modules, module);
+      if (duplicate) throw generationError("COURSE_DUPLICATE_MODULE", duplicateModuleMessage(duplicate));
       const merged = courseInput({
         ...draft, ...course.get({ plain: true }), title: course.title.toUpperCase(),
         description: course.description || draft.description, domain: course.domain || draft.domain,
@@ -268,7 +271,10 @@ async function storeDraft(userId, source, draft, job, action) {
         modules: [...modules, module],
         questions: [...course.questions, ...draft.questions.map(question => ({ ...question, id: randomUUID(), moduleId, lessonId: lessonIds.get(question.lessonId) }))],
       }, { draft: true });
-      if (course.published) {
+      const separateModuleDrafts = !modules.length && await CourseRevision.count({
+        where: { courseId: course.id, action: ['last-module-archived', 'module-pending', 'module-draft'] }, transaction
+      });
+      if (course.published || separateModuleDrafts) {
         await CourseRevision.create({
           courseId: course.id, actorId: userId, version: course.version, action: 'module-draft',
           snapshot: { module: merged.modules.at(-1), questions: merged.questions.filter(q => q.moduleId === moduleId) }
@@ -484,6 +490,14 @@ export async function generateCourse(userId, source, options) {
     if (Number(source.ownerId) !== Number(userId))
       throw generationError("COURSE_INPUT");
     const sections = sourceSections(source);
+    if (options.destinationId) {
+      const destination = await Course.findOne({ where: { id: options.destinationId, ownerId: userId, published: true } });
+      if (destination) {
+        const materials = await SourceFilePart.findAll({ where: { sourceId: source.id, part: 0 }, attributes: ['documentKey'] });
+        const duplicate = duplicateModule(destination.modules, { title: options.moduleTitle, materials });
+        if (duplicate) throw generationError("COURSE_DUPLICATE_MODULE", duplicateModuleMessage(duplicate));
+      }
+    }
     const makePlan = (legacyTail = false) => options.blueprint?.modules?.length
       ? (() => {
           const modules = options.blueprint.modules;

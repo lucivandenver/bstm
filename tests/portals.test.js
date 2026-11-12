@@ -207,7 +207,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const moduleDraft = await CourseRevision.create({
       courseId: c.id, actorId: faculty.id, version: 2, action: 'module-draft',
       snapshot: {
-        module: { ...draft.modules[0], id: 'm2', title: 'Independent module', skills: ['Practice'], lessons: [{ ...draft.modules[0].lessons[0], id: 'l2' }] },
+        module: { ...draft.modules[0], id: 'm2', title: 'Independent module', skills: ['Practice'], lessons: [{ ...draft.modules[0].lessons[0], id: 'l2', body: 'Independent practice for an additional tourism topic area.' }] },
         questions: [{ ...draft.questions[0], id: 'q2', moduleId: 'm2' }]
       }
     });
@@ -216,7 +216,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match(draftCards.html, /Independent module/);
     assert.doesNotMatch(draftCards.html, /Unpublish/);
     assert.equal((await f.post(`/faculty/courses/${c.id}/modules/${moduleDraft.id}/topics`, {
-      moduleTitle: 'Independent module', topicTitle: 'Revised topic area', topicBody: draft.modules[0].lessons[0].body
+      moduleTitle: 'Independent module', topicTitle: 'Revised topic area', topicBody: 'Updated independent practice for an additional tourism topic area.'
     })).status, 302);
     assert.equal((await moduleDraft.reload()).snapshot.module.lessons[0].title, 'Revised topic area');
     assert.equal((await f.post(`/faculty/courses/${c.id}/modules/${moduleDraft.id}/submit`, { confirmReview: 'yes' })).status, 302);
@@ -269,6 +269,53 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal(recovered[0].snapshot.questions.at(-1).lessonId, copiedTopic.id);
     assert.equal((await c.reload()).modules.length, 2);
 
+    await Setting.upsert({ key: `facultySignature:${otherFaculty.id}`, value: signature });
+    const duplicateSource = await SourceDocument.create({
+      ownerId: otherFaculty.id, filename: 'Duplicate check', sections: [{ reference: 'Paragraph 1', text: 'Tourism material.' }]
+    });
+    const duplicateGeneration = await f2.request(`/faculty/sources/${duplicateSource.id}/generate`, {
+      method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-Token': f2.csrf },
+      body: new URLSearchParams({ destinationId: c.id, moduleTitle: '  SERVICE FUNDAMENTALS  ', domain: domains[0],
+        questionCount: 5, consent: 'yes', background: 'yes' })
+    });
+    assert.equal(duplicateGeneration.status, 409);
+    assert.match(duplicateGeneration.html, /COURSE_DUPLICATE_MODULE/);
+
+    const actionUrl = `/faculty/courses/${c.id}/module/m2`;
+    const modulePreview = await f2.get(actionUrl + '/preview');
+    assert.equal(modulePreview.status, 200);
+    assert.match(modulePreview.html, /Revised topic area/);
+    assert.equal((await f.post(actionUrl + '/unpublish', {})).status, 404);
+    const editModule = await f2.post(actionUrl + '/edit', {});
+    assert.equal(editModule.status, 302);
+    const scopedEdit = await f2.get(editModule.location.split('#')[0]);
+    assert.match(scopedEdit.html, /Save topic areas/);
+    assert.doesNotMatch(scopedEdit.html, /id="course-editor"/);
+    const editing = await CourseRevision.findOne({ where: { id: new URL(editModule.location, 'http://local').searchParams.get('revision') } });
+    assert.equal((await f2.post(actionUrl + '/delete-draft', { revisionId: editing.id })).status, 302);
+    assert.equal((await f2.post(actionUrl + '/unpublish', {})).status, 302);
+    assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1']);
+    const archivedModule = await CourseRevision.findOne({ where: { courseId: c.id, action: 'module-archived' } });
+    assert.match((await f2.get(`/faculty/courses?list=archive&course=${c.id}`)).html, /Republish/);
+    assert.equal((await f2.post(actionUrl + '/republish', { revisionId: archivedModule.id })).status, 302);
+    assert.equal((await a.post(`/admin/courses/${c.id}/approve-publication`, { revisionId: archivedModule.id })).status, 302);
+    assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1', 'm2']);
+
+    const singleCourse = await Course.create({
+      ...draft, ownerId: otherFaculty.id, slug: 'single-module-lifecycle', published: true, certificateEnabled: false
+    });
+    const singleAction = `/faculty/courses/${singleCourse.id}/module/m1`;
+    assert.equal((await f2.post(singleAction + '/unpublish', {})).status, 302);
+    assert.equal((await singleCourse.reload()).published, false);
+    const singleArchived = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });
+    assert.equal((await f2.post(singleAction + '/republish', { revisionId: singleArchived.id })).status, 302);
+    assert.equal((await a.post(`/admin/courses/${singleCourse.id}/approve-publication`, { revisionId: singleArchived.id })).status, 302);
+    assert.equal((await singleCourse.reload()).published, true);
+    assert.equal((await f2.post(singleAction + '/unpublish', {})).status, 302);
+    const toDelete = await CourseRevision.findOne({ where: { courseId: singleCourse.id, action: 'module-archived' } });
+    assert.equal((await f2.post(singleAction + '/delete-module', { revisionId: toDelete.id })).status, 302);
+    assert.equal((await toDelete.reload()).action, 'module-deleted');
+
     const attachFields = { destinationId: archiveTarget.id, moduleId: draft.modules[0].id, moduleNumber: 7, moduleTitle: 'Advanced Module' };
     assert.match((await f2.get('/faculty/courses/' + generatedModuleDraft.id + '/edit')).html, /Copy generated content into an existing course/);
     assert.equal((await f2.post(attachUrl, attachFields)).status, 302);
@@ -278,6 +325,15 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal(attached.title, 'Advanced Module');
     assert.ok(archiveTarget.questions.some(question => question.moduleId === attached.id && !question.reviewed));
     assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module&course=' + archiveTarget.id)).html, /Module 7/);
+    const legacyReview = await f2.post(`/faculty/courses/${generatedModuleDraft.id}/module/m1/review`, {});
+    assert.equal(legacyReview.status, 302);
+    const legacyRevision = new URL(legacyReview.location, 'http://local').searchParams.get('revision');
+    assert.equal((await f2.post(`/faculty/courses/${generatedModuleDraft.id}/modules/${legacyRevision}/submit`, { confirmReview: 'yes' })).status, 302);
+    assert.equal((await a.post(`/admin/courses/${generatedModuleDraft.id}/approve-publication`, { revisionId: legacyRevision })).status, 302);
+    assert.deepEqual((await generatedModuleDraft.reload()).modules.map(module => module.id), ['m1']);
+    const siblingDraft = await CourseRevision.findOne({ where: { courseId: generatedModuleDraft.id, action: 'module-draft' } });
+    assert.equal(siblingDraft.snapshot.module.id, 'legacy-group');
+
     const { ensureCompletionCredential } = await import('../services/portalLearning.js');
     const moduleAwardAttempt = await CourseAttempt.findByPk(id);
     await moduleAwardAttempt.update({ snapshot: { ...moduleAwardAttempt.snapshot, modules: [
@@ -301,7 +357,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await QuizDraft.create({ userId: student.id, attemptId: archivedAttempt.id, scope: firstModule.id });
     const deleteArchive = '/faculty/courses/' + archiveTarget.id + '/archive/delete';
     assert.equal((await f.post(deleteArchive, { confirmDelete: 'yes' })).status, 404);
-    assert.ok((await f2.get('/faculty/courses?list=archive&course=' + archiveTarget.id)).html.includes(deleteArchive));
+    assert.ok((await f2.get('/faculty/courses?list=archive&course=' + archiveTarget.id)).html.includes('/module/m1/delete-module'));
     assert.equal((await f2.post(deleteArchive, {})).status, 400);
     assert.equal((await f2.post(deleteArchive, { confirmDelete: 'yes' })).status, 302);
     assert.equal(await Course.findByPk(archiveTarget.id), null);

@@ -1,17 +1,26 @@
-{{> facultyTop}}{{#if signatureMissing}}<p class="notice info">Faculty signature missing. <a href="/faculty/credentials">Save your reusable signature</a> before Admin can publish this course with certificates.</p>{{/if}}{{#if moduleSubmissions}}<section id="module-submissions" class="card space-top"><h2>New modules for this published course</h2>
+{{> facultyTop}}{{#if moduleState}}<p class="chip">{{moduleState}}</p>{{/if}}{{#if signatureMissing}}<p class="notice info">Faculty signature missing. <a href="/faculty/credentials">Save your reusable signature</a> before Admin can publish this course with certificates.</p>{{/if}}{{#if moduleSubmissions}}<section id="module-submissions" class="card space-top"><h2>Module review</h2>
 {{#each moduleSubmissions}}<details open id="module-revision-{{id}}"><summary>{{snapshot.module.title}} · {{#if pending}}Pending Admin review{{else}}Draft{{/if}}</summary>
 {{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/topics">
 <input type="hidden" name="_csrf" value="{{../csrf}}">
 <label class="field">Module title<input name="moduleTitle" value="{{snapshot.module.title}}" minlength="4" maxlength="160" required></label>
 {{#each snapshot.module.lessons}}<label class="field">Topic area title<input name="topicTitle" value="{{title}}" maxlength="160" required></label><label class="field">Topic area content<textarea name="topicBody" minlength="30" maxlength="16000" rows="4" required>{{body}}</textarea></label>{{/each}}
-<button class="button secondary">Save topic areas</button>
+<h3>Assessment</h3>
+{{#each snapshot.questions}}<details class="editor-block"><summary>{{prompt}}</summary>
+<label class="field">Question<textarea name="quiz[{{id}}][prompt]" maxlength="1500" required>{{prompt}}</textarea></label>
+<label class="field">Answer choices · one per line<textarea name="quiz[{{id}}][options]" rows="4" required>{{#each options}}{{this}}{{#unless @last}}
+{{/unless}}{{/each}}</textarea></label>
+<label class="field">Correct answer<select name="quiz[{{id}}][answer]" required><option value="0" {{selected answer 0}}>1</option><option value="1" {{selected answer 1}}>2</option><option value="2" {{selected answer 2}}>3</option><option value="3" {{selected answer 3}}>4</option><option value="4" {{selected answer 4}}>5</option><option value="5" {{selected answer 5}}>6</option></select></label>
+<label class="field">Explanation<textarea name="quiz[{{id}}][explanation]" maxlength="2000" required>{{explanation}}</textarea></label>
+</details>{{/each}}
+<button class="button secondary">Save topic areas and assessment</button>
 </form>{{else}}
 {{#each snapshot.module.lessons}}<h3>{{title}}</h3><p>{{body}}</p>{{/each}}
-{{/unless}}
 <ol>{{#each snapshot.questions}}<li><strong>{{prompt}}</strong><ol>{{#each options}}<li>{{this}}{{#if (eq @index ../answer)}} <strong>Correct answer</strong>{{/if}}</li>{{/each}}</ol><p>{{explanation}}</p></li>{{/each}}</ol>
+{{/unless}}
 {{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/submit"><input type="hidden" name="_csrf" value="{{../csrf}}"><label><input type="checkbox" name="confirmReview" value="yes" required> I reviewed the topics and assessment.</label><button class="button">Submit module and certificate</button></form>{{/unless}}
 </details>{{/each}}</section>{{/if}}
-<div class="toolbar"><a class="text-link" href="/faculty/courses">← My courses</a>{{#if course.published}}<a class="button secondary" href="/faculty/upload?courseId={{course.id}}">Generate another module</a>{{/if}}{{#if course.id}}<a class="button secondary" href="/faculty/courses/{{course.id}}/preview">Preview student experience</a>{{/if}}</div>{{#if course.modules.length}}<section class="card space-top" id="original-material">
+{{#if moduleOnly}}{{#if destinations}}{{#if course.modules.length}}<p class="space-top"><a class="text-link" href="/faculty/courses/{{course.id}}/edit">Open course draft tools</a></p>{{/if}}{{/if}}{{/if}}
+{{#unless moduleOnly}}<div class="toolbar"><a class="text-link" href="/faculty/courses">← My courses</a>{{#if course.published}}<a class="button secondary" href="/faculty/upload?courseId={{course.id}}">Generate another module</a>{{/if}}{{#if course.id}}<a class="button secondary" href="/faculty/courses/{{course.id}}/preview">Preview student experience</a>{{/if}}</div>{{#if course.modules.length}}<section class="card space-top" id="original-material">
 <h2>Attach original file</h2>
 <p>Add a PDF to an existing module. Students can open it as learning material and confirm reading before taking the module quiz.</p>
 <form method="post" action="/faculty/courses/{{course.id}}/material" enctype="multipart/form-data" data-module-material>
@@ -30,4 +39,4 @@
 <label class="field">New module name (required when combining)<input name="moduleTitle" maxlength="160" placeholder="Keep generated name"></label>
 <label class="field">Module number<input type="number" name="moduleNumber" min="1" max="9999"></label>
 <button class="button secondary">Copy as module</button>
-</form></section>{{/if}}<noscript><p class="notice">Enable JavaScript to use the structured course editor.</p></noscript><script src="/js/course-editor.js" defer></script>{{> studentBottom}}
+</form></section>{{/if}}<noscript><p class="notice">Enable JavaScript to use the structured course editor.</p></noscript><script src="/js/course-editor.js" defer></script>{{/unless}}{{> studentBottom}}

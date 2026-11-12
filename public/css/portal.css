@@ -99,3 +99,11 @@
 .catalog-card-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
 .catalog-card-meta:last-child { margin-top: auto; color: var(--green); }
 .module-card { scroll-margin-top: 6rem; }
+
+.module-page-heading { flex-wrap: wrap; gap: 1rem; }
+.faculty-module-card { display: flex; flex-direction: column; }
+.faculty-module-card .faculty-module-actions { margin-top: auto; padding-top: 1.25rem; flex-wrap: wrap; }
+.faculty-module-actions .button.module-review { background: #006b42; color: #fff; border-color: #006b42; }
+.faculty-module-actions .button.module-edit { background: #a53a16; color: #fff; border-color: #a53a16; }
+.faculty-module-actions .button.module-delete { background: #aa2033; color: #fff; border-color: #aa2033; }
+.faculty-module-actions .button:hover { filter: brightness(.9); }

@@ -1,38 +1,35 @@
 {{> facultyTop}}
-<h2>Course modules</h2>
-<div class="actions space-top">
+<div class="row between module-page-heading">
+  <div><p class="chip">{{moduleListStatus}}</p><h2>Course modules</h2></div>
   {{#unless archived}}{{#unless course.pendingReview}}<a class="button" href="/faculty/upload?courseId={{course.id}}">Generate module</a>{{/unless}}{{/unless}}
-  {{#unless course.draftOnly}}
-  <a class="button secondary" href="/faculty/courses/{{course.id}}/edit">Edit course</a>
-  {{#if course.published}}
-  <form method="post" action="/faculty/courses/{{course.id}}/archive" data-confirm="Unpublish this course? You can edit and republish it later.">
-    <input type="hidden" name="_csrf" value="{{csrf}}"><button class="button ghost">Unpublish</button>
-  </form>
-  {{/if}}
-  {{#if archived}}
-  <form method="post" action="/faculty/courses/{{course.id}}/archive/delete" data-confirm="Permanently delete this archived course and its student progress, scores, badges and certificates? This cannot be undone.">
-    <input type="hidden" name="_csrf" value="{{csrf}}"><input type="hidden" name="confirmDelete" value="yes"><button class="button danger">Delete permanently</button>
-  </form>
-  {{/if}}
-  {{#if course.deleteEligible}}
-  <form method="post" action="/faculty/courses/{{course.id}}/delete" data-confirm="Permanently delete this unused draft? This cannot be undone.">
-    <input type="hidden" name="_csrf" value="{{csrf}}"><button class="button danger">Delete draft</button>
-  </form>
-  {{/if}}
-  {{/unless}}
 </div>
 <section class="space-top" aria-label="Course modules">
 <div class="grid cols-2">
 {{#each course.modules}}
-  <article class="card module-card">
+  <article class="card module-card faculty-module-card">
     <p class="eyebrow">{{../course.title}}</p>
-    <span class="chip">{{status}}</span>
+    <div><span class="chip">{{status}}</span></div>
     <h2>Module {{number}} · {{title}}</h2>
     <details><summary>{{lessons.length}} topic areas</summary>
       <ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol>
     </details>
-    <div class="actions space-top"><a class="button secondary" href="{{editUrl}}">Review module</a>
-      {{#if (eq status 'Published')}}<a class="button secondary" href="/faculty/courses/{{../course.id}}/preview">Preview course</a>{{/if}}
+    <div class="actions faculty-module-actions">
+      {{#if (eq status 'Published')}}
+      <a class="button module-review" href="{{actionUrl}}/preview">Preview</a>
+      <form method="post" action="{{actionUrl}}/edit"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-edit">Edit</button></form>
+      <form method="post" action="{{actionUrl}}/unpublish" data-confirm="Move this module to Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button secondary">Unpublish</button></form>
+      {{else}}{{#if (eq status 'Archived')}}
+      <form method="post" action="{{actionUrl}}/republish" data-confirm="Submit this module to Admin for republication?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-review">Republish</button></form>
+      <form method="post" action="{{actionUrl}}/delete-module" data-confirm="Delete this module from Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-delete">Delete module</button></form>
+      {{else}}
+      {{#if (eq status 'Draft')}}{{#unless revisionId}}
+      <form method="post" action="{{actionUrl}}/review"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-review">Review</button></form>
+      {{else}}<a class="button module-review" href="{{editUrl}}">Review</a>{{/unless}}
+      {{else}}<a class="button module-review" href="{{editUrl}}">Review</a>{{/if}}
+      {{#if (eq status 'Draft')}}{{#if canDelete}}
+      <form method="post" action="{{actionUrl}}/delete-draft" data-confirm="Delete this module draft?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-delete">Delete draft</button></form>
+      {{/if}}{{/if}}
+      {{/if}}{{/if}}
     </div>
   </article>
 {{else}}<p class="muted">No modules in this list yet.</p>{{/each}}

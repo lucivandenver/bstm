@@ -1,3 +1,4 @@
+import { duplicateModule, duplicateModuleMessage } from '../services/moduleDuplicates.js';
 import { facultySignature, preparePublicationCredential } from '../services/publicationCredentials.js';
 import { courseAiConfiguration, missingVertexSettings } from '../services/courseAiProvider.js';
 import { summarizeLearning } from '../services/evidence.js';
@@ -175,7 +176,7 @@ export const courses = async (req, res) => {
   }));
   const pendingModules = await CourseRevision.findAll({ where: { action: 'module-pending' } });
   for (const course of reviewRows) {
-    course.moduleSubmissions = course.published ? pendingModules.filter(row => row.courseId === course.id && row.actorId === course.ownerId).map(plain) : [];
+    course.moduleSubmissions = course.published || !course.modules.length ? pendingModules.filter(row => row.courseId === course.id && row.actorId === course.ownerId).map(plain) : [];
   }
   const institutionName = (await Setting.findOne({ where: { key: 'institutionName' } }))?.value;
   const pendingCredentials = reviewRows.filter(course => (course.pendingReview || course.moduleSubmissions.length) && course.certificateEnabled);
@@ -198,23 +199,32 @@ export const approvePublication = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (req.body.revisionId) {
-      if (!course?.published || !course.ownerId) fail('This module requires a published course.');
+      if (!course?.ownerId || (!course.published && course.modules.length)) fail('This course is unavailable for module publication.');
       const revision = await CourseRevision.findOne({
         where: { id: req.body.revisionId, courseId: course.id, actorId: course.ownerId, action: 'module-pending' }, transaction
       });
       const owner = await User.findOne({ where: { id: course.ownerId, role: 'faculty', active: true, approvalStatus: 'approved' }, transaction });
       if (!revision || !owner) fail('This module is no longer pending review.');
       const { module, questions } = revision.snapshot;
-      const number = Math.max(0, ...course.modules.map((item, index) => item.number ?? index + 1)) + 1;
+      const existing = course.modules.find(item => item.id === module.id);
+      const duplicate = duplicateModule(course.modules, module, module.id, existing);
+      if (duplicate) fail(duplicateModuleMessage(duplicate), 409);
+      const normalized = course.modules.map((item, index) => ({ ...item, number: item.number ?? index + 1 }));
+      const maxNumber = Math.max(0, ...normalized.map(item => item.number));
+      const storedNumber = normalized.find(item => item.id === module.id)?.number;
+      const number = storedNumber ?? (module.number && !normalized.some(item => item.number === module.number) ? module.number : maxNumber + 1);
+      const reviewed = { ...module, number, lessons: module.lessons.map(lesson => ({ ...lesson, sourceReviewed: true })) };
       const data = courseInput({
         ...plain(course),
-        modules: [...course.modules, { ...module, number, lessons: module.lessons.map(lesson => ({ ...lesson, sourceReviewed: true })) }],
-        questions: [...course.questions, ...questions.map(question => ({ ...question, reviewed: true }))]
+        modules: (existing ? normalized.map(item => item.id === module.id ? reviewed : item) : [...normalized, reviewed]).sort((a, b) => a.number - b.number),
+        questions: [...course.questions.filter(question => question.moduleId !== module.id), ...questions.map(question => ({ ...question, reviewed: true }))]
       });
       publishCheck(data);
       if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) fail('The faculty signature is missing.');
-      await course.update({ modules: data.modules, questions: data.questions, version: course.version + 1, awardsApproved: course.certificateEnabled }, { transaction });
+      await course.update({ modules: data.modules, questions: data.questions, version: course.version + 1, published: true, awardsApproved: course.certificateEnabled }, { transaction });
       await revision.update({ action: 'module-published' }, { transaction });
+      const archives = await CourseRevision.findAll({ where: { courseId: course.id, action: 'module-archived' }, transaction });
+      for (const row of archives) if (row.snapshot?.module?.id === module.id) await row.update({ action: 'module-restored' }, { transaction });
       await audit(req.user.id, 'module.published', 'course', course.id, { moduleId: module.id }, transaction);
       return;
     }
