@@ -381,8 +381,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     });
     const singleAdmin = `/admin/courses/${singleCourse.id}`;
     assert.equal((await a.post(singleAdmin, {
-      title: singleCourse.title, domain: singleCourse.domain, passingScore: singleCourse.passingScore,
-      description: singleCourse.description, unpublish: 'yes'
+      version: singleCourse.version, unpublish: 'yes'
     })).status, 302);
     await singleCourse.reload();
     assert.equal((await s.get(`/student/courses/${singleCourse.id}`)).status, 404);

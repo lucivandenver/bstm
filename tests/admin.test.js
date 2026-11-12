@@ -42,7 +42,7 @@ await test('Admin management is protected and Faculty/Student registration remai
     assert.equal(r.status, 200);
     assert.match(r.html, /My competency progress/);
     assert.match(r.html, /Tourism and Hospitality Knowledge/);
-    assert.doesNotMatch(r.html, /My learning evidence|Keep your momentum/);
+    assert.doesNotMatch(r.html, /My learning evidence|Keep your momentum|<h2>Continue learning|Explore your next course|<h2>Assigned learning/);
     await admin.get('/admin/users'); r = await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'approved', verifyIdentity: 'yes', verifyQualifications: 'yes' }); assert.equal(r.status, 302);
     assert.equal((await User.findByPk(teacher.id)).approvalStatus, 'approved');
     await faculty.login(facultyData.email, facultyData.password); r = await faculty.get('/dashboard'); assert.equal(r.location, '/faculty');

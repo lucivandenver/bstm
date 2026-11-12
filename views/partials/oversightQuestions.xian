@@ -1,0 +1,6 @@
+{{#if questions.length}}
+<h4>Assessment questions</h4>
+<ol>{{#each questions}}
+  <li><strong>{{prompt}}</strong><ol>{{#each options}}<li>{{this}}{{#if (eq @index ../answer)}} <strong>Correct answer</strong>{{/if}}</li>{{/each}}</ol><p>{{explanation}}</p></li>
+{{/each}}</ol>
+{{/if}}
