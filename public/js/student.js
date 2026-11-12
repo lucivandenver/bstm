@@ -84,3 +84,48 @@
     });
   }
 })();
+
+for (const navigation of document.querySelectorAll('.assessment-topic-actions')) {
+  const form = navigation.closest('form');
+  const topics = [...form.querySelectorAll('[data-assessment-topic]')];
+  const submit = form.querySelector('[data-topic-submit]');
+  if (!submit || submit.disabled) continue;
+  if (submit.matches('a')) {
+    submit.addEventListener('click', event => {
+      const unanswered = form.querySelector('[data-assessment-topic]:not([hidden]) input:invalid');
+      if (unanswered) {
+        event.preventDefault();
+        unanswered.reportValidity();
+      }
+    });
+  }
+  if (topics.length < 2) continue;
+
+  const back = navigation.querySelector('[data-topic-back]');
+  const next = navigation.querySelector('[data-topic-next]');
+  const status = navigation.querySelector('[data-topic-status]');
+  let current = Math.max(0, topics.findIndex(topic => topic.id === `topic-${form.dataset.activeTopic}`));
+  function showTopic(focus = false) {
+    topics.forEach((topic, index) => { topic.hidden = index !== current; });
+    back.disabled = current === 0;
+    next.hidden = current === topics.length - 1;
+    submit.hidden = !next.hidden;
+    status.textContent = `Topic ${current + 1} of ${topics.length}`;
+    if (focus) topics[current].querySelector('h2')?.focus();
+  }
+  navigation.hidden = false;
+  showTopic();
+  back.addEventListener('click', () => { current--; showTopic(true); });
+  next.addEventListener('click', () => {
+    const unanswered = topics[current].querySelector('input:invalid');
+    if (unanswered) return unanswered.reportValidity();
+    current++;
+    showTopic(true);
+  });
+  form.addEventListener('invalid', event => {
+    const index = topics.indexOf(event.target.closest('[data-assessment-topic]'));
+    if (index < 0 || !topics[index].hidden) return;
+    current = index;
+    showTopic();
+  }, true);
+}

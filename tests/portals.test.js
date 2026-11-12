@@ -97,6 +97,11 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await f2.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify(draft),action:'publish'})).status,404);
     assert.equal((await s.get(`/faculty/courses/${c.id}/edit`)).status,403);
     const section=await Section.findOne({where:{name:'BSTM 4-1'}});await f.get('/faculty/assignments');r=await f.post('/faculty/assignments',{courseId:c.id,sectionId:section.id,required:'true',dueAt:'2027-01-10T12:00'});assert.equal(r.status,302);
+    const moduleUrl = `/student/courses/${c.id}/modules/m1`;
+    assert.equal((await s.post(moduleUrl + '/save', {})).status, 302);
+    assert.match((await s.get('/student/courses?view=saved')).html, /View modules/);
+    assert.match((await s.get(`/student/courses/${c.id}`)).html, /Remove saved module/);
+    assert.equal((await s.post(moduleUrl + '/unsave', {})).status, 302);
     r=await s.get('/student/courses');assert.match(r.html,/Required learning/);r=await s.post(`/student/courses/${c.id}/enroll`);assert.equal(r.status,302);const attempt=await CourseAttempt.findOne({where:{userId:student.id}}),id=attempt.id;
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
     assert.match(legacyEditor.html, /Attach original file/);

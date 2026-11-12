@@ -34,10 +34,12 @@
       <ul class="lesson-concepts">{{#each selected.takeaways}}<li>{{this}}</li>{{/each}}</ul>
     </section>
   {{/if}}
+  {{#if topicQuizHref}}<p><a class="button secondary" href="{{topicQuizHref}}">Topic questions →</a></p>{{/if}}
   {{#unless completed}}
     <form action="/student/learn/{{attempt.id}}/complete" method="post" {{#if lessonChallenge}}data-lesson-completion data-lesson-challenge="{{lessonChallenge}}"{{/if}}>
       <input type="hidden" name="_csrf" value="{{csrf}}">
       <input type="hidden" name="lessonId" value="{{selected.id}}">
+      <input type="hidden" name="continueToTopic" value="yes">
       {{#if lessonChallenge}}
         <p class="small muted" tabindex="0" data-lecture-end role="status">Reach the end of the lecture to unlock Continue.</p>
         <input type="hidden" name="lessonChallenge">
