@@ -9,13 +9,13 @@ try {
       { code: "AI_NOT_CONFIGURED" },
     );
   const result = await explainCareer({
-    scores: { "Tourism knowledge": 85 },
+    scores: { "Tourism and Hospitality Knowledge": 85 },
     tracks: [
       {
         title: "Tourism Information Assistant",
         label: "Exploratory validation example",
-        required: ["Tourism knowledge"],
-        strengths: ["Tourism knowledge"],
+        required: ["Tourism and Hospitality Knowledge"],
+        strengths: ["Tourism and Hospitality Knowledge"],
         gaps: [],
       },
     ],

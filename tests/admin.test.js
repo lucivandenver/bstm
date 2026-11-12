@@ -34,6 +34,15 @@ await test('Admin management is protected and Faculty/Student registration remai
     for (const path of ['/admin','/admin/users','/admin/users/' + learner.id,'/admin/users/' + teacher.id,'/admin/sections','/admin/courses','/admin/careers','/admin/credentials','/admin/announcements','/admin/reports','/admin/audit','/admin/settings','/admin/account']) {
       r = await admin.get(path); assert.equal(r.status, 200, path); assert.ok(!r.html.includes(initialHash));
     }
+    r = await admin.get('/admin/users');
+    assert.doesNotMatch(r.html, /Details \/ edit<\/a>\s*}/);
+    r = await admin.get('/admin');
+    assert.match(r.html, /dashboard-link dashboard-summary" href="\/admin\/courses"/);
+    r = await student.get('/student');
+    assert.equal(r.status, 200);
+    assert.match(r.html, /My competency progress/);
+    assert.match(r.html, /Tourism and Hospitality Knowledge/);
+    assert.doesNotMatch(r.html, /My learning evidence|Keep your momentum/);
     await admin.get('/admin/users'); r = await admin.post(`/admin/users/${teacher.id}/approval`, { status: 'approved', verifyIdentity: 'yes', verifyQualifications: 'yes' }); assert.equal(r.status, 302);
     assert.equal((await User.findByPk(teacher.id)).approvalStatus, 'approved');
     await faculty.login(facultyData.email, facultyData.password); r = await faculty.get('/dashboard'); assert.equal(r.location, '/faculty');

@@ -270,12 +270,12 @@ test("three large files upload incrementally, retry without duplicates, and gene
         ...new URLSearchParams({
           _csrf: f.csrf,
           background: "yes",
-          domain: "Tourism knowledge",
+          domain: "Tourism and Hospitality Knowledge",
           outcomes: "Understand tourism booking.",
           questionCount: "8",
           consent: "yes",
         }),
-        ["competencyAreas", "Tourism knowledge"],
+        ["competencyAreas", "Tourism and Hospitality Knowledge"],
         ["competencyAreas", "Communication"],
       ]),
     });
@@ -290,7 +290,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       body: new URLSearchParams({
         _csrf: f.csrf,
         background: "yes",
-        domain: "Tourism knowledge",
+        domain: "Tourism and Hospitality Knowledge",
         outcomes: "Understand tourism booking.",
         questionCount: "8",
         consent: "yes",
@@ -357,7 +357,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.equal((await f.get(state.preview)).status, 200);
     assert.equal((await f.get(state.redirect)).status, 200);
     assert.deepEqual(course.competencyAreas, [
-      "Tourism knowledge",
+      "Tourism and Hospitality Knowledge",
       "Communication",
     ]);
     const publish = await f.post(`/faculty/courses/${course.id}`, {
@@ -375,7 +375,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const started = await f.request(`/faculty/sources/${sourceId}/generate`, {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
-        body: new URLSearchParams({ destinationId, moduleTitle, ...(moduleTitle.startsWith("First") ? { topicCount: 6 } : {}), topicTitles: "Verify guest requirements", domain: "Tourism knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
+        body: new URLSearchParams({ destinationId, moduleTitle, ...(moduleTitle.startsWith("First") ? { topicCount: 6 } : {}), topicTitles: "Verify guest requirements", domain: "Tourism and Hospitality Knowledge", questionCount: 8, outcomes: "Verify guest requirements", consent: "yes", background: "yes" }),
       });
       assert.equal(started.status, 202, started.html);
       const { statusUrl: moduleStatusUrl } = JSON.parse(started.html);
@@ -410,7 +410,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       method: "POST",
       headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
       body: new URLSearchParams({ destinationId, moduleTitle: "Insufficient module",
-        domain: "Tourism knowledge", questionCount: 8, consent: "yes", background: "yes" })
+        domain: "Tourism and Hospitality Knowledge", questionCount: 8, consent: "yes", background: "yes" })
     });
     assert.equal(insufficientStart.status, 202);
     const insufficientUrl = JSON.parse(insufficientStart.html).statusUrl;
@@ -447,7 +447,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
       body: new URLSearchParams({
         _csrf: f.csrf,
         background: "yes",
-        domain: "Tourism knowledge",
+        domain: "Tourism and Hospitality Knowledge",
         outcomes: "Understand tourism booking.",
         questionCount: "8",
         consent: "yes",

@@ -134,10 +134,85 @@
 }
 [data-role-dashboard] :is(.card, .stat-card) { border-color: #7db29a; }
 [data-role-dashboard] .publication-needs-review { border-color: #cf650c; }
-[data-role-dashboard="faculty"] .hero-banner { padding: clamp(16px, 2.1vw, 26px); }
-[data-role-dashboard="faculty"] .hero-banner h2 { font-size: clamp(22px, 2.1vw, 28px); }
-[data-role-dashboard="faculty"] .hero-banner p { margin: 6px 0 12px; }
 
 @media (max-width: 800px) {
   .app-header .workspace-title { max-width: 44vw; }
 }
+
+[data-role-dashboard] :is(.stat, .stat-card, .dashboard-summary) {
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+[data-role-dashboard] :is(.stat, .stat-card) { align-items: center; }
+.dashboard-summary .row { justify-content: center; gap: .5rem; }
+.dashboard-summary :is(.course-meta, .progress-label) { flex-wrap: wrap; gap: .5rem; }
+.dashboard-summary > .chip { align-self: center; }
+.dashboard-summary :is(.course-art, .course-meta) { justify-content: center; gap: .5rem; }
+.dashboard-card-action, .dashboard-card-target { color: var(--green); }
+.dashboard-link {
+  color: inherit;
+  text-decoration: none;
+}
+.dashboard-card-with-actions { position: relative; }
+.dashboard-card-target::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.dashboard-secondary-link { position: relative; z-index: 1; }
+[data-role-dashboard] :is(.dashboard-link, .dashboard-card-with-actions) {
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+[data-role-dashboard] :is(.dashboard-link:focus-visible, .dashboard-card-with-actions:focus-within) {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  [data-role-dashboard] :is(.dashboard-link:hover, .dashboard-card-with-actions:hover) {
+    background-color: #eff8f2;
+    text-decoration: none;
+  }
+}
+[data-role-dashboard] :is(.dashboard-link:active, .dashboard-card-with-actions:active) {
+  background-color: #d6eddf;
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+[data-role-dashboard="faculty"] .hero-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem 1.25rem;
+  padding: .75rem 1rem;
+}
+.teaching-banner-copy { flex: 1 1 22rem; min-width: 0; }
+[data-role-dashboard="faculty"] .hero-banner :is(h2, p) { margin: 0; }
+[data-role-dashboard="faculty"] .hero-banner h2 { font-size: clamp(18px, 2vw, 22px); }
+[data-role-dashboard="faculty"] .hero-banner p { font-size: .875rem; }
+[data-role-dashboard="faculty"] .hero-banner .eyebrow { font-size: .7rem; }
+[data-role-dashboard="faculty"] .hero-banner .button { min-height: 44px; padding: .45rem .75rem; }
+.competency-progress { width: 100%; accent-color: var(--green); }
+.progress-label { flex-wrap: wrap; gap: .25rem .75rem; }
+
+.workspace, .workspace .page, .workspace .grid > *, .workspace .table-wrap { min-width: 0; }
+.workspace .table-wrap { max-width: 100%; overflow-x: auto; }
+.workspace :is(.page-heading, .section-heading, .actions) { flex-wrap: wrap; }
+.workspace :is(.card, .page-heading) :is(h2, h3, p) { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .workspace .page { padding-inline: 1rem; }
+  [data-role-dashboard] :is(.dashboard-columns, .cols-2, .cols-3, .course-grid) { grid-template-columns: minmax(0, 1fr); }
+  [data-role-dashboard] :is(.stats-grid, .cols-4:not(.course-grid)) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .625rem; }
+  [data-role-dashboard] :is(.stat, .stat-card) { padding: .75rem .5rem; }
+  [data-role-dashboard="faculty"] .hero-banner .actions { gap: .5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-role-dashboard] :is(.dashboard-link, .dashboard-card-with-actions) { transition: none; }
+}
+
+.card.module-failed { border: 2px solid #b9233a; }
+.module-failed .progress-label, .module-failed-result,
+.module-failed .progress-circle :is(div, small) { color: #a71b32; }
+.module-failed .progress-fill { background: #b9233a; }
+.module-failed .progress-circle { background: conic-gradient(#b9233a var(--angle), #f7e3e7 0); }

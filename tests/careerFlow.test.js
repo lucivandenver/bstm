@@ -4,7 +4,7 @@ const {sequelize,User,Course,CourseAttempt,Credential}=await import('../models/l
 await test('career HTTP generation uses owned earned/developing evidence, returns matched roles and invalidates stale results',async()=>{
  await sequelize.sync({force:true});await seedAdministration();const password=await bcrypt.hash('TestingPassword-2026!',4);
  const user=await User.create({name:'Private Student Name',email:'private-student@example.test',studentId:'PRIVATE-ID',section:'BSTM 4-1',gender:'Female',password});
- const course=await Course.create({title:'Tourism service',slug:'career-evidence',domain:'Tourism knowledge',modules:[{id:'m1',title:'Tourism service module',lessons:[{id:'l1',body:'Secret lesson text'}]},{id:'never-assessed',title:'Never assessed module',lessons:[{id:'untested'}]}],questions:[{moduleId:'m1',domain:'Tourism knowledge'}]});
+ const course=await Course.create({title:'Tourism service',slug:'career-evidence',domain:'Tourism and Hospitality Knowledge',modules:[{id:'m1',title:'Tourism service module',lessons:[{id:'l1',body:'Secret lesson text'}]},{id:'never-assessed',title:'Never assessed module',lessons:[{id:'untested'}]}],questions:[{moduleId:'m1',domain:'Tourism and Hospitality Knowledge'}]});
  const completed=await CourseAttempt.create({userId:user.id,courseId:course.id,attemptNumber:1,status:'completed',completedAt:new Date(),finalScore:85,snapshot:course.get({plain:true}),completedLessons:['l1','untested'],quizScores:{m1:85}});
  await Credential.create({userId:user.id,attemptId:completed.id,courseTitle:course.title,score:85,revoked:false});
  const other=await Course.create({title:'Digital reservations',slug:'developing-evidence',domain:'Digital skills',modules:[{id:'m2',title:'Digital reservations module',lessons:[{id:'l2'},{id:'l3'}]}],questions:[{moduleId:'m2',domain:'Digital skills'}]});
@@ -13,6 +13,10 @@ await test('career HTTP generation uses owned earned/developing evidence, return
  const key=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL;
  try{
   await client.login(user.email,'TestingPassword-2026!');
+  const dashboard=await client.get('/student');
+  assert.match(dashboard.html,/Tourism and Hospitality Knowledge<\/strong><span>1 of 2 passed/);
+  assert.match(dashboard.html,/Digital skills<\/strong><span>0 of 1 passed/);
+  assert.match(dashboard.html,/Communication<\/strong><span>No modules started/);
   let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
   r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
   process.env.GEMINI_API_KEY='test-key';process.env.GEMINI_MODEL='test-model';

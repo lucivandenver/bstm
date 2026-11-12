@@ -1,0 +1,8 @@
+{{#if retakeUrl}}
+<form method="post" action="{{retakeUrl}}">
+  <input type="hidden" name="_csrf" value="{{@root.csrf}}">
+  <button class="button" type="submit">Retake</button>
+</form>
+{{else}}
+<p class="small muted">Retake limit reached.</p>
+{{/if}}

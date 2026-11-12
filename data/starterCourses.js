@@ -1,6 +1,6 @@
 // Starter learning content for development. Faculty must validate against the actual syllabus before academic use.
 const q = (id, prompt, options, answer, explanation, domain, moduleId) => ({ id, prompt, options, answer, explanation, domain, moduleId });
-export const domains = ['Tourism knowledge', 'Communication', 'Workplace', 'Digital skills'];
+export const domains = ['Tourism and Hospitality Knowledge', 'Communication', 'Workplace', 'Digital skills'];
 export const starterCourses = [
   {
     slug: 'travel-tour-foundations', title: 'Travel & Tour Operations Foundations', domain: domains[0], level: 'Foundation', minutes: 45,

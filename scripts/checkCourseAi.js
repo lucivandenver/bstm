@@ -17,7 +17,7 @@ const sections = [
   },
 ];
 const options = {
-  domain: "Tourism knowledge",
+  domain: "Tourism and Hospitality Knowledge",
   level: "Foundation",
   outcomes: "Verify reliable tourism reservations.",
   questionCount: 3,

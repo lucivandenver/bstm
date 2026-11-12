@@ -10,7 +10,7 @@
   {{/if}}
   {{#if retry}}<h2>Would you like to try again?</h2>{{#if final}}<p>The final assessment questions will appear in a different order when there is more than one question.</p>{{/if}}{{/if}}
   <div class="actions">
-    {{#if retry}}<a class="button" href="{{retryUrl}}">Retry assessment</a>{{/if}}
+    {{#if retry}}{{#if final}}<a class="button" href="{{retryUrl}}">Retry assessment</a>{{else}}{{> moduleRetake}}{{/if}}{{/if}}
     <a class="button secondary" href="{{continueUrl}}">{{#if retry}}Back to course{{else}}Continue learning{{/if}}</a>
     {{#if completed}}<a class="button" href="/student/achievements">View achievements</a>{{/if}}
   </div>

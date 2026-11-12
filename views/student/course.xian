@@ -1,12 +1,12 @@
 {{> studentTop}}
 <p class="small"><a href="/student/courses">← Back to catalog</a></p><div class="page-heading"><div><span class="chip">{{areaLabels course.competencyAreas course.domain}}</span><p class="muted">{{course.description}}</p></div></div><section class="space-top" aria-label="Course modules">
 <div class="grid cols-3">{{#each modules}}
-<article class="card module-card" id="module-{{id}}">
+<article class="card module-card{{#if progress.failed}} module-failed{{/if}}" id="module-{{id}}">
 <h2>{{title}}</h2>
 <p class="small muted">{{lessons.length}} topics</p>
 <details><summary>View topics</summary><ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol></details>
 {{#if progress}}
-<div class="progress-label space-top"><span>{{progress.statusLabel}}{{#if progress.answered}} · Quiz score {{progress.score}}%{{/if}}</span><strong>{{progress.percent}}%</strong></div>
+<div class="progress-label space-top"><span>{{progress.statusLabel}}</span><strong>{{#if progress.answered}}Quiz score {{progress.score}}%{{else}}{{progress.percent}}%{{/if}}</strong></div>
 <div class="progress-track" role="progressbar" aria-label="Module progress" aria-valuenow="{{progress.percent}}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="--progress:{{progress.percent}}%"></div></div>
 {{/if}}
 <div class="actions space-top">
@@ -16,9 +16,10 @@
 </form>
 {{/unless}}
 {{#if reviewHref}}<a class="button secondary" href="{{reviewHref}}">Review module</a>
-{{else}}{{#if resumeHref}}<a class="button" href="{{resumeHref}}">Continue Learning →</a>{{else}}<form method="post" action="/student/courses/{{../course.id}}/enroll"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="moduleId" value="{{id}}"><button class="button">Take assessment →</button></form>
-{{/if}}{{/if}}
+{{else}}{{#if progress.failed}}{{> moduleRetake retakeUrl=progress.retakeUrl}}{{else}}{{#if resumeHref}}<a class="button" href="{{resumeHref}}">Continue Learning →</a>{{else}}<form method="post" action="/student/courses/{{../course.id}}/enroll"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="moduleId" value="{{id}}"><button class="button">Take assessment →</button></form>
+{{/if}}{{/if}}{{/if}}
 </div>
+{{#if progress}}<p class="small muted">Retakes: {{progress.retakeCount}}</p>{{/if}}
 </article>{{else}}<p>No modules are available.</p>{{/each}}</div></section>
 {{#if attempts.length}}<section class="card space-top"><h2>Your attempt history</h2><div class="table-wrap"><table><thead><tr><th>Attempt</th><th>Started</th><th>Status</th><th>Progress</th><th>Final score</th><th></th></tr></thead><tbody>{{#each attempts}}<tr><td>#{{attemptNumber}}</td><td>{{started}}</td><td>{{status}}</td><td>{{percent}}%</td><td>{{#if completed}}{{finalScore}}%{{else}}Pending{{/if}}</td><td><a href="/student/learn/{{id}}">View →</a></td></tr>{{/each}}</tbody></table></div></section>{{/if}}
 <section class="card space-top"><h2>Learning outcomes</h2><ul>{{#each course.outcomes}}<li>{{this}}</li>{{else}}<li>Understand and apply the concepts in each module.</li>{{/each}}</ul><p class="small muted">Created by {{author}} · Competency: {{areaLabels course.competencyAreas course.domain}}</p><h3>Completion requirements</h3><p>Complete every lesson, pass all module quizzes and the final assessment at {{course.passingScore}}% or higher. {{#if course.tasks.length}}Practical activities also require a passing faculty rubric grade.{{/if}} {{#if course.policy.feedbackRequired}}Course feedback is required.{{/if}}</p><p class="small">{{#if course.policy.pretest}}Includes a diagnostic pre-test.{{/if}} {{#if course.policy.quizMinutes}}Assessment time limit: {{course.policy.quizMinutes}} minutes.{{/if}} {{#if course.policy.attemptLimit}}Assessment submission limit: {{course.policy.attemptLimit}} per scope.{{else}}Assessment submissions are unlimited.{{/if}}</p>{{#if prerequisites}}<h3>Prerequisites</h3>{{#each prerequisites}}<p><a class="text-link" href="/student/courses/{{id}}">{{title}} →</a></p>{{/each}}{{/if}}<p class="small muted">{{#if course.certificateEnabled}}A system-issued certificate and badge are created automatically when you meet the published completion rules.{{else}}This course records completion without issuing a certificate.{{/if}} CareerBridge awards are not professional licences.</p></section>{{> studentBottom}}

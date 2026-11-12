@@ -425,14 +425,35 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const published = await s.get(catalogUrl);
     assert.match(published.html, /Independent module/);
     assert.equal((published.html.match(/Take assessment/g) || []).length, 1);
-    assert.match(published.html, /Failed · Quiz score 50%/);
-    assert.match(published.html, /Continue Learning/);
+    assert.match(published.html, /module-failed/);
+    assert.match(published.html, /Quiz score 50%/);
+    assert.match(published.html, /\/retake\/m1/);
+    const myLearning = await s.get('/student/learning');
+    assert.match(myLearning.html, /module-failed/);
+    assert.match(myLearning.html, /\/retake\/m1/);
     assert.equal((await s.post(catalogUrl + '/enroll', { moduleId: 'm2' })).location, learnUrl + '?lesson=' + moduleTwo.lessons[0].id);
     assert.doesNotMatch((await s.get('/student/learning')).html, /Independent module/);
     assert.equal((await s.post(catalogUrl + '/modules/m2/save', {})).status, 302);
     assert.match((await s.get('/student/courses?view=saved')).html, /Independent module/);
     assert.equal((await learnerAttempt.reload()).quizScores.m1, 50);
     assert.deepEqual(learnerAttempt.completedLessons, ['l1']);
+    const failure = { scope: 'm2', score: 25, at: new Date().toISOString() };
+    await learnerAttempt.update({
+      completedLessons: ['l1', ...moduleTwo.lessons.map(lesson => lesson.id)],
+      quizScores: { m1: 50, m2: 25 }, quizAttempts: [failure]
+    });
+    const retake = await s.post(learnUrl + '/retake/m2', {});
+    assert.equal(retake.location, learnUrl + '?lesson=' + moduleTwo.lessons[0].id);
+    await learnerAttempt.reload();
+    assert.deepEqual(learnerAttempt.completedLessons, ['l1']);
+    assert.deepEqual(learnerAttempt.quizScores, { m1: 50, 'retake:m2': 1 });
+    assert.deepEqual(learnerAttempt.quizAttempts, [failure]);
+    assert.match((await s.get('/student/learning')).html, /Retakes: 1/);
+    for (const lesson of moduleTwo.lessons.slice(1)) {
+      assert.equal((await s.get(learnUrl + '?lesson=' + lesson.id)).status, 403);
+    }
+    assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 403);
+    assert.equal((await s.post(learnUrl + '/retake/m2', {})).status, 403);
     await learnerAttempt.update({ completedLessons: ['l1', ...moduleTwo.lessons.map(lesson => lesson.id)] });
     assert.equal((await s.get(learnUrl + '/quiz/m2')).status, 302);
     for (const lesson of moduleTwo.lessons) {

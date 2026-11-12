@@ -2,6 +2,7 @@ import { DataTypes } from 'sequelize';
 import '../models/adminModels.js';
 import '../models/portalModels.js';
 import { bootstrapAdmin, seedAdministration } from '../services/accounts.js';
+import { domains } from '../data/starterCourses.js';
 import { sequelize, User } from '../models/learningModels.js';
 export async function migrateStudent() {
   await sequelize.authenticate();
@@ -58,6 +59,41 @@ export async function migrateStudent() {
       if (index.unique && index.fields.length === 1 && index.fields[0].attribute === 'attemptId') await qi.removeIndex('Credentials', index.name);
     }
   }
+  await renameTourismCompetency();
   await seedAdministration();
   await bootstrapAdmin();
+}
+
+// Rename persisted competency values and score keys without changing attempt scores.
+async function renameTourismCompetency() {
+  const legacy = 'Tourism knowledge';
+  const current = domains[0];
+  const jsonFields = {
+    Courses: ['competencyAreas', 'questions', 'tasks'],
+    CourseAttempts: ['snapshot', 'quizAttempts', 'quizScores'],
+    CourseRevisions: ['snapshot'],
+    Assessments: ['scores'],
+    CareerPaths: ['required'],
+    SourceDocuments: ['generationSettings'],
+    AiJobs: ['state'],
+    PracticalSubmissions: ['scores']
+  };
+  await sequelize.transaction(async transaction => {
+    for (const table of ['Courses', 'QuestionBanks']) {
+      await sequelize.query('UPDATE `' + table + '` SET domain = :current WHERE domain = :legacy',
+        { replacements: { legacy, current }, transaction });
+    }
+    // REPLACE matches complete quoted JSON strings, including object keys.
+    const replacements = { legacy: JSON.stringify(legacy), current: JSON.stringify(current) };
+    for (const [table, fields] of Object.entries(jsonFields)) {
+      for (const field of fields) {
+        const column = '`' + field + '`';
+        await sequelize.query(
+          'UPDATE `' + table + '` SET ' + column + ' = REPLACE(' + column + ', :legacy, :current)' +
+          ' WHERE INSTR(' + column + ', :legacy) > 0',
+          { replacements, transaction }
+        );
+      }
+    }
+  });
 }
