@@ -86,7 +86,9 @@ export const deleteCredentialRequest = async (req, res) => {
 };
 const publicationHistory = ['archived', 'admin-archived', 'published', 'admin-published'];
 const pendingPublication = (course, revision) => revision?.action === 'pending-review' && revision.version === course.version;
-const archivedCourse = (course, revision, previouslyPublished) => !course.published && !pendingPublication(course, revision) && previouslyPublished;
+const returnedPublication = revision => ['publication-declined', 'publication-cancelled'].includes(revision?.action);
+const archivedCourse = (course, revision, previouslyPublished) =>
+  !course.published && !pendingPublication(course, revision) && !returnedPublication(revision) && previouslyPublished;
 export const courses = async (req, res) => {
   let courses, databaseNotice='';
   try { courses = await Course.findAll({ where: { ownerId: req.user.id }, order: [['id', 'DESC']] }); }
@@ -97,8 +99,8 @@ export const courses = async (req, res) => {
   const list = archived ? 'archive' : drafts ? 'drafts' : 'active';
   const status = !archived && ['pending', 'approved', 'draft'].includes(req.query.status) ? req.query.status : '';
   const revisions = courses.length ? await CourseRevision.findAll({
-    where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] } },
-    attributes: ['courseId', 'action', 'version'],
+    where: { courseId: { [Op.in]: courses.map(course => course.id) }, action: { [Op.in]: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft', 'publication-declined', 'publication-cancelled'] } },
+    attributes: ['id', 'courseId', 'action', 'version'],
     order: [['id', 'DESC']]
   }) : [];
   const latest = new Map();
@@ -121,12 +123,14 @@ export const courses = async (req, res) => {
     const module = row.snapshot?.module;
     if (!module) continue;
     const items = modulesByCourse.get(row.courseId) || [];
-    items.push({ ...module, number: module.number ?? savedArray(courseById.get(row.courseId).modules).length + 1, status: archived ? 'Archived' : drafts ? 'Draft' : 'Pending Admin review', revisionId: row.id, editUrl: `/faculty/courses/${row.courseId}/edit?revision=${row.id}#module-revision-${row.id}` });
+    items.push({ ...module, number: module.number ?? savedArray(courseById.get(row.courseId).modules).length + 1, status: archived ? 'Archived' : drafts ? 'Draft' : 'Pending Admin review', revisionId: row.id, declineReason: drafts ? row.snapshot.declineReason : null, editUrl: `/faculty/courses/${row.courseId}/edit?revision=${row.id}#module-revision-${row.id}` });
     modulesByCourse.set(row.courseId, items);
   }
   const listedModules = course => {
     const revision = latest.get(course.id);
-    const stored = archived && (course.published || !previouslyPublished.has(course.id)) ? [] : drafts && (course.published || pendingPublication(course, revision) || previouslyPublished.has(course.id)) ? [] : savedArray(course.modules);
+    const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
+    const stored = (archived && !isArchived) || (drafts && (course.published || pendingPublication(course, revision) || isArchived))
+      ? [] : savedArray(course.modules);
     const status = course.published ? 'Published' : archived ? 'Archived' : pendingPublication(course, revision) ? 'Pending Admin review' : 'Draft';
     const revisions = modulesByCourse.get(course.id) || [];
     return [
@@ -135,7 +139,7 @@ export const courses = async (req, res) => {
     ];
   };
   const matches = courses.filter(course => {
-    if (drafts && !listedModules(course).length) return false;
+    if ((drafts || archived) && !listedModules(course).length) return false;
     const revision = latest.get(course.id);
     const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
     const courseStatus = course.published ? 'approved' : pendingPublication(course, revision) ? 'pending' : 'draft';
@@ -153,19 +157,24 @@ export const courses = async (req, res) => {
   if (selectedId && !selectedCourse) fail('Course not found in this list.', 404);
   const cards = courses.map(course => ({
     ...plain(course), title: course.title.toUpperCase(), moduleCount: listedModules(course).length,
+    hasPending: list === 'active' && listedModules(course).some(module => module.status === 'Pending Admin review'),
     href: listUrl(page) + '&course=' + course.id
   }));
   let detail;
   if (selectedCourse) {
     const c = selectedCourse;
-    const draftOnly = drafts && (c.published || pendingPublication(c, latest.get(c.id)) || previouslyPublished.has(c.id));
+    const draftOnly = drafts && (c.published || pendingPublication(c, latest.get(c.id)) || archivedCourse(c, latest.get(c.id), previouslyPublished.has(c.id)));
     const hasHistory = !c.published && !draftOnly && (
       await CourseAttempt.count({ where: { courseId: c.id } }) ||
       await CredentialRequest.count({ where: { courseId: c.id } }) ||
       await CourseAssignment.count({ where: { courseId: c.id } })
     );
-    detail = { ...plain(c), modules: listedModules(c).map(module => ({
+    const latestRevision = latest.get(c.id);
+    const declineReason = latestRevision?.action === 'publication-declined'
+      ? (await CourseRevision.findByPk(latestRevision.id))?.snapshot?.declineReason : null;
+    detail = { ...plain(c), declineReason, modules: listedModules(c).map(module => ({
       ...module, actionUrl: `/faculty/courses/${c.id}/module/${encodeURIComponent(module.id)}`,
+      pending: module.status === 'Pending Admin review',
       canDelete: Boolean(module.revisionId) || !hasHistory
     })), draftOnly,
       pendingReview: pendingPublication(c, latest.get(c.id)),
@@ -511,7 +520,7 @@ export const manageModule = async (req, res) => {
       (row.action === 'module-archived' || row.actorId === req.user.id));
     const revision = matching.find(row => String(row.id) === req.body.revisionId);
     if (req.body.revisionId && !revision) fail('Module revision not found.', 404);
-    const list = action === 'delete-draft' ? 'drafts' : action === 'republish' ? 'active' : 'archive';
+    const list = ['delete-draft', 'cancel-submission'].includes(action) ? 'drafts' : action === 'republish' ? 'active' : 'archive';
     redirect = `/faculty/courses?list=${list}`;
     if (action === 'unpublish' || action === 'republish') redirect += `&course=${course.id}`;
     const snapshot = item => ({ module: { ...item, number: item.number ?? modules.indexOf(item) + 1 },
@@ -526,7 +535,18 @@ export const manageModule = async (req, res) => {
         version: course.version + 1, published: course.published && remaining.length > 0
       }, { transaction });
     };
-    if (action === 'edit' && course.published && module) {
+    if (action === 'cancel-submission') {
+      if (revision?.action === 'module-pending') {
+        await revision.update({ action: 'module-draft' }, { transaction });
+      } else if (!req.body.revisionId && !course.published && module) {
+        const submission = await CourseRevision.findOne({
+          where: { courseId: course.id, actorId: req.user.id, version: course.version, action: 'pending-review' }, transaction
+        });
+        if (!submission) fail('This publication is no longer pending.', 409);
+        await submission.update({ action: 'publication-cancelled' }, { transaction });
+      } else fail('This publication is no longer pending.', 409);
+      redirect += `&course=${course.id}`;
+    } else if (action === 'edit' && course.published && module) {
       if (matching.some(row => row.action === 'module-pending')) fail('This module already has a revision awaiting Admin review.', 409);
       const draft = matching.find(row => row.action === 'module-draft') || await create(module, 'module-draft');
       redirect = `/faculty/courses/${course.id}/edit?revision=${draft.id}#module-revision-${draft.id}`;
@@ -549,11 +569,11 @@ export const manageModule = async (req, res) => {
       await revision.update({ action: 'module-pending', actorId: req.user.id }, { transaction });
     } else if (!revision && !course.published && module) {
       const latest = await CourseRevision.findOne({
-        where: { courseId: course.id, action: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft'] },
+        where: { courseId: course.id, action: ['archived', 'admin-archived', 'published', 'admin-published', 'pending-review', 'draft', 'publication-declined', 'publication-cancelled'] },
         order: [['id', 'DESC']], transaction
       });
-      const archived = publicationHistory.includes(latest?.action) ||
-        await CourseAttempt.count({ where: { courseId: course.id }, transaction }) > 0;
+      const archived = !returnedPublication(latest) && (publicationHistory.includes(latest?.action) ||
+        await CourseAttempt.count({ where: { courseId: course.id }, transaction }) > 0);
       if (pendingPublication(course, latest)) fail('This course is awaiting Admin review.', 409);
       if (action === 'review' && !archived) {
         const draft = matching.find(row => row.action === 'module-draft') || await create(module, 'module-draft', { fromCourseDraft: true });
@@ -576,7 +596,7 @@ export const manageModule = async (req, res) => {
   });
   if (!['edit', 'review'].includes(req.params.action)) req.flash('success_msg', {
     unpublish: 'Module moved to Archive.', 'delete-draft': 'Module draft deleted.',
-    'delete-module': 'Archived module deleted.', republish: 'Module submitted for Admin review.'
+    'delete-module': 'Archived module deleted.', 'cancel-submission': 'Submission cancelled. Open the draft to edit or resubmit it.', republish: 'Module submitted for Admin review.'
   }[req.params.action]);
   res.redirect(redirect);
 };
@@ -617,7 +637,7 @@ export const deleteArchivedCourse = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const course = await ownedCourse(req, transaction);
     const history = await CourseRevision.findAll({
-      where: { courseId: course.id, action: [...publicationHistory, 'pending-review', 'draft'] },
+      where: { courseId: course.id, action: [...publicationHistory, 'pending-review', 'draft', 'publication-declined', 'publication-cancelled'] },
       attributes: ['action', 'version'], order: [['id', 'DESC']], transaction
     });
     const attempts = await CourseAttempt.findAll({
