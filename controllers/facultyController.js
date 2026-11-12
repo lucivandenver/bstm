@@ -1,3 +1,5 @@
+import { moduleEvidence } from '../services/moduleEvidence.js';
+import { sendWorkbook } from '../services/reportWorkbook.js';
 import { duplicateModule, duplicateModuleMessage } from '../services/moduleDuplicates.js';
 import { facultySignature, preparePublicationCredential } from '../services/publicationCredentials.js';
 import { randomUUID as newModuleId } from 'node:crypto';
@@ -5,11 +7,11 @@ import { createHash } from 'node:crypto';
 import { sourceLimits } from '../services/sourceLimits.js';
 import { startCourseJob, startBlueprintJob, courseJobStatus } from '../services/courseJobs.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
-import { buildEvidence, summarizeLearning } from '../services/evidence.js';
+import { summarizeLearning } from '../services/evidence.js';
 import { Op } from 'sequelize';
 import { randomUUID } from 'node:crypto';
-import { User, Course, CourseAttempt, Credential, SavedCourse, Assessment, StudentProfile, Notification, sequelize } from '../models/learningModels.js';
-import { Section, Announcement, Setting } from '../models/adminModels.js';
+import { User, Course, CourseAttempt, Credential, SavedCourse, Assessment, Notification, sequelize } from '../models/learningModels.js';
+import { Section, Announcement, Setting, CareerPath } from '../models/adminModels.js';
 import { CourseRevision, CourseAssignment, QuestionBank, SourceDocument, SourceFilePart, AiJob, PracticalSubmission, QuizDraft, CourseFeedback, FacultyNote, CredentialRequest } from '../models/portalModels.js';
 import { text } from '../services/validation.js';
 import { audit } from '../services/accounts.js';
@@ -18,7 +20,7 @@ import { courseAreas, courseInput, publishCheck, questionInput, fail } from '../
 import { generateCourse, aiConfiguration, sourceSections } from '../services/courseAi.js';
 import { generationError, safeGenerationError } from '../services/courseGenerationErrors.js';
 import { extractSource } from '../services/sourceExtraction.js';
-import { progress, careerMatches, publicQuestions } from '../services/learning.js';
+import { progress, publicQuestions } from '../services/learning.js';
 import { finalizeAttempt, syncPublishedAttempt } from '../services/portalLearning.js';
 function savedArray(value) {
   if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }
@@ -26,7 +28,12 @@ function savedArray(value) {
 }
 const plain = r => r?.get({ plain: true });
 const date = d => d ? new Date(d).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '—';
-const render = (res, view, data = {}) => res.render(`faculty/${view}`, { facultyNav: view, ...data });
+const progressPages = new Set(['announcements', 'monitoring', 'reports', 'assignments', 'evaluations']);
+const render = (res, view, data = {}) => res.render(`faculty/${view}`, {
+  facultyNav: progressPages.has(view) ? 'students' : view,
+  backUrl: progressPages.has(view) ? '/faculty/students' : ['dashboard', 'student'].includes(view) ? null : '/faculty',
+  ...data
+});
 export const assignedSections = req => Section.findAll({ where: { active: true }, order: [['name','ASC']] });
 export async function assignedStudents(req) { const courses = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id'] }), ids = courses.map(c => c.id); const [attempts, assignments, legacySections] = await Promise.all([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['userId'], group: ['userId'] }), CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['sectionId'] }), Section.findAll({ where: { facultyId: req.user.id, active: true }, attributes: ['id', 'name'] })]); const sections = [...new Map([...legacySections, ...(assignments.length ? await Section.findAll({ where: { id: { [Op.in]: assignments.map(a => a.sectionId) } }, attributes: ['id', 'name'] }) : [])].map(section => [section.id, section])).values()]; const scopes = [{ id: { [Op.in]: attempts.map(a => a.userId) } }]; if (sections.length) scopes.push({ section: { [Op.in]: sections.map(s => s.name) } }); return User.findAll({ where: { role: 'student', [Op.or]: scopes }, attributes: ['id', 'name', 'studentId', 'section', 'email', 'gender'] }); }
 async function studentAccess(req) { const students = await assignedStudents(req); const s = students.find(s => s.id === Number(req.params.id)); if (!s) fail('Assigned student not found.', 404); return s; }
@@ -38,8 +45,19 @@ export const dashboard = async (req, res) => {
   const completed = attempts.filter(a => a.status === 'completed').length;
   render(res, 'dashboard', { title: 'Faculty overview', students: students.slice(0, 8).map(plain), sections: sections.map(plain), studentCount: students.length, courseCount: await Course.count({ where: { ownerId: req.user.id } }), publishedCount: await Course.count({ where: { ownerId: req.user.id, published: true } }), pendingCredentials: await CredentialRequest.count({ where: { facultyId: req.user.id, status: 'pending' } }), active: new Set(attempts.filter(a => a.status !== 'completed').map(a => a.userId)).size, pending, completed, completionRate: attempts.length ? Math.round(completed / attempts.length * 100) : 0, support: students.filter(s => attempts.some(a => a.userId === s.id && a.status !== 'completed' && (!a.lastActivityAt || Date.now() - new Date(a.lastActivityAt) > 7 * 86400000))).map(plain) });
 };
-export const profile = (req, res) => render(res, 'profile', { title: 'My faculty profile', googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
+export const profile = async (req, res) => render(res, 'profile', { title: 'My faculty profile', savedSignature: await facultySignature(req.user.id), googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
+export const saveFacultySignature = async (req, res) => {
+  try {
+    const signature = await validatedSignature(req.body.signature);
+    await Setting.upsert({ key: `facultySignature:${req.user.id}`, value: signature });
+    req.flash('success_msg', 'Faculty signature saved.');
+  } catch (error) {
+    if (error.status !== 422) throw error;
+    req.flash('error_msg', error.message);
+  }
+  res.redirect('/faculty/profile#faculty-signature');
+};
 export const credentials = async (req, res) => {
   const courses = await Course.findAll({ where: { ownerId: req.user.id, certificateEnabled: true }, attributes: ['id','title','domain','published','certificateEnabled','awardsApproved','modules'], order: [['title', 'ASC']] });
   const requests = await CredentialRequest.findAll({ where: { facultyId: req.user.id }, order: [['updatedAt', 'DESC']] });
@@ -201,7 +219,7 @@ export const editor = async (req, res) => {
     where: { ownerId: req.user.id, id: { [Op.ne]: course.id } },
     attributes: ['id', 'title'], order: [['title', 'ASC']]
   }) : [];
-  const signatureMissing = course.certificateEnabled && !await facultySignature(req.user.id) && !await CredentialRequest.findOne({ where: { courseId: course.id, facultyId: req.user.id, status: { [Op.ne]: 'rejected' } } });
+  const signatureMissing = !await facultySignature(req.user.id);
   const moduleSubmissions = await CourseRevision.findAll({
     where: { courseId: course.id, actorId: req.user.id, action: ['module-draft', 'module-pending'], ...(req.query.revision ? { id: Number(req.query.revision) } : {}) }, order: [['id', 'DESC']]
   });
@@ -402,7 +420,7 @@ export const saveCourse = async (req, res) => {
     await CourseRevision.create({ courseId: c.id, actorId: req.user.id, version: c.version, action: publish ? 'pending-review' : remainsArchived ? 'archived' : 'draft', snapshot: plain(c) }, { transaction });
     await audit(req.user.id, publish ? 'course.submitted_for_review' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
-  req.flash('success_msg', publish ? missingSignature ? 'Course submitted. Save your faculty signature under Certificates & badges before Admin can publish.' : 'Course and certificate submitted together for Admin approval.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
+  req.flash('success_msg', publish ? missingSignature ? 'Course submitted. Save your faculty signature under My Profile before Admin can publish.' : 'Course and certificate submitted together for Admin approval.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
 };
 export const saveModuleTopics = async (req, res) => {
   await sequelize.transaction(async transaction => {
@@ -896,8 +914,9 @@ export const students = async (req, res) => {
 };
 export const student = async (req, res) => {
   const student = await studentAccess(req), owned = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id'] }), attempts = await CourseAttempt.findAll({ where: { userId: student.id, courseId: { [Op.in]: owned.map(c => c.id) } }, order: [['createdAt', 'DESC']] }), assessments = await Assessment.findAll({ where: { userId: student.id }, order: [['createdAt', 'DESC']] });
-  const evidence = await buildEvidence(attempts.map(plain), plain(assessments[0]));
-  render(res, 'student', { title: student.name, student: plain(student), profile: plain(await StudentProfile.findOne({ where: { userId: student.id } })), attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, ...progress(a), date: date(a.createdAt), lastActivity: date(a.lastActivityAt), minutes: Math.floor(a.activeSeconds / 60), elapsedDays: Math.floor((Date.now() - new Date(a.createdAt)) / 86400000) })), domains: domains.map(name => ({ name, score: evidence.scores[name] ?? 'Not assessed' })), assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })), notes: (await FacultyNote.findAll({ where: { studentId: student.id, facultyId: req.user.id }, order: [['createdAt', 'DESC']] })).map(n => ({ ...plain(n), date: date(n.createdAt) })) });
+  const paths = await CareerPath.findAll({ where: { active: true } });
+  const evidence = moduleEvidence(attempts.map(plain), paths.length ? paths.map(plain) : undefined);
+  render(res, 'student', { title: student.name, student: plain(student), evidence, careerSuggestions: evidence.tracks.slice(0, 3), attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, ...progress(a), date: date(a.createdAt), lastActivity: date(a.lastActivityAt), minutes: Math.floor(a.activeSeconds / 60), elapsedDays: Math.floor((Date.now() - new Date(a.createdAt)) / 86400000) })), domains: evidence.competencies, assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })), notes: (await FacultyNote.findAll({ where: { studentId: student.id, facultyId: req.user.id }, order: [['createdAt', 'DESC']] })).map(n => ({ ...plain(n), date: date(n.createdAt) })) });
 };
 export const note = async (req, res) => { const student = await studentAccess(req); const feedback = text(req.body.feedback, 3000), remediation = text(req.body.remediation, 1500); if (!feedback) fail('Enter feedback.'); await FacultyNote.create({ studentId: student.id, facultyId: req.user.id, feedback, remediation, visibility: req.body.visibility === 'student' ? 'student' : 'internal' }); if (req.body.visibility === 'student') await Notification.create({ userId: student.id, title: 'Faculty feedback', message: 'Your faculty added learning feedback and recommended next steps.', href: '/student/results' }); await audit(req.user.id, 'faculty.feedback_added', 'user', student.id); res.redirect(`/faculty/students/${student.id}`); };
 export const monitoring = async (req, res) => {
@@ -906,7 +925,11 @@ export const monitoring = async (req, res) => {
   const rows = await CourseAttempt.findAll({ where: { userId: { [Op.in]: students.map(s => s.id) }, courseId: { [Op.in]: courses.map(c => c.id) } }, order: [['createdAt', 'DESC']] });
   const tasks = await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: rows.map(a => a.id) }, status: 'submitted' } });
   const attempts = rows.map(a => ({ ...plain(a), student: plain(names.get(a.userId)), title: a.snapshot.title, ...progress(a), awaiting: tasks.some(t => t.attemptId === a.id), inactive: a.status !== 'completed' && Date.now() - new Date(a.lastActivityAt || a.createdAt) > 7 * 86400000, retaking: a.attemptNumber > 1, minutes: Math.floor(a.activeSeconds / 60), elapsedDays: Math.floor((Date.now() - new Date(a.createdAt)) / 86400000), lastActivity: date(a.lastActivityAt) }));
-  if (req.query.export === 'csv') { const cell = v => '"' + (/^[\s]*[=+@-]/.test(String(v ?? '')) ? "'" : '') + String(v ?? '').replaceAll('"', '""') + '"'; res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="assigned-student-progress.csv"' }); return res.send('\uFEFF' + [['Student','Section','Course','Attempt','Status','Final knowledge score','Active minutes','Elapsed days','Last activity'], ...attempts.map(a => [a.student.name,a.student.section,a.title,a.attemptNumber,a.status,a.finalScore,a.minutes,a.elapsedDays,a.lastActivity])].map(r => r.map(cell).join(',')).join('\r\n')); }
+  if (['xlsx', 'csv'].includes(req.query.export)) return sendWorkbook(res, 'assigned-student-progress.xlsx', [{
+    name: 'Student progress',
+    headers: ['Student', 'Section', 'Course', 'Attempt', 'Status', 'Progress (%)', 'Final score (%)', 'Active minutes', 'Elapsed days', 'Last activity'],
+    rows: attempts.map(a => [a.student.name, a.student.section, a.title, a.attemptNumber, a.status, a.percent, a.finalScore, a.minutes, a.elapsedDays, a.lastActivity])
+  }]);
   const assessments = await Assessment.findAll({ where: { userId: { [Op.in]: students.map(s => s.id) } }, order: [['createdAt','DESC']] });
   const practicals = await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: rows.filter(r => r.status === 'completed').map(r => r.id) }, status: 'graded' } });
   const { domainSummary, sectionSummary } = summarizeLearning(students, rows, assessments, practicals);
@@ -952,13 +975,39 @@ export const gradeTask = async (req, res) => {
     await audit(req.user.id, 'practical.graded', 'attempt', attempt.id, { taskId: task.id, grade }, transaction);
   }); req.flash('success_msg', 'Rubric grade and feedback saved. Completion eligibility was recalculated.'); res.redirect('/faculty/evaluations');
 };
-export const announcements = async (req, res) => render(res, 'announcements', { title: 'Faculty announcements', announcements: (await Announcement.findAll({ where: { authorId: req.user.id }, order: [['createdAt', 'DESC']] })).map(plain) });
-export const announce = async (req, res) => {
-  const title = text(req.body.title, 160), body = text(req.body.body, 3000); if (!title || !body) fail('Enter announcement title and message.');
-  // Faculty messages go only to currently assigned students, never the whole system.
-  const students = await assignedStudents(req); if (!students.length) fail('No active assigned sections. Ask Admin to assign a section.');
-  await Announcement.create({ title, body, authorId: req.user.id, audience: 'student', published: false });
-  await Notification.bulkCreate(students.map(s => ({ userId: s.id, title, message: body, href: '/student/notifications' })));
-  await audit(req.user.id, 'faculty.announcement_sent', 'faculty', req.user.id, { recipients: students.length }); req.flash('success_msg', 'Announcement sent to your assigned students.'); res.redirect('/faculty/announcements');
+async function announcementRecipients(req) {
+  const students = await assignedStudents(req);
+  const active = await User.findAll({
+    where: { id: students.map(student => student.id), active: true },
+    attributes: ['id', 'name', 'studentId', 'section'], order: [['name', 'ASC']]
+  });
+  return active;
+}
+export const announcements = async (req, res) => {
+  const students = await announcementRecipients(req);
+  const history = await Announcement.findAll({ where: { authorId: req.user.id }, order: [['createdAt', 'DESC']] });
+  render(res, 'announcements', { title: 'Faculty announcements', students: students.map(plain),
+    sections: [...new Set(students.map(student => student.section).filter(Boolean))].sort(),
+    announcements: history.map(item => ({ ...plain(item), date: date(item.createdAt) })) });
 };
-
+export const announce = async (req, res) => {
+  const title = text(req.body.title, 160), body = text(req.body.body, 3000);
+  if (!title || !body) fail('Enter announcement title and message.');
+  const students = await announcementRecipients(req);
+  const ids = [].concat(req.body.studentIds || []).map(Number);
+  const section = text(req.body.section, 100);
+  const recipients = req.body.audience === 'section' && section ? students.filter(student => student.section === section) :
+    req.body.audience === 'students' ? students.filter(student => ids.includes(student.id)) : [];
+  if (!recipients.length || (req.body.audience === 'students' && new Set(ids).size !== recipients.length)) {
+    fail('Select an eligible section or specific assigned students.');
+  }
+  await sequelize.transaction(async transaction => {
+    await Announcement.create({ title, body, authorId: req.user.id, audience: 'student', published: false }, { transaction });
+    await Notification.bulkCreate(recipients.map(student => ({
+      userId: student.id, title, message: `From ${req.user.name}: ${body}`, href: '/student/notifications'
+    })), { transaction });
+    await audit(req.user.id, 'faculty.announcement_sent', 'faculty', req.user.id, { recipients: recipients.length }, transaction);
+  });
+  req.flash('success_msg', `Announcement sent to ${recipients.length} student(s).`);
+  res.redirect('/faculty/announcements');
+};

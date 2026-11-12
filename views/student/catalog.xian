@@ -6,7 +6,7 @@
 <div class="grid cols-3">{{#each savedModules}}
 <article class="card saved-module-card">
 <p class="eyebrow saved-module-course">{{courseTitle}}</p>
-<div class="saved-module-heading"><p class="eyebrow">Module {{number}}</p><h2>{{title}}</h2></div>
+<div class="saved-module-heading"><h2>{{title}}</h2></div>
 <div class="actions">
 <form method="post" action="/student/courses/{{courseId}}/enroll">
 <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="moduleId" value="{{id}}">

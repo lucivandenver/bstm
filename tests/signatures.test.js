@@ -170,6 +170,10 @@ await test("approved faculty/admin process signatures privately; students are bl
     assert.match(data.signature, /^data:image\/png;base64,/);
     assert.equal((await upload(a)).status, 200);
     assert.equal((await upload(s)).status, 403);
+    const savedProfile = await f.post('/faculty/profile/signature', { signature: data.signature });
+    assert.equal(savedProfile.location, '/faculty/profile#faculty-signature');
+    assert.match((await f.get('/faculty/profile')).html, /Save faculty signature/);
+    assert.doesNotMatch((await f.get('/faculty/credentials')).html, /data-signature-form/);
     result = await f.post(`/faculty/courses/${course.id}/credentials`, {
       signature: data.signature,
       badgeLabel: "Booking fundamentals",

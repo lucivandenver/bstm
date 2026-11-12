@@ -1,12 +1,13 @@
+import { sendWorkbook } from '../services/reportWorkbook.js';
 import { duplicateModule, duplicateModuleMessage } from '../services/moduleDuplicates.js';
 import { facultySignature, preparePublicationCredential } from '../services/publicationCredentials.js';
 import { courseAiConfiguration, missingVertexSettings } from '../services/courseAiProvider.js';
 import { summarizeLearning } from '../services/evidence.js';
 import { PracticalSubmission, CredentialRequest, ProfileCorrection } from '../models/portalModels.js';
-import { CourseRevision, CourseAssignment } from '../models/portalModels.js';
+import { CourseRevision, CourseAssignment, AiJob } from '../models/portalModels.js';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
-import { User, Course, CourseAttempt, StudentProfile, Credential, Assessment, Notification, sequelize } from '../models/learningModels.js';
+import { User, Course, CourseAttempt, StudentProfile, Credential, Assessment, Notification, SavedCourse, SavedModule, sequelize } from '../models/learningModels.js';
 import { Section, AuditLog, Setting, Announcement, CareerPath } from '../models/adminModels.js';
 import { courseInput, publishCheck } from '../services/courseAuthoring.js';
 import { audit, ownerEmail, genders, setting } from '../services/accounts.js';
@@ -16,16 +17,19 @@ import { starsFor } from '../services/learning.js';
 const plain = row => row?.get({ plain: true });
 const publicUser = row => { const { password, googleId, ...user } = plain(row); return { ...user, googleConnected: Boolean(googleId), owner: user.email === ownerEmail() }; };
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
-const render = (res, view, data = {}) => res.render(`admin/${view}`, { adminNav: view, ...data });
+const platformPages = new Set(['reports', 'maintenance', 'announcements', 'careers', 'competencies', 'ai', 'academic']);
+const render = (res, view, data = {}) => res.render(`admin/${view}`, {
+  adminNav: view, backUrl: platformPages.has(view) ? '/admin/settings' : view === 'dashboard' ? null : '/admin', ...data
+});
 const date = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
 const coursePublicationActions = [
   'pending-review', 'publication-approved', 'publication-declined', 'publication-cancelled',
   'published', 'admin-published', 'archived', 'admin-archived', 'draft'
 ];
-async function publicationRequests() {
+async function publicationRequests(transaction) {
   const rows = await CourseRevision.findAll({
     where: { action: [...coursePublicationActions, 'module-pending'] },
-    attributes: ['id', 'courseId', 'actorId', 'version', 'action'], order: [['id', 'DESC']]
+    attributes: ['id', 'courseId', 'actorId', 'version', 'action'], order: [['id', 'DESC']], transaction
   });
   const latest = new Map();
   const moduleIds = [];
@@ -33,7 +37,7 @@ async function publicationRequests() {
     if (row.action === 'module-pending') moduleIds.push(row.id);
     else if (!latest.has(row.courseId)) latest.set(row.courseId, row);
   }
-  const modules = moduleIds.length ? await CourseRevision.findAll({ where: { id: moduleIds, action: 'module-pending' } }) : [];
+  const modules = moduleIds.length ? await CourseRevision.findAll({ where: { id: moduleIds, action: 'module-pending' }, transaction }) : [];
   return [...latest.values()].filter(row => row.action === 'pending-review').concat(modules);
 }
 const latestCoursePublication = (course, transaction) => CourseRevision.findOne({
@@ -216,6 +220,39 @@ export const deleteSection = async (req, res) => {
   });
   req.flash('success_msg', 'Section deleted.'); res.redirect('/admin/sections');
 };
+const duplicateTitle = title => title.trim().replace(/\s+/g, ' ').toLowerCase();
+export const deleteDuplicateCourse = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await Course.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!course || course.published || !course.ownerId) fail('Only an unpublished faculty duplicate can be removed.');
+    const others = await Course.findAll({ where: { ownerId: course.ownerId }, transaction });
+    if (!others.some(row => row.published && duplicateTitle(row.title) === duplicateTitle(course.title))) {
+      fail('A published course with the same title and owner is required.');
+    }
+    const where = { courseId: course.id };
+    const [attempts, awards, assignments, savedCourses, savedModules, revisions, jobs, publicationHistory] = await Promise.all([
+      CourseAttempt.count({ where, transaction }), CredentialRequest.count({ where, transaction }),
+      CourseAssignment.count({ where, transaction }), SavedCourse.count({ where, transaction }),
+      SavedModule.count({ where, transaction }), publicationRequests(transaction),
+      AiJob.findAll({ where: { userId: course.ownerId, status: ['queued', 'running', 'review'] },
+        attributes: ['courseId', 'state'], transaction }),
+      CourseRevision.count({ where: { ...where, action: ['published', 'module-published', 'admin-published', 'publication-approved'] }, transaction })
+    ]);
+    const courses = await Course.findAll({ attributes: ['id', 'prerequisites'], transaction });
+    if (attempts || awards || assignments || savedCourses || savedModules || publicationHistory ||
+        jobs.some(job => job.courseId === course.id || Number(job.state?.options?.destinationId) === course.id) ||
+        pendingForCourse(course, revisions).length || courses.some(row => row.id !== course.id &&
+          (row.prerequisites || []).some(id => Number(id) === course.id))) {
+      fail('This duplicate has linked records or pending work and must be preserved.');
+    }
+    await CourseRevision.destroy({ where, transaction });
+    await AiJob.update({ courseId: null }, { where, transaction });
+    await audit(req.user.id, 'course.duplicate_deleted', 'course', course.id, { title: course.title }, transaction);
+    await course.destroy({ transaction });
+  });
+  req.flash('success_msg', 'Unpublished duplicate deleted.');
+  res.redirect('/admin/courses');
+};
 export const courses = async (req, res) => {
   const [faculty, courses, submissions] = await Promise.all([
     User.findAll({ where: { role: 'faculty', active: true, approvalStatus: 'approved' }, attributes: ['id', 'name'] }),
@@ -226,7 +263,8 @@ export const courses = async (req, res) => {
   const reviewRows = await Promise.all(courses.map(async course => {
     const requests = pendingForCourse(course, submissions);
     return {
-      ...plain(course), moduleCount: course.modules.length, hasPending: requests.length > 0,
+      ...plain(course), duplicateDraft: !course.published && !requests.length && courses.some(row =>
+        row.published && row.ownerId === course.ownerId && duplicateTitle(row.title) === duplicateTitle(course.title)), moduleCount: course.modules.length, hasPending: requests.length > 0,
       pendingReview: requests.some(row => row.action === 'pending-review'),
       moduleSubmissions: requests.filter(row => row.action === 'module-pending').map(plain),
       archivedModules: archived.filter(row => row.courseId === course.id && row.snapshot?.module &&
@@ -253,6 +291,20 @@ export const courses = async (req, res) => {
       .sort((first, second) => Number(second.hasPending) - Number(first.hasPending))
   });
 };
+async function notifyPublication(course, owner, module, transaction) {
+  const title = module?.title || course.title;
+  const href = `/student/courses/${course.id}${module ? `#module-${module.id}` : ''}`;
+  await Notification.create({
+    userId: owner.id, title: module ? 'Module publication approved' : 'Course publication approved',
+    message: `${title} was approved and published on ${date(new Date())}.`,
+    href: `/faculty/courses?course=${course.id}`
+  }, { transaction });
+  const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
+  await Notification.bulkCreate(learners.map(user => ({
+    userId: user.id, title: module ? 'New module published' : 'New course published',
+    message: `${owner.name} published ${title}${module ? ` in ${course.title}` : ''} on ${date(new Date())}.`, href
+  })), { transaction });
+}
 async function restoreModule(course, snapshot, adminId, transaction) {
   const { module, questions } = snapshot;
   const existing = course.modules.find(item => item.id === module.id);
@@ -269,6 +321,7 @@ async function restoreModule(course, snapshot, adminId, transaction) {
     questions: [...course.questions.filter(question => question.moduleId !== module.id), ...questions.map(question => ({ ...question, reviewed: true }))]
   });
   publishCheck(data);
+  if (!await facultySignature(course.ownerId, transaction)) fail('The faculty signature is missing. Save it in My Profile before publishing.');
   if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, adminId)) fail('The faculty signature is missing.');
   await course.update({ modules: data.modules, questions: data.questions, version: course.version + 1, published: true, awardsApproved: course.certificateEnabled }, { transaction });
 }
@@ -288,6 +341,7 @@ export const approvePublication = async (req, res) => {
       await revision.update({ action: 'module-published' }, { transaction });
       const archives = await CourseRevision.findAll({ where: { courseId: course.id, action: 'module-archived' }, transaction });
       for (const row of archives) if (row.snapshot?.module?.id === module.id) await row.update({ action: 'module-restored' }, { transaction });
+      await notifyPublication(course, owner, module, transaction);
       await audit(req.user.id, 'module.published', 'course', course.id, { moduleId: module.id }, transaction);
       return;
     }
@@ -298,8 +352,9 @@ export const approvePublication = async (req, res) => {
     }
     const owner = await User.findOne({ where: { id: course.ownerId, role: 'faculty', active: true, approvalStatus: 'approved' }, transaction });
     if (!owner || submission.actorId !== owner.id) fail('The current faculty owner must submit the course for approval.');
+    if (!await facultySignature(course.ownerId, transaction)) fail('The faculty signature is missing. Save it in My Profile before publishing.');
     publishCheck(plain(course));
-    if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) fail('The faculty signature is missing. Ask the faculty member to save their signature in Certificates & badges before publishing.');
+    if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) fail('The faculty signature is missing. Ask the faculty member to save their signature in My Profile before publishing.');
     await course.update({ published: true, awardsApproved: course.certificateEnabled }, { transaction });
     await submission.update({ action: 'publication-approved' }, { transaction });
     if (course.certificateEnabled) {
@@ -310,8 +365,7 @@ export const approvePublication = async (req, res) => {
     }
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-published', snapshot: plain(course) }, { transaction });
     await audit(req.user.id, 'course.published', 'course', course.id, { version: course.version }, transaction);
-    const learners = await User.findAll({ where: { role: 'student', active: true }, attributes: ['id'], transaction });
-    await Notification.bulkCreate(learners.map(user => ({ userId: user.id, title: 'New course available', message: `${course.title} is now in the learning catalog.`, href: `/student/courses/${course.id}` })), { transaction });
+    await notifyPublication(course, owner, null, transaction);
   });
   req.flash('success_msg', 'Course approved and published.');
   res.redirect('/admin/courses');
@@ -337,12 +391,14 @@ export const republishCourse = async (req, res) => {
       }
       await restoreModule(course, revision.snapshot, req.user.id, transaction);
       await revision.update({ action: 'module-restored' }, { transaction });
+      await notifyPublication(course, owner, module, transaction);
       await audit(req.user.id, 'module.republished', 'course', course.id, { moduleId: module.id }, transaction);
       return;
     }
     if (Number(req.body.version) !== course.version || !await archivedCourseCanRepublish(course, transaction)) {
       fail('This course is no longer eligible for republication.');
     }
+    if (!await facultySignature(course.ownerId, transaction)) fail('The faculty signature is missing. Save it in My Profile before publishing.');
     publishCheck(plain(course));
     if (course.certificateEnabled && !await preparePublicationCredential(course, transaction, req.user.id)) {
       fail('The faculty signature is missing.');
@@ -351,6 +407,7 @@ export const republishCourse = async (req, res) => {
     await CourseRevision.create({
       courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-published', snapshot: plain(course)
     }, { transaction });
+    await notifyPublication(course, owner, null, transaction);
     await audit(req.user.id, 'course.republished', 'course', course.id, { version: course.version }, transaction);
   });
   req.flash('success_msg', 'Republished and visible in the student catalog.');
@@ -518,11 +575,17 @@ export const reports = async (req, res) => {
   render(res, 'reports', { ...summary, title: 'Learning & readiness reports', attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, date: date(a.createdAt) })), diagnostics: diagnostics.map(d => ({ ...plain(d), date: date(d.createdAt) })) });
 };
 export const exportReport = async (req, res) => {
-  const rows = await CourseAttempt.findAll({ include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']] });
-  const cell = v => { let s = String(v ?? ''); if (/^[\s]*[=+@-]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
-  const data = [['Student', 'Section', 'Course', 'Attempt', 'Status', 'Final score', 'Active minutes', 'Started'], ...rows.map(a => [a.User?.name, a.User?.section, a.snapshot.title, a.attemptNumber, a.status, a.finalScore, Math.floor(a.activeSeconds / 60), a.createdAt.toISOString()])];
-  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="CareerBridge-learning-report.csv"' });
-  res.send('\uFEFF' + data.map(r => r.map(cell).join(',')).join('\r\n'));
+  const options = { include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']] };
+  const [attempts, diagnostics] = await Promise.all([CourseAttempt.findAll(options), Assessment.findAll(options)]);
+  return sendWorkbook(res, 'CareerBridge-learning-report.xlsx', [{
+    name: 'Course activity',
+    headers: ['Student', 'Section', 'Course', 'Attempt', 'Status', 'Final score (%)', 'Active minutes', 'Started'],
+    rows: attempts.map(a => [a.User?.name, a.User?.section, a.snapshot.title, a.attemptNumber, a.status, a.finalScore, Math.floor(a.activeSeconds / 60), date(a.createdAt)])
+  }, {
+    name: 'Knowledge diagnostics',
+    headers: ['Student', 'Section', 'Date', 'Score (%)'],
+    rows: diagnostics.map(d => [d.User?.name, d.User?.section, date(d.createdAt), d.score])
+  }]);
 };
 export const account = (req, res) => render(res, 'account', { title: 'My administrator account', googleConnected: Boolean(req.user.googleId), hasPassword: Boolean(req.user.password), googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) });
 export const changePassword = async (req, res) => {

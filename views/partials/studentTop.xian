@@ -14,4 +14,4 @@
 <a href="/notifications" class="{{#if (eq nav 'notifications')}}active{{/if}}"><span class="nav-icon">{{> icon name="bell"}}</span>Notifications</a>
 </nav></aside>
 <div class="workspace"><header class="app-header"><div class="row"><button class="mobile-menu" id="open-menu" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">{{> icon name="menu"}}</button><div class="breadcrumb">STUDENT / WORKSPACE<strong>{{title}}</strong></div></div><div class="user-menu">{{> notificationBell}}{{> accountMenu profileUrl="/student/profile" roleLabel="Student account"}}</div></header>
-<main id="main" class="page">{{> messages}}{{> announcements}}
+<main id="main" class="page">{{> messages}}{{> announcements}}{{#if backUrl}}<a class="page-back" href="{{backUrl}}">← Back</a>{{/if}}

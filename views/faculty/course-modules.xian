@@ -10,11 +10,11 @@
 {{#each course.modules}}
   <article class="card module-card faculty-module-card {{#if pending}}publication-pending{{/if}}">
     <div class="catalog-card-meta">
-      <p class="eyebrow">{{../course.title}}</p>
+      {{#if (eq status 'Draft')}}<p class="eyebrow">{{../course.title}}</p>{{/if}}{{#if (eq status 'Archived')}}<p class="eyebrow">{{../course.title}}</p>{{/if}}
       {{#if pending}}<span class="chip pending-publication-label">Pending</span>{{else}}<span class="chip">{{status}}</span>{{/if}}
     </div>
     {{#if declineReason}}<p class="notice error"><strong>Admin declined this submission.</strong> {{declineReason}}</p>{{/if}}
-    <h2>Module {{number}} · {{title}}</h2>
+    <h2>{{title}}</h2>
     <details><summary>{{lessons.length}} topic areas</summary>
       <ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol>
     </details>

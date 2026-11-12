@@ -1,3 +1,4 @@
+import { facultySignature } from './publicationCredentials.js';
 import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
 import { starsFor, canTakeFinal, grade, publishedAttemptSnapshot } from './learning.js';
@@ -9,12 +10,13 @@ export async function ensureCompletionCredential(attempt, user, score = attempt.
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
   const course = await Course.findByPk(attempt.courseId, { transaction });
   const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
-  const signed = Boolean(request?.facultySignature && faculty?.active && faculty.approvalStatus === 'approved');
+  const signature = request && faculty?.active && faculty.approvalStatus === 'approved'
+    ? await facultySignature(faculty.id, transaction) || request.facultySignature : null;
   const defaults = {
     moduleTitle: module?.title, skills: module?.skills,
     userId: user.id, courseTitle: attempt.snapshot.title, recipientName: user.name, courseVersion: attempt.courseVersion,
     score, stars: starsFor(score), issuedAt: module ? new Date() : attempt.completedAt || new Date(),
-    facultySignature: signed ? request.facultySignature : null, facultyName: faculty?.name || null,
+    facultySignature: signature, facultyName: faculty?.name || null,
     facultyPosition: faculty?.facultyPosition || (faculty ? 'Course Faculty' : null),
     badgeLabel: attempt.snapshot.title,
   };
