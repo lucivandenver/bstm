@@ -3,7 +3,7 @@
   <a class="button {{#unless drafts}}secondary{{/unless}}" href="{{draftsUrl}}" {{#if drafts}}aria-current="page"{{/if}}>Drafts</a>
   <a class="button {{#unless archived}}secondary{{/unless}}" href="{{archiveUrl}}" {{#if archived}}aria-current="page"{{/if}}>Archive</a>
 </nav>
-{{#if archived}}<p class="notice info">Open a course and choose Republish on the module you want to restore.</p>{{/if}}
+{{#if archived}}<p class="notice info">Admin can restore archived courses and modules from Course oversight.</p>{{/if}}
 <form class="card course-list-search" action="/faculty/courses" method="get" role="search">
   <label class="field">Search courses or modules<input type="search" name="q" value="{{query}}" maxlength="160" placeholder="Enter a course or module title"></label>
   <input type="hidden" name="list" value="{{list}}">
