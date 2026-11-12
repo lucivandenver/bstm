@@ -297,6 +297,7 @@ export async function requestCourseAi(config, input) {
     if (!config.ready) throw generationError("COURSE_AI_NOT_CONFIGURED");
     try {
       try {
+        input.onStatus?.({ phase: "generating", provider: config.provider, model: config.model, message: "Generating content with the configured AI provider…" });
         return await transport(config, input);
       } catch (error) {
         if (config.provider === 'gemini' && process.env.GEMINI_FALLBACK_API_KEY?.trim() && process.env.GEMINI_FALLBACK_API_KEY !== process.env.GEMINI_API_KEY && ['COURSE_AI_QUOTA','COURSE_AI_DAILY_QUOTA','COURSE_AI_NO_QUOTA','COURSE_AI_UNAVAILABLE','COURSE_AI_TIMEOUT'].includes(error.code)) {
@@ -314,7 +315,7 @@ export async function requestCourseAi(config, input) {
           ].includes(error.code)
         ) {
           input.onStatus?.({
-            phase: "fallback",
+            phase: "fallback", provider: "groq", model: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
             message:
               "Primary provider unavailable. Trying the configured Groq backup…",
           });

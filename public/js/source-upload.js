@@ -49,7 +49,7 @@
       const fields = form.elements;
       body.set("settings", JSON.stringify({
         destinationId: fields.destinationId.value, moduleTitle: fields.moduleTitle.value,
-        level: fields.level.value, topicCount: fields.topicCount.value, questionCount: fields.questionCount.value,
+        level: fields.level.value, questionCount: fields.questionCount.value,
         outcomes: fields.outcomes.value,
         competencyAreas: [...form.querySelectorAll('[name="competencyAreas"]:checked')].map(input => input.value)
       }));
@@ -109,7 +109,6 @@
     e.preventDefault();
     if (busy || steps.length && step !== steps.length - 1) return;
     const generate = e.submitter?.value !== "extract";
-    if (generate && !form.elements.topicCount.reportValidity()) return;
     if (generate && (!form.elements.destinationId.value || form.elements.moduleTitle.value.trim().length < 4)) {
       status.textContent = "Choose your course and enter a module title of at least four characters.";
       return;
@@ -191,7 +190,6 @@
         destinationId: form.elements.destinationId.value,
         moduleTitle: form.elements.moduleTitle.value.trim(),
         level: form.elements.level.value,
-        topicCount: form.elements.topicCount.value,
         questionCount: form.elements.questionCount.value,
         outcomes:
           form.elements.outcomes.value.trim() ||

@@ -35,8 +35,19 @@
         data = await response.json();
       if (!response.ok || !data.ok)
         throw Error(data.message || "Sign in again to check generation.");
-      if (details)
-        details.textContent = `${data.completed || 0} of ${data.total || 0} sections saved${data.code ? " · " + data.code : ""}${data.reference ? " · Reference " + data.reference : ""}`;
+      const phases = { queued: "Queued", running: "Generating", generating: "Generating",
+        validating: "Validating", retry: "Retrying", repair: "Retrying missing items",
+        waiting: "Waiting to retry", fallback: "Trying backup provider", failed: "Paused", completed: "Complete" };
+      if (details) {
+        const counts = data.counts;
+        details.textContent = [
+          phases[data.phase] || "Preparing draft",
+          `${data.completed || 0} of ${data.total || 0} source batches saved`,
+          [data.provider, data.model].filter(Boolean).join(" / "),
+          counts && `Requested: ${counts.requestedTopics ? `${counts.requestedTopics} topics, ` : ""}${counts.requestedQuestions} questions. Generated: ${counts.generatedTopics} topics, ${counts.generatedQuestions} questions.`,
+          data.code, data.failureStage, data.reference && `Reference ${data.reference}`
+        ].filter(Boolean).join(" · ");
+      }
       if (data.total) {
         progress.max = data.total;
         progress.value = data.completed || 0;

@@ -9,12 +9,11 @@
 <label class="field">Course<select name="destinationId" required><option value="">Select your course</option>{{#each destinations}}<option value="{{id}}" {{selected ../values.destinationId id}}>{{title}}</option>{{/each}}</select></label>
 {{#unless destinations}}<p><a href="/faculty/upload">Create a course to hold this module</a></p>{{/unless}}
 <label class="field">Module title<input name="moduleTitle" value="{{values.moduleTitle}}" minlength="4" maxlength="160" required></label>
-<label class="field">Target topic areas<input type="number" name="topicCount" value="{{values.topicCount}}" min="5" max="30" required></label>
-<p class="small muted">The AI may use fewer topics when the source supports fewer distinct concepts.</p>
 
 <fieldset class="field"><legend>Competency areas · select all that apply</legend>{{#each domains}}<label class="check-label"><input type="checkbox" name="competencyAreas" value="{{this}}" {{#if (hasArea ../values.areas this)}}checked{{/if}}> {{this}}</label>{{/each}}</fieldset>
 <div class="field"><label>Target learning outcomes<textarea name="outcomes" maxlength="1500" rows="4" placeholder="What should students understand after this course?">{{values.outcomes}}</textarea></label></div>
 <div class="grid cols-2"><div class="field"><label>Difficulty<select name="level"><option {{selected values.level 'Foundation'}}>Foundation</option><option {{selected values.level 'Intermediate'}}>Intermediate</option><option {{selected values.level 'Advanced'}}>Advanced</option></select></label></div><div class="field"><label>Question count<input type="number" name="questionCount" min="3" max="30" value="{{values.questionCount}}" required></label></div></div>
+<p class="small muted">AI selects topic areas from the materials. Set the exact number of assessment questions above.</p>
 {{#unless aiReady}}<p class="notice">AI drafting is not configured yet. Ask Admin to configure the selected provider, then generate from these materials.</p>{{/unless}}
 <label class="check-label"><input type="checkbox" name="consent" value="yes" required {{#if values.consent}}checked{{/if}}> I have permission to use this material and send its extracted text to the configured AI providers ({{aiProviderLabel}}).</label>
 <div class="notice" role="alert" data-generation-error {{#unless error}}hidden{{/unless}}>{{#if error}}{{error.message}} ({{error.code}} · Reference {{error.reference}}){{/if}}</div>
