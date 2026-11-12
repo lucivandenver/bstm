@@ -31,7 +31,7 @@ test('learning links contain correct attempt and lesson IDs', async () => {
   assert.ok(html.includes('/student/learn/1/quiz/planning'));
 });
 test('quiz pages contain no answer keys or explanations', async () => {
-  const html = await render('views/student/quiz.xian', { ...data, scope: 'planning' });
+  const html = await render('views/student/quiz.xian', { ...data, scope: 'planning', topics: [{ questions: data.questions }] });
   assert.ok(html.includes('name="answers[t1]"'));
   assert.ok(!html.includes(course.questions[0].explanation));
   assert.ok(!html.includes('correctAnswer'));

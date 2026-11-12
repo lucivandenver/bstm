@@ -15,6 +15,8 @@ router.post('/connect-google', googleStart);
 router.get('/courses', asyncRoute(student.catalog));
 router.post('/courses/:id/save', asyncRoute(student.saveCourse));
 router.post('/courses/:id/unsave', asyncRoute(student.unsaveCourse));
+router.post('/courses/:id/modules/:moduleId/save', asyncRoute(student.saveModule));
+router.post('/courses/:id/modules/:moduleId/unsave', asyncRoute(student.unsaveModule));
 router.get('/courses/:id', asyncRoute(student.courseDetail));
 router.post('/courses/:id/enroll', asyncRoute(student.enroll));
 router.get('/learning', asyncRoute(student.myLearning));

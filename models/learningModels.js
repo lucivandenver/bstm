@@ -54,6 +54,13 @@ export const SavedCourse = sequelize.define('SavedCourse', {
   userId: { type: DataTypes.INTEGER, allowNull: false },
   courseId: { type: DataTypes.INTEGER, allowNull: false }
 }, { indexes: [{ unique: true, fields: ['userId', 'courseId'] }] });
+export const SavedModule = sequelize.define('SavedModule', {
+  userId: { type: DataTypes.INTEGER, allowNull: false },
+  courseId: { type: DataTypes.INTEGER, allowNull: false },
+  moduleId: { type: DataTypes.STRING(60), allowNull: false }
+}, { indexes: [{ unique: true, fields: ['userId', 'courseId', 'moduleId'] }] });
+SavedModule.belongsTo(Course, { foreignKey: 'courseId', onDelete: 'CASCADE' });
+SavedModule.belongsTo(User, { foreignKey: 'userId', onDelete: 'CASCADE' });
 for (const model of [StudentProfile, CourseAttempt, Assessment, Credential, Notification, SavedCourse]) {
   model.belongsTo(User, { foreignKey: 'userId', onDelete: 'RESTRICT' });
 }
