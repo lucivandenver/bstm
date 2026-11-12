@@ -4,7 +4,7 @@ const json = value => ({ type: DataTypes.JSON, allowNull: false, defaultValue: v
 export const CourseRevision = sequelize.define('CourseRevision', { courseId: DataTypes.INTEGER, actorId: DataTypes.INTEGER, version: DataTypes.INTEGER, action: DataTypes.STRING(30), snapshot: json({}) });
 export const CourseAssignment = sequelize.define('CourseAssignment', { courseId: { type: DataTypes.INTEGER, allowNull: false }, sectionId: { type: DataTypes.INTEGER, allowNull: false }, facultyId: DataTypes.INTEGER, dueAt: DataTypes.DATE, required: { type: DataTypes.BOOLEAN, defaultValue: true } }, { indexes: [{ unique: true, fields: ['courseId', 'sectionId'] }] });
 export const QuestionBank = sequelize.define('QuestionBank', { ownerId: DataTypes.INTEGER, prompt: DataTypes.TEXT, options: json([]), answer: DataTypes.INTEGER, explanation: DataTypes.TEXT, domain: DataTypes.STRING(60), sourceReference: DataTypes.STRING(200), sourceQuote: DataTypes.TEXT, reviewed: { type: DataTypes.BOOLEAN, defaultValue: false }, active: { type: DataTypes.BOOLEAN, defaultValue: true } });
-export const SourceDocument = sequelize.define('SourceDocument', { ownerId: DataTypes.INTEGER, filename: DataTypes.STRING, sections: json([]) });
+export const SourceDocument = sequelize.define('SourceDocument', { ownerId: DataTypes.INTEGER, filename: DataTypes.STRING, sections: json([]), generationSettings: DataTypes.JSON });
 export const SourceFilePart = sequelize.define('SourceFilePart', {
   ownerId: { type: DataTypes.INTEGER, allowNull: false },
   sourceId: { type: DataTypes.INTEGER, allowNull: false },

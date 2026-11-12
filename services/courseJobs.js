@@ -1,4 +1,4 @@
-import { AiJob } from "../models/portalModels.js";
+import { AiJob, CourseRevision } from "../models/portalModels.js";
 import { generateCourse, generateBlueprint } from "./courseAi.js";
 import { courseAiConfiguration } from "./courseAiProvider.js";
 import { generationError, safeGenerationError } from "./courseGenerationErrors.js";
@@ -43,7 +43,9 @@ export async function startCourseJob(userId, source, options) {
   });
   if (running) {
     if (active.has(running.id)) {
-      if (Number(running.sourceId) === Number(source.id)) return running;
+      if (Number(running.sourceId) === Number(source.id) &&
+          Number(running.state?.options?.destinationId || 0) === Number(options.destinationId || 0) &&
+          running.state?.options?.moduleTitle === options.moduleTitle) return running;
       throw generationError("COURSE_ALREADY_RUNNING");
     }
     await running.update({
@@ -100,6 +102,10 @@ export async function courseJobStatus(userId, id) {
     await job.reload();
   }
   const progress = active.get(job.id);
+  const revisionId = job.state?.revisionId;
+  const reviewable = revisionId && await CourseRevision.count({
+    where: { id: revisionId, courseId: job.courseId, actorId: userId, action: ['module-draft', 'module-pending'] }
+  });
   const config = await courseAiConfiguration(),
     providers = config.fallback ? [config.provider, "groq"] : [config.provider];
   return {
@@ -112,7 +118,7 @@ export async function courseJobStatus(userId, id) {
     ...(progress || {}),
     ...(job.courseId
       ? {
-          redirect: `/faculty/courses/${job.courseId}/edit`,
+          redirect: `/faculty/courses/${job.courseId}/edit${reviewable ? `?revision=${revisionId}` : ""}`,
           preview: `/faculty/courses/${job.courseId}/preview`,
         }
       : {}),

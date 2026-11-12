@@ -11,7 +11,6 @@
 <label class="field">Module title<input name="moduleTitle" value="{{values.moduleTitle}}" minlength="4" maxlength="160" required></label>
 <label class="field">Target topic areas<input type="number" name="topicCount" value="{{values.topicCount}}" min="5" max="30" required></label>
 <p class="small muted">The AI may use fewer topics when the source supports fewer distinct concepts.</p>
-<label class="field">Preferred topic titles · optional, one per line<textarea name="topicTitles" maxlength="4000" rows="4">{{values.topicTitles}}</textarea></label>
 
 <fieldset class="field"><legend>Competency areas · select all that apply</legend>{{#each domains}}<label class="check-label"><input type="checkbox" name="competencyAreas" value="{{this}}" {{#if (hasArea ../values.areas this)}}checked{{/if}}> {{this}}</label>{{/each}}</fieldset>
 <div class="field"><label>Target learning outcomes<textarea name="outcomes" maxlength="1500" rows="4" placeholder="What should students understand after this course?">{{values.outcomes}}</textarea></label></div>

@@ -46,6 +46,13 @@
     new Promise((resolve, reject) => {
       const body = new FormData();
       body.set("sources", file);
+      const fields = form.elements;
+      body.set("settings", JSON.stringify({
+        destinationId: fields.destinationId.value, moduleTitle: fields.moduleTitle.value,
+        level: fields.level.value, topicCount: fields.topicCount.value, questionCount: fields.questionCount.value,
+        outcomes: fields.outcomes.value,
+        competencyAreas: [...form.querySelectorAll('[name="competencyAreas"]:checked')].map(input => input.value)
+      }));
       if (sourceId) body.set("sourceId", sourceId);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", form.action);
@@ -185,7 +192,6 @@
         moduleTitle: form.elements.moduleTitle.value.trim(),
         level: form.elements.level.value,
         topicCount: form.elements.topicCount.value,
-        topicTitles: form.elements.topicTitles.value,
         questionCount: form.elements.questionCount.value,
         outcomes:
           form.elements.outcomes.value.trim() ||

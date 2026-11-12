@@ -52,7 +52,12 @@ export function quizAccess(attempt, scope) {
   return true;
 }
 export async function draftFor(userId, attempt, scope, transaction) {
-  const [draft] = await QuizDraft.findOrCreate({ where: { userId, attemptId: attempt.id, scope }, defaults: { answers: {}, startedAt: new Date() }, transaction });
+  const lastResult = attempt.quizAttempts.findLast(item => item.scope === scope && !item.expired);
+  const [draft] = await QuizDraft.findOrCreate({
+    where: { userId, attemptId: attempt.id, scope },
+    defaults: { answers: {}, startedAt: new Date(), revision: lastResult?.nextDraftRevision ?? 0 },
+    transaction
+  });
   return draft;
 }
 export function checkQuizLimits(attempt, scope, draft) {

@@ -275,14 +275,20 @@ async function storeDraft(userId, source, draft, job, action) {
         where: { courseId: course.id, action: ['last-module-archived', 'module-pending', 'module-draft'] }, transaction
       });
       if (course.published || separateModuleDrafts) {
-        await CourseRevision.create({
+        const revision = await CourseRevision.create({
           courseId: course.id, actorId: userId, version: course.version, action: 'module-draft',
           snapshot: { module: merged.modules.at(-1), questions: merged.questions.filter(q => q.moduleId === moduleId) }
         }, { transaction });
-        if (job) await job.update({ status: 'completed', courseId: course.id, errorCode: null }, { transaction });
+        if (job) await job.update({ status: 'completed', courseId: course.id, errorCode: null, state: { ...job.state, revisionId: revision.id } }, { transaction });
         return course;
       }
       await course.update({ ...merged, version: course.version + 1, awardsApproved: false }, { transaction });
+      const revision = await CourseRevision.create({
+        courseId: course.id, actorId: userId, version: course.version, action: 'module-draft',
+        snapshot: { fromCourseDraft: true, module: merged.modules.at(-1), questions: merged.questions.filter(q => q.moduleId === moduleId) }
+      }, { transaction });
+      if (job) await job.update({ state: { ...job.state, revisionId: revision.id } }, { transaction });
+
       await CredentialRequest.update({ status: "returned", remarks: "Module content changed. Resubmit the certificate configuration." }, { where: { courseId: course.id, status: "approved" }, transaction });
     } else {
       course = await Course.create({ ...draft, modules: draft.modules.map(module => ({ ...module, materials })), ownerId: userId, slug: `${job ? "ai" : "source"}-${randomUUID()}`, published: false }, { transaction });
@@ -409,7 +415,10 @@ async function requestDraft(
     onStatus,
   };
   for (let attempt = 0; attempt < 2; attempt++) {
-    const generated = await requestCourseAi(config, request);
+    const generated = await requestCourseAi(config, attempt ? {
+      ...request,
+      system: request.system + " Regenerate the entire response. Check that the question count is exact, each answer index exists, answer choices are distinct, and every question has an explanation."
+    } : request);
     try {
       let raw;
       try {
@@ -419,9 +428,6 @@ async function requestDraft(
       }
       const draft = validateGeneratedDraft(raw, sections, { ...options, questionCount: count });
       if (singleModule && draft.modules.length !== 1) throw generationError("COURSE_AI_INVALID");
-      if (options.topicCount && draft.modules[0].lessons.length > options.topicCount) {
-        throw generationError("COURSE_AI_INVALID");
-      }
       return draft;
     } catch (error) {
       if (attempt || error.code !== "COURSE_AI_INVALID") throw error;
@@ -430,9 +436,8 @@ async function requestDraft(
   }
 }
 function combineDrafts(parts, options) {
-  if (parts.length === 1) return parts[0];
-  const modules = [],
-    questions = [];
+  if (parts.length === 1 && !options.destinationId) return parts[0];
+  let modules = [], questions = [];
   for (const [i, part] of parts.entries()) {
     const ids = new Map();
     for (const m of part.modules) {
@@ -453,6 +458,30 @@ function combineDrafts(parts, options) {
         lessonId: q.lessonId ? `batch-${i + 1}-${q.lessonId}` : undefined,
       })),
     );
+  }
+  if (options.destinationId) {
+    const moduleId = modules[0].id;
+    const originalLessons = modules.flatMap(module => module.lessons);
+    const target = Math.min(options.topicCount || 30, originalLessons.length);
+    const topicIds = new Map();
+    const groups = Array.from({ length: target }, () => []);
+    originalLessons.forEach((lesson, index) => groups[Math.floor(index * target / originalLessons.length)].push(lesson));
+    const lessons = groups.map(group => {
+      const first = group[0];
+      for (const lesson of group) topicIds.set(lesson.id, first.id);
+      return group.length === 1 ? first : {
+        ...first, body: group.map(lesson => lesson.body).join("\n\n"),
+        takeaways: [...new Set(group.flatMap(lesson => lesson.takeaways))].slice(0, 12),
+        sourceNeedsReview: true
+      };
+    });
+    modules = [{ id: moduleId, title: options.moduleTitle, lessons,
+      skills: [...new Set(modules.flatMap(module => module.skills || []))].slice(0, 12) }];
+    const count = Math.min(Number(options.questionCount), questions.length);
+    questions = Array.from({ length: count }, (_, index) => {
+      const question = questions[Math.floor(index * questions.length / count)];
+      return { ...question, moduleId, lessonId: topicIds.get(question.lessonId) };
+    });
   }
   return courseInput({
     ...parts[0],

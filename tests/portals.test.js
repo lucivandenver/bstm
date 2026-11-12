@@ -104,7 +104,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await s.post(moduleUrl + '/unsave', {})).status, 302);
     r=await s.get('/student/courses');assert.match(r.html,/Required learning/);r=await s.post(`/student/courses/${c.id}/enroll`);assert.equal(r.status,302);const attempt=await CourseAttempt.findOne({where:{userId:student.id}}),id=attempt.id;
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.equal(r.status,403,'pretest required');r=await s.get(`/student/learn/${id}/quiz/pretest`);assert.equal(r.status,200);assert.ok(!r.html.includes('"answer":0'));
-    assert.match(legacyEditor.html, /Attach original file/);
+    assert.doesNotMatch(legacyEditor.html, /Attach original file/);
     const originalBytes = Buffer.from('%PDF-1.7\nOriginal faculty learning material');
     const attachment = new FormData();
     attachment.set('moduleId', 'm1');
@@ -149,7 +149,30 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await s.request(`/student/learn/${id}/draft/m1`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':s.csrf},body:JSON.stringify({revision:0,answers:{q1:'1'}})});assert.equal(r.status,409,'stale tab cannot overwrite');
     r=await s.get(`/student/learn/${id}/quiz/m1`);assert.match(r.html,/value="0"\s+checked/,'saved answer restored');
     assert.equal((await o.get(`/student/learn/${id}/quiz/m1`)).status,404);
-    assert.equal((await answer('m1')).status,302);assert.equal((await answer('final')).status,302);
+    const moduleResult = await answer('m1');
+    assert.equal(moduleResult.status, 302);
+    assert.match((await s.get(moduleResult.location)).html, /Passed/);
+    const assessmentAttempt = await CourseAttempt.findByPk(id);
+    const originalSnapshot = assessmentAttempt.snapshot;
+    await assessmentAttempt.update({ snapshot: { ...originalSnapshot, questions: [
+      ...originalSnapshot.questions, { ...originalSnapshot.questions[0], id: 'q2', prompt: 'What should you verify first?' }
+    ] } });
+    const finalUrl = `/student/learn/${id}/final`;
+    const initialOrder = [...(await s.get(finalUrl)).html.matchAll(/name="answers\[(q[12])\]"/g)].map(match => match[1]);
+    const failedFinal = await s.post(finalUrl, { challenge: token('final'), 'answers[q1]': '1', 'answers[q2]': '1' });
+    assert.equal(failedFinal.status, 302);
+    const failedResult = await s.get(failedFinal.location);
+    assert.match(failedResult.html, /Below passing score/);
+    assert.match(failedResult.html, /Would you like to try again/);
+    assert.equal((await o.get(failedFinal.location)).status, 404);
+    assert.equal(await Credential.count(), 0);
+    const retryOrder = [...(await s.get(finalUrl)).html.matchAll(/name="answers\[(q[12])\]"/g)].map(match => match[1]);
+    assert.equal(new Set(retryOrder).size, 2);
+    assert.notEqual(retryOrder[0], initialOrder[0]);
+    const passedFinal = await s.post(finalUrl, { challenge: token('final'), 'answers[q1]': '0', 'answers[q2]': '0' });
+    assert.equal(passedFinal.status, 302);
+    await assessmentAttempt.update({ snapshot: originalSnapshot });
+    assert.match((await s.get(passedFinal.location)).html, /Passed/);
     assert.equal((await CourseAttempt.findByPk(id)).status,'ongoing');assert.equal(await Credential.count(),0,'practical and feedback gate awards');
     await f.get(`/faculty/courses/${c.id}/edit`);r=await f.post(`/faculty/courses/${c.id}`,{courseData:JSON.stringify({...draft,title:'Updated course version'}),action:'publish'});assert.equal(r.status,302);assert.equal((await Course.findByPk(c.id)).version,2);assert.equal((await CourseAttempt.findByPk(id)).snapshot.title,draft.title);assert.ok(await CourseRevision.count()>=3);
     assert.equal((await Course.findByPk(c.id)).published, false);
@@ -289,8 +312,16 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const editModule = await f2.post(actionUrl + '/edit', {});
     assert.equal(editModule.status, 302);
     const scopedEdit = await f2.get(editModule.location.split('#')[0]);
-    assert.match(scopedEdit.html, /Save topic areas/);
-    assert.doesNotMatch(scopedEdit.html, /id="course-editor"/);
+    assert.match(scopedEdit.html, /Submit reviewed module for Admin approval/);
+    assert.match(scopedEdit.html, /id="course-editor" data-module-editor/);
+    const revisionId = new URL(editModule.location, 'http://local').searchParams.get('revision');
+    const editData = { modules: [{ ...c.modules[1], title: 'Edited module draft' }],
+      questions: c.questions.filter(question => question.moduleId === 'm2') };
+    assert.equal((await f2.post(`/faculty/courses/${c.id}/modules/${revisionId}/topics`, {
+      courseData: JSON.stringify(editData), action: 'draft'
+    })).status, 302);
+    assert.equal((await CourseRevision.findByPk(revisionId)).snapshot.module.title, 'Edited module draft');
+    assert.equal((await c.reload()).modules[1].title, 'Independent module');
     const editing = await CourseRevision.findOne({ where: { id: new URL(editModule.location, 'http://local').searchParams.get('revision') } });
     assert.equal((await f2.post(actionUrl + '/delete-draft', { revisionId: editing.id })).status, 302);
     assert.equal((await f2.post(actionUrl + '/unpublish', {})).status, 302);
@@ -328,7 +359,10 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const legacyReview = await f2.post(`/faculty/courses/${generatedModuleDraft.id}/module/m1/review`, {});
     assert.equal(legacyReview.status, 302);
     const legacyRevision = new URL(legacyReview.location, 'http://local').searchParams.get('revision');
-    assert.equal((await f2.post(`/faculty/courses/${generatedModuleDraft.id}/modules/${legacyRevision}/submit`, { confirmReview: 'yes' })).status, 302);
+    assert.equal((await f2.post(`/faculty/courses/${generatedModuleDraft.id}/modules/${legacyRevision}/topics`, {
+      confirmReview: 'yes', action: 'publish',
+      courseData: JSON.stringify({ modules: [draft.modules[0]], questions: draft.questions })
+    })).status, 302);
     assert.equal((await a.post(`/admin/courses/${generatedModuleDraft.id}/approve-publication`, { revisionId: legacyRevision })).status, 302);
     assert.deepEqual((await generatedModuleDraft.reload()).modules.map(module => module.id), ['m1']);
     const siblingDraft = await CourseRevision.findOne({ where: { courseId: generatedModuleDraft.id, action: 'module-draft' } });

@@ -173,6 +173,8 @@ test("three large files upload incrementally, retry without duplicates, and gene
       const body = new FormData();
       body.set("sources", new Blob([buffer]), `Module ${i + 1}.docx`);
       if (sourceId) body.set("sourceId", sourceId);
+      body.set("settings", JSON.stringify({ moduleTitle: "Saved material settings", questionCount: 12,
+        topicCount: 7, level: "Advanced", outcomes: "Preserved outcome", competencyAreas: ["Digital skills"] }));
       const r = await f.request("/faculty/upload", {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-Token": f.csrf },
@@ -183,6 +185,10 @@ test("three large files upload incrementally, retry without duplicates, and gene
       sourceId = String(data.sourceId);
       assert.equal(data.failed.length, 0);
     }
+    const savedForm = await f.get(`/faculty/sources/${sourceId}`);
+    assert.match(savedForm.html, /value="Saved material settings"/);
+    assert.match(savedForm.html, /Preserved outcome/);
+    assert.match(savedForm.html, /value="12"/);
     let source = await SourceDocument.findByPk(sourceId);
     assert.equal(new Set(source.sections.map((s) => s.documentKey)).size, 3);
     assert(source.sections.reduce((n, s) => n + s.text.length, 0) > 100000);
@@ -368,6 +374,8 @@ test("three large files upload incrementally, retry without duplicates, and gene
         await new Promise(resolve => setTimeout(resolve, 20));
       }
       assert.equal(moduleStatus.status, "completed", JSON.stringify(moduleStatus));
+      assert.match(moduleStatus.redirect, new RegExp(`/faculty/courses/${destinationId}/edit\\?revision=\\d+`));
+      assert.match((await f.get(moduleStatus.redirect)).html, /data-module-editor/);
     }
     const anchoredCourse = await Course.findByPk(destinationId);
     assert.equal(anchoredCourse.title, "FACULTY-OWNED COURSE");

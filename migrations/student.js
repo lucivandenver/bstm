@@ -44,6 +44,7 @@ export async function migrateStudent() {
     for (const [name, spec] of Object.entries(fields)) if (!columns[name]) await qi.addColumn(table, name, spec);
   };
   await extend('Courses', { ownerId: { type: DataTypes.INTEGER, allowNull: true }, competencyAreas: { type: DataTypes.JSON, allowNull: true }, outcomes: { type: DataTypes.JSON, allowNull: true }, tasks: { type: DataTypes.JSON, allowNull: true }, policy: { type: DataTypes.JSON, allowNull: true }, enrollFrom: { type: DataTypes.DATE }, enrollUntil: { type: DataTypes.DATE }, deadline: { type: DataTypes.DATE }, certificateEnabled: { type: DataTypes.BOOLEAN, defaultValue: true }, awardsApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false } });
+  await extend('SourceDocuments', { generationSettings: { type: DataTypes.JSON, allowNull: true } });
   await extend('AiJobs', { state: { type: DataTypes.JSON, allowNull: true } });
   await extend('CourseAttempts', { lastLessonId: { type: DataTypes.STRING(100), allowNull: true } });
   await extend('Credentials', { moduleId: { type: DataTypes.STRING(60), allowNull: false, defaultValue: '' }, moduleTitle: { type: DataTypes.STRING }, skills: { type: DataTypes.JSON }, facultySignature: { type: DataTypes.TEXT('long') }, facultyName: { type: DataTypes.STRING(100) }, facultyPosition: { type: DataTypes.STRING(120) }, adminSignature: { type: DataTypes.TEXT('long') }, adminName: { type: DataTypes.STRING(160) }, adminPosition: { type: DataTypes.STRING(160) }, badgeLabel: { type: DataTypes.STRING(60) } });
