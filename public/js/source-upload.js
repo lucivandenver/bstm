@@ -185,6 +185,7 @@
         moduleTitle: form.elements.moduleTitle.value.trim(),
         level: form.elements.level.value,
         topicCount: form.elements.topicCount.value,
+        topicTitles: form.elements.topicTitles.value,
         questionCount: form.elements.questionCount.value,
         outcomes:
           form.elements.outcomes.value.trim() ||

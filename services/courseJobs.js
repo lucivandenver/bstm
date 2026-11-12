@@ -106,6 +106,7 @@ export async function courseJobStatus(userId, id) {
     id: job.id,
     status: job.status,
     sourceId: job.sourceId,
+    moduleTitle: job.state?.options?.moduleTitle || null,
     completed: job.state?.batches?.length || 0,
     total: job.state?.total || 0,
     ...(progress || {}),

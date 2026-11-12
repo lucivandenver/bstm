@@ -82,14 +82,6 @@ button.award-tile {
   .award-dialog .actions > * { width:100%; }
 }
 
-.student-catalog-card { padding: 0; }
-.catalog-card-link { display: grid; gap: 1rem; padding: 1.5rem; height: 100%; color: inherit; text-decoration: none; border-radius: inherit; }
-.catalog-card-link:hover, .catalog-card-link:focus-visible { background: #f2f8f4; }
-.catalog-card-link h2 { text-transform: uppercase; margin: 0; }
-.catalog-card-link p { margin: 0; }
-.catalog-card-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
-.catalog-card-meta:last-child { margin-top: auto; color: var(--green); }
-.module-card { scroll-margin-top: 6rem; }
 .learning-course-label { font-size: .8rem; color: var(--muted); text-transform: uppercase; }
 .assessment-topic-actions[hidden], .assessment-topic[hidden], [data-topic-next][hidden], [data-topic-submit][hidden] { display: none; }
 

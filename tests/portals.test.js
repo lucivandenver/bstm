@@ -211,6 +211,14 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
         questions: [{ ...draft.questions[0], id: 'q2', moduleId: 'm2' }]
       }
     });
+    const draftCards = await f.get('/faculty/courses?list=drafts&course=' + c.id);
+    assert.equal(draftCards.status, 200);
+    assert.match(draftCards.html, /Independent module/);
+    assert.doesNotMatch(draftCards.html, /Unpublish/);
+    assert.equal((await f.post(`/faculty/courses/${c.id}/modules/${moduleDraft.id}/topics`, {
+      moduleTitle: 'Independent module', topicTitle: 'Revised topic area', topicBody: draft.modules[0].lessons[0].body
+    })).status, 302);
+    assert.equal((await moduleDraft.reload()).snapshot.module.lessons[0].title, 'Revised topic area');
     assert.equal((await f.post(`/faculty/courses/${c.id}/modules/${moduleDraft.id}/submit`, { confirmReview: 'yes' })).status, 302);
     assert.deepEqual((await c.reload()).modules.map(module => module.id), ['m1']);
     assert.equal(c.published, true);
@@ -230,26 +238,46 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match(firstPage.html, /Page 1 of 2/);
     assert.doesNotMatch(firstPage.html, /OUTLINE COURSE 1/);
     const secondPage = await f2.get('/faculty/courses?q=searchable+module&page=2');
-    assert.match(secondPage.html, /Module 1 · Searchable Module 1/);
+    assert.match(secondPage.html, /OUTLINE COURSE 1/);
+    assert.match(secondPage.html, /1 module/);
     const archiveTarget = await Course.findOne({ where: { slug: 'outline-1' } });
+    const moduleCards = await f2.get('/faculty/courses?page=2&course=' + archiveTarget.id);
+    assert.equal(moduleCards.status, 200);
+    assert.match(moduleCards.html, /Module 1 · Searchable Module 1/);
+    assert.match(moduleCards.html, /class="eyebrow">Outline Course 1/);
+    assert.equal((await f.get('/faculty/courses?course=' + archiveTarget.id)).status, 404);
     assert.equal((await f2.post('/faculty/courses/' + archiveTarget.id + '/archive', {})).status, 302);
     assert.doesNotMatch((await f2.get('/faculty/courses?q=Outline+Course+1')).html, /<h2>OUTLINE COURSE 1/);
     assert.match((await f2.get('/faculty/courses?list=archive&q=searchable+module+1')).html, /<h2>OUTLINE COURSE 1/);
     assert.equal((await s.get('/student/courses/' + archiveTarget.id)).status, 404);
     const generatedModuleDraft = await Course.create({
-      ...draft, ownerId: otherFaculty.id, slug: 'generated-module-draft', published: false
+      ...draft, ownerId: otherFaculty.id, slug: 'generated-module-draft', published: false,
+      modules: [...draft.modules, { ...draft.modules[0], id: 'legacy-group', title: 'Legacy topic group',
+        lessons: [{ ...draft.modules[0].lessons[0], id: 'legacy-topic' }] }],
+      questions: [...draft.questions, { ...draft.questions[0], id: 'legacy-question', moduleId: 'legacy-group', lessonId: 'legacy-topic' }]
     });
     await AiJob.create({ userId: otherFaculty.id, type: 'course-draft', status: 'completed', courseId: generatedModuleDraft.id });
     const attachUrl = '/faculty/courses/' + generatedModuleDraft.id + '/attach-module';
+    const copyFields = { destinationId: c.id, moduleId: 'all', moduleTitle: 'Recovered module' };
+    assert.equal((await f2.post(attachUrl, copyFields)).status, 302);
+    assert.equal((await f2.post(attachUrl, copyFields)).status, 302);
+    const recovered = await CourseRevision.findAll({ where: { courseId: c.id, action: 'module-draft' } });
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0].snapshot.module.title, 'Recovered module');
+    assert.equal(recovered[0].snapshot.questions.length, draft.questions.length + 1);
+    const copiedTopic = recovered[0].snapshot.module.lessons.at(-1);
+    assert.equal(recovered[0].snapshot.questions.at(-1).lessonId, copiedTopic.id);
+    assert.equal((await c.reload()).modules.length, 2);
+
     const attachFields = { destinationId: archiveTarget.id, moduleId: draft.modules[0].id, moduleNumber: 7, moduleTitle: 'Advanced Module' };
-    assert.match((await f2.get('/faculty/courses/' + generatedModuleDraft.id + '/edit')).html, /Attach a generated module/);
+    assert.match((await f2.get('/faculty/courses/' + generatedModuleDraft.id + '/edit')).html, /Copy generated content into an existing course/);
     assert.equal((await f2.post(attachUrl, attachFields)).status, 302);
     assert.equal((await f2.post(attachUrl, attachFields)).status, 400);
     await archiveTarget.reload();
     const attached = archiveTarget.modules.find(module => module.number === 7);
     assert.equal(attached.title, 'Advanced Module');
     assert.ok(archiveTarget.questions.some(question => question.moduleId === attached.id && !question.reviewed));
-    assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module')).html, /Module 7/);
+    assert.match((await f2.get('/faculty/courses?list=archive&q=Advanced+Module&course=' + archiveTarget.id)).html, /Module 7/);
     const { ensureCompletionCredential } = await import('../services/portalLearning.js');
     const moduleAwardAttempt = await CourseAttempt.findByPk(id);
     await moduleAwardAttempt.update({ snapshot: { ...moduleAwardAttempt.snapshot, modules: [
@@ -273,7 +301,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     await QuizDraft.create({ userId: student.id, attemptId: archivedAttempt.id, scope: firstModule.id });
     const deleteArchive = '/faculty/courses/' + archiveTarget.id + '/archive/delete';
     assert.equal((await f.post(deleteArchive, { confirmDelete: 'yes' })).status, 404);
-    assert.ok((await f2.get('/faculty/courses?list=archive')).html.includes(deleteArchive));
+    assert.ok((await f2.get('/faculty/courses?list=archive&course=' + archiveTarget.id)).html.includes(deleteArchive));
     assert.equal((await f2.post(deleteArchive, {})).status, 400);
     assert.equal((await f2.post(deleteArchive, { confirmDelete: 'yes' })).status, 302);
     assert.equal(await Course.findByPk(archiveTarget.id), null);

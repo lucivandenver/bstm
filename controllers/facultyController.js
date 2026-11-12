@@ -111,16 +111,32 @@ export const courses = async (req, res) => {
     for (const attempt of historicalAttempts) previouslyPublished.add(attempt.courseId);
   }
   const courseById = new Map(courses.map(course => [course.id, course]));
-  const moduleDrafts = drafts && !archived && courses.length ? (await CourseRevision.findAll({
-    where: { courseId: [...courseById.keys()], actorId: req.user.id, action: 'module-draft' }, order: [['id', 'DESC']]
-  })).map(row => ({
-    courseId: row.courseId, courseTitle: courseById.get(row.courseId).title, title: row.snapshot.module.title
-  })).filter(row => `${row.courseTitle} ${row.title}`.toLowerCase().includes(query.toLowerCase())) : [];
+  const moduleRevisions = !archived && courses.length ? await CourseRevision.findAll({
+    where: { courseId: [...courseById.keys()], actorId: req.user.id, action: drafts ? 'module-draft' : 'module-pending' },
+    order: [['id', 'DESC']]
+  }) : [];
+  const modulesByCourse = new Map();
+  for (const row of moduleRevisions) {
+    const module = row.snapshot?.module;
+    if (!module) continue;
+    const items = modulesByCourse.get(row.courseId) || [];
+    items.push({ ...module, number: module.number ?? savedArray(courseById.get(row.courseId).modules).length + 1, status: drafts ? 'Draft' : 'Pending Admin review', editUrl: `/faculty/courses/${row.courseId}/edit#module-revision-${row.id}` });
+    modulesByCourse.set(row.courseId, items);
+  }
+  const listedModules = course => {
+    const revision = latest.get(course.id);
+    const stored = drafts && (course.published || pendingPublication(course, revision) || previouslyPublished.has(course.id)) ? [] : savedArray(course.modules);
+    const status = course.published ? 'Published' : archived ? 'Archived' : pendingPublication(course, revision) ? 'Pending Admin review' : 'Draft';
+    return [
+      ...stored.map((module, index) => ({ ...module, number: module.number ?? index + 1, status, editUrl: `/faculty/courses/${course.id}/edit#edit-module-${module.id}` })),
+      ...(modulesByCourse.get(course.id) || [])
+    ];
+  };
   const matches = courses.filter(course => {
     const revision = latest.get(course.id);
     const isArchived = archivedCourse(course, revision, previouslyPublished.has(course.id));
     const courseStatus = course.published ? 'approved' : pendingPublication(course, revision) ? 'pending' : 'draft';
-    return isArchived === archived && (archived || drafts === (courseStatus === 'draft')) && (!status || status === courseStatus) && [course.title, ...savedArray(course.modules).map(module => module.title)]
+    return ((isArchived === archived && (archived || drafts === (courseStatus === 'draft'))) || (drafts && modulesByCourse.has(course.id))) && (!status || (status === 'pending' ? courseStatus === 'pending' || modulesByCourse.has(course.id) : status === courseStatus)) && [course.title, ...listedModules(course).map(module => module.title)]
       .some(title => String(title || '').toLowerCase().includes(query.toLowerCase()));
   });
   const pageCount = Math.max(1, Math.ceil(matches.length / 4));
@@ -129,15 +145,33 @@ export const courses = async (req, res) => {
     q: query, list: tab, status: tab === list ? status : '', page: String(number)
   });
   courses = matches.slice((page - 1) * 4, page * 4);
-  const ids = courses.map(c => c.id);
-  let attempts=[],requests=[],assignments=[];
-  if(ids.length){
-    const results=await Promise.allSettled([CourseAttempt.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId','userId','status'] }),CredentialRequest.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] }),CourseAssignment.findAll({ where: { courseId: { [Op.in]: ids } }, attributes: ['courseId'] })]);
-    [attempts,requests,assignments]=results.map((result,i)=>{if(result.status==='fulfilled')return result.value;console.error('[Faculty course list]',JSON.stringify({resource:['attempts','credentials','assignments'][i],name:result.reason?.name,code:result.reason?.original?.code||result.reason?.parent?.code||null}));databaseNotice ||= 'Course activity totals are temporarily unavailable. The courses remain accessible; ask Admin to check the latest database migration.';return [];});
+  const selectedId = Number(req.query.course);
+  const selectedCourse = selectedId ? matches.find(course => course.id === selectedId) : null;
+  if (selectedId && !selectedCourse) fail('Course not found in this list.', 404);
+  const cards = courses.map(course => ({
+    ...plain(course), title: course.title.toUpperCase(), moduleCount: listedModules(course).length,
+    href: listUrl(page) + '&course=' + course.id
+  }));
+  let detail;
+  if (selectedCourse) {
+    const c = selectedCourse;
+    const draftOnly = drafts && (c.published || pendingPublication(c, latest.get(c.id)) || previouslyPublished.has(c.id));
+    const hasHistory = !c.published && !draftOnly && (
+      await CourseAttempt.count({ where: { courseId: c.id } }) ||
+      await CredentialRequest.count({ where: { courseId: c.id } }) ||
+      await CourseAssignment.count({ where: { courseId: c.id } })
+    );
+    detail = { ...plain(c), modules: listedModules(c), draftOnly,
+      pendingReview: pendingPublication(c, latest.get(c.id)),
+      deleteEligible: drafts && !draftOnly && !hasHistory };
   }
-  render(res, 'courses', { title: archived ? 'Archived courses' : drafts ? 'Draft courses' : 'My courses', databaseNotice, query, status, archived, drafts, list, moduleDrafts, page, pageCount,
+  render(res, selectedCourse ? 'course-modules' : 'courses', {
+    facultyNav: 'courses', title: selectedCourse?.title || (archived ? 'Archived courses' : drafts ? 'Draft courses' : 'My courses'),
+    databaseNotice, query, status, archived, drafts, list, page, pageCount, courses: cards, course: detail,
+    backUrl: selectedCourse ? listUrl(page) : null,
     activeUrl: listUrl(1, 'active'), draftsUrl: listUrl(1, 'drafts'), archiveUrl: listUrl(1, 'archive'),
-    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null, courses: courses.map(c => { const rows = attempts.filter(a => a.courseId === c.id); const hasHistory = requests.some(r => r.courseId === c.id) || assignments.some(a => a.courseId === c.id) || rows.length > 0; return { ...plain(c), title: c.title.toUpperCase(), pendingReview: latest.get(c.id)?.action === 'pending-review' && latest.get(c.id)?.version === c.version, modules: savedArray(c.modules).map((module, index) => ({ title: module.title, number: module.number ?? index + 1 })), moduleCount: savedArray(c.modules).length, questionCount: savedArray(c.questions).length, enrolledStudents: new Set(rows.map(a => a.userId)).size, activeLearners: new Set(rows.filter(a => a.status !== 'completed').map(a => a.userId)).size, completedAttempts: rows.filter(a => a.status === 'completed').length, deleteEligible: !c.published && !pendingPublication(c, latest.get(c.id)) && !hasHistory }; }) });
+    previousUrl: page > 1 ? listUrl(page - 1) : null, nextUrl: page < pageCount ? listUrl(page + 1) : null
+  });
 };
 export const editor = async (req, res) => {
   const course = plain(await ownedCourse(req));
@@ -148,7 +182,7 @@ export const editor = async (req, res) => {
   const [bank, otherCourses, revisions] = await Promise.all([QuestionBank.findAll({ where: { ownerId: req.user.id, active: true, reviewed: true }, limit: 200 }), Course.findAll({ where: { published: true }, attributes: ['id', 'title'] }), course.id ? CourseRevision.findAll({ where: { courseId: course.id }, attributes:['version','action','createdAt'], order: [['createdAt', 'DESC']], limit: 20 }) : []]);
   const generatedDraft = !course.published && await AiJob.count({ where: { courseId: course.id, type: 'course-draft', status: 'completed' } });
   const destinations = generatedDraft ? await Course.findAll({
-    where: { ownerId: req.user.id, published: false, id: { [Op.ne]: course.id } },
+    where: { ownerId: req.user.id, id: { [Op.ne]: course.id } },
     attributes: ['id', 'title'], order: [['title', 'ASC']]
   }) : [];
   const signatureMissing = course.certificateEnabled && !await facultySignature(req.user.id) && !await CredentialRequest.findOne({ where: { courseId: course.id, facultyId: req.user.id, status: { [Op.ne]: 'rejected' } } });
@@ -217,28 +251,56 @@ export const attachGeneratedModule = async (req, res) => {
     const source = rows.find(row => row.id === Number(req.params.id));
     const destination = rows.find(row => row.id === destinationId);
     if (!source || !destination) fail('Course not found.', 404);
-    if (source.published || destination.published) fail('Unpublish the course before attaching a generated module.');
+    if (source.published) fail('Select an unpublished generated draft.');
     if (!await AiJob.count({ where: { courseId: source.id, userId: req.user.id, type: 'course-draft', status: 'completed' }, transaction })) fail('Select a draft created through Upload & Generate.');
-    const module = savedArray(source.modules).find(item => item.id === req.body.moduleId);
-    if (!module) fail('Select a generated module.');
+    const combine = req.body.moduleId === 'all';
+    const selected = savedArray(source.modules).filter(item => combine || item.id === req.body.moduleId);
+    if (!selected.length) fail('Select generated content.');
     const modules = savedArray(destination.modules).map((item, index) => ({ ...item, number: item.number ?? index + 1 }));
-    const number = Number(req.body.moduleNumber);
-    const title = text(req.body.moduleTitle, 160) || module.title;
+    const number = destination.published || combine || !req.body.moduleNumber
+      ? Math.max(0, ...modules.map(item => item.number)) + 1
+      : Number(req.body.moduleNumber);
+    const title = text(req.body.moduleTitle, 160) || (combine ? '' : selected[0].title);
+    if (title.length < 4) fail('Enter a module name of at least four characters.');
     const id = newModuleId();
-    const lessonIds = new Map(module.lessons.map(lesson => [lesson.id, newModuleId()]));
-    const questions = savedArray(source.questions).filter(question => question.moduleId === module.id);
+    const lessonIds = new Map();
+    const lessons = selected.flatMap(module => module.lessons.map(lesson => {
+      const lessonId = newModuleId();
+      lessonIds.set(`${module.id}:${lesson.id}`, lessonId);
+      return { ...lesson, id: lessonId, sourceReviewed: false };
+    }));
+    const selectedIds = new Set(selected.map(module => module.id));
+    const questions = savedArray(source.questions).filter(question => selectedIds.has(question.moduleId)).map(question => ({
+      ...question, id: newModuleId(), moduleId: id,
+      lessonId: lessonIds.get(`${question.moduleId}:${question.lessonId}`), reviewed: false
+    }));
+    const materials = [...new Map(selected.flatMap(module => module.materials || []).map(item => [`${item.sourceId}:${item.documentKey}`, item])).values()];
+    const skills = [...new Set(selected.flatMap(module => module.skills || []))].slice(0, 12);
     const data = courseInput({
       ...plain(destination),
-      modules: [...modules, { ...module, id, title, number, lessons: module.lessons.map(lesson => ({ ...lesson, id: lessonIds.get(lesson.id), sourceReviewed: false })) }],
-      questions: [...savedArray(destination.questions), ...questions.map(question => ({ ...question, id: newModuleId(), moduleId: id, lessonId: lessonIds.get(question.lessonId), reviewed: false }))]
+      modules: [...modules, { id, title, number, lessons, materials, skills }],
+      questions: [...savedArray(destination.questions), ...questions]
     }, { draft: true });
+    if (destination.published) {
+      const prior = await CourseRevision.findAll({
+        where: { courseId: destination.id, actorId: req.user.id, action: ['module-draft', 'module-pending', 'module-published'] }, transaction
+      });
+      const sourceKey = `${source.id}:${source.version}:${req.body.moduleId}`;
+      if (prior.some(row => row.snapshot?.sourceKey === sourceKey)) return;
+      await CourseRevision.create({
+        courseId: destination.id, actorId: req.user.id, version: destination.version, action: 'module-draft',
+        snapshot: { sourceKey, module: data.modules.at(-1), questions: data.questions.filter(question => question.moduleId === id) }
+      }, { transaction });
+      await audit(req.user.id, 'course.module_attached', 'course', destination.id, { sourceCourseId: source.id, moduleId: id }, transaction);
+      return;
+    }
     await CourseRevision.create({ courseId: destination.id, actorId: req.user.id, version: destination.version, action: 'before-edit', snapshot: plain(destination) }, { transaction });
     await destination.update({ modules: data.modules, questions: data.questions, awardsApproved: false, version: destination.version + 1 }, { transaction });
     await CredentialRequest.update({ status: 'returned', remarks: 'Course modules changed. Resubmit the certificate configuration.' }, { where: { courseId: destination.id, status: 'approved' }, transaction });
     await audit(req.user.id, 'course.module_attached', 'course', destination.id, { sourceCourseId: source.id, moduleId: id }, transaction);
   });
   req.flash('success_msg', 'Module attached. Review the updated course and submit it for Admin approval.');
-  res.redirect(`/faculty/courses/${destinationId}/edit`);
+  res.redirect(`/faculty/courses/${destinationId}/edit#module-submissions`);
 };
 export const saveCourse = async (req, res) => {
   const approve=req.body.action==='approve-generated',publish=approve||req.body.action==='publish';
@@ -306,6 +368,29 @@ export const saveCourse = async (req, res) => {
     await audit(req.user.id, publish ? 'course.submitted_for_review' : 'course.draft_saved', 'course', c.id, { version: c.version }, transaction);
   });
   req.flash('success_msg', publish ? missingSignature ? 'Course submitted. Save your faculty signature under Certificates & badges before Admin can publish.' : 'Course and certificate submitted together for Admin approval.' : 'Draft saved. Publishing requires complete assessments and one course-wide review confirmation.'); res.redirect(`/faculty/courses/${id}/edit`);
+};
+export const saveModuleTopics = async (req, res) => {
+  await sequelize.transaction(async transaction => {
+    const course = await ownedCourse(req, transaction);
+    const revision = await CourseRevision.findOne({
+      where: { id: req.params.revisionId, courseId: course.id, actorId: req.user.id, action: 'module-draft' }, transaction
+    });
+    if (!revision) fail('This module draft is no longer editable.', 409);
+    const { module } = revision.snapshot;
+    const title = text(req.body.moduleTitle, 160);
+    const titles = [].concat(req.body.topicTitle || []).map(value => text(value, 160));
+    const bodies = [].concat(req.body.topicBody || []).map(value => text(value, 16000));
+    if (title.length < 4 || titles.length !== module.lessons.length || titles.some(value => !value) ||
+      bodies.length !== module.lessons.length || bodies.some(value => value.length < 30)) {
+      fail('Enter a module title, a name and at least 30 characters of content for every topic area.', 422);
+    }
+    const lessons = module.lessons.map((lesson, index) => ({
+      ...lesson, title: titles[index], body: bodies[index], sourceReviewed: false
+    }));
+    await revision.update({ snapshot: { ...revision.snapshot, module: { ...module, title, lessons } } }, { transaction });
+  });
+  req.flash('success_msg', 'Module topic areas saved.');
+  res.redirect(`/faculty/courses/${req.params.id}/edit#module-revision-${req.params.revisionId}`);
 };
 export const submitModulePublication = async (req, res) => {
   await sequelize.transaction(async transaction => {
@@ -382,7 +467,7 @@ export const deleteArchivedCourse = async (req, res) => {
   res.redirect('/faculty/courses?list=archive');
 };
 export const preview = async (req, res) => { const c = await ownedCourse(req); render(res, 'preview', { title: 'Student preview', backUrl: `/faculty/courses/${req.params.id}/edit`, course: plain(c), generated:Boolean(await AiJob.count({where:{courseId:c.id,status:'completed',type:'course-draft'}})), questions: publicQuestions(c.questions) }); };
-const sourceValues = body => ({ areas:[].concat(body?.competencyAreas||body?.domain||[]), domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
+const sourceValues = body => ({ destinationId: Number(body?.destinationId), moduleTitle: text(body?.moduleTitle, 160), topicCount: Number(body?.topicCount) || 5, topicTitles: text(body?.topicTitles, 4000), areas:[].concat(body?.competencyAreas||body?.domain||[]), domain: domains.includes(body?.domain) ? body.domain : '', outcomes: text(body?.outcomes, 1500), level: ['Foundation','Intermediate','Advanced'].includes(body?.level) ? body.level : 'Foundation', questionCount: Math.max(3, Math.min(30, Number(body?.questionCount) || 8)), consent: body?.consent === 'yes' });
 const sourceDiagnostics = source => {
   const grouped = new Map();
   for (const section of sourceSections(source)) {
@@ -392,7 +477,7 @@ const sourceDiagnostics = source => {
   }
   return [...grouped.values()].map(item => ({ ...item, units: new Set(item.references.map(ref => ref.match(/(?:Page|Slide|Paragraph)\s+\d+/i)?.[0]).filter(Boolean)).size, warning: item.characters < 600 ? 'Low extracted text; check for scanned or mostly empty pages.' : '' }));
 };
-const sourceView = async (res, source, body, error) => render(res, 'source', { title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, sourceDiagnostics: sourceDiagnostics(source), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
+const sourceView = async (res, source, body, error) => render(res, 'source', { destinations: (await Course.findAll({ where: { ownerId: source.ownerId }, attributes: ['id', 'title'], order: [['title', 'ASC']] })).map(plain), title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, sourceDiagnostics: sourceDiagnostics(source), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
 export const createCourse = async (req, res) => {
   const title = text(req.body.title, 160).toUpperCase();
   if (title.length < 4) fail('Enter a course name of at least four characters.');
@@ -497,7 +582,7 @@ export const approveBlueprint = async (req, res) => {
 export const generationStatus = async (req,res) => {
   const progress=await courseJobStatus(req.user.id,req.params.id);
   if(req.get('accept')?.includes('application/json'))return res.json({ok:true,...progress});
-  render(res,'generation',{title:'Generating your course',progress});
+  render(res,'generation',{title:progress.moduleTitle ? 'Generating your module' : 'Generating your course',progress});
 };
 export const source = async (req, res) => { const s = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!s) fail('Source not found.', 404); await sourceView(res, s); };
 export const deleteSource = async (req, res) => { const source = await SourceDocument.findOne({ where: { id: req.params.id, ownerId: req.user.id } }); if (!source) fail('Source not found.', 404); await audit(req.user.id, 'source.deleted', 'source', source.id, { filename: source.filename }); await source.destroy(); req.flash('success_msg', 'Source resource deleted. Existing courses and generated drafts are unchanged.'); res.redirect('/faculty/upload'); };
@@ -513,13 +598,16 @@ export const generate = async (req, res) => {
     if(req.body.background==='yes'){
       const options = { ...req.body, outcomes: values.outcomes || 'Derive learning outcomes from the supplied materials.' };
       const destinationId = Number(req.body.destinationId);
-      if (req.body.destinationId || req.body.moduleTitle) {
+      if (req.body.scope === 'module' || req.body.destinationId || req.body.moduleTitle) {
         const destination = await Course.findOne({ where: { id: destinationId, ownerId: req.user.id } });
         const moduleTitle = text(req.body.moduleTitle, 160);
         if (!destination || text(destination.title, 160).length < 4 || moduleTitle.length < 4) throw generationError('COURSE_INPUT', 'Select a course you own and enter a module title.');
         const topicCount = Number(req.body.topicCount ?? 5);
         if (!Number.isInteger(topicCount) || topicCount < 5 || topicCount > 30) throw generationError('COURSE_INPUT', 'Choose a topic target from 5 to 30.');
+        const topicTitles = values.topicTitles.split(/\r?\n/).map(title => text(title, 160)).filter(Boolean);
+        if (topicTitles.length > topicCount) throw generationError('COURSE_INPUT', 'The preferred topic list exceeds the topic target.');
         options.topicCount = topicCount;
+        options.topicTitles = [...new Set(topicTitles)];
         options.destinationId = destination.id;
         options.moduleTitle = moduleTitle;
         options.courseTitle = destination.title;
