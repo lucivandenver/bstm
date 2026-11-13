@@ -487,6 +487,12 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     });
     assert.match(submitted.location, /\/result\//);
     assert.equal((await learnerAttempt.reload()).quizScores.m2, 100);
+    const facultyReport = await f2.get('/faculty/reports');
+    assert.match(facultyReport.html, /Independent module . 100% . Passed/);
+    assert.match(facultyReport.html, /Final assessment: Not submitted/);
+    assert.match(facultyReport.html, /Course attempts completed/);
+    const learningRecord = await f2.get('/faculty/students/' + student.id);
+    assert.match(learningRecord.html, /Independent module . 100% . Passed/);
     assert.equal((await s.get(learnUrl + '/final')).status, 403);
     assert.equal((await s.post(catalogUrl + '/modules/m2/save', {})).status, 302);
     assert.doesNotMatch((await s.get('/student/courses?view=saved')).html, /Independent module/);

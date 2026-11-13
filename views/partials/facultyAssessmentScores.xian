@@ -1,0 +1,2 @@
+{{#each moduleResults}}<small>{{title}} · {{score}}% · {{#if passed}}Passed{{else}}Below passing{{/if}}</small>{{/each}}
+<small>Final assessment: {{#if (eq finalScore null)}}Not submitted{{else}}{{finalScore}}%{{/if}}</small>

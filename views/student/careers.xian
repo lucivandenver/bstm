@@ -17,16 +17,16 @@
 <script src="/js/career-finder.js" defer></script>
 <section id="career-matches" aria-live="polite">
   {{#if showCareerMatches}}
-    {{#if ai}}<div id="ai-results" class="card space-top"><h2>AI career guidance</h2><p>{{ai.summary}}</p>
-      <div class="grid cols-2">{{#each ai.matches}}<article class="career-ai-match"><h3>{{title}}</h3><p class="small">These passed module assessments overlap with the pathway:</p>{{> careerModuleEvidence}}</article>{{/each}}</div>
+    {{#if ai}}<div id="ai-results" class="card space-top"><h2>AI career guidance</h2><p>{{ai.summary}}</p><p class="small muted">Alignment reflects quiz evidence and coverage of the pathway’s required competencies.</p>
+      <div class="grid cols-2">{{#each ai.matches}}<article class="career-ai-match"><h3>{{title}}</h3>{{#if alignment}}<p><strong>{{alignment}}% evidence alignment</strong> · {{assessedAreas}} of {{totalAreas}} required areas assessed</p>{{/if}}<p class="small">These passed module assessments overlap with the pathway:</p>{{> careerModuleEvidence}}</article>{{/each}}</div>
     </div>{{/if}}
-    <div class="grid cols-2 space-top">{{#each tracks}}<article class="card">
-      <span class="chip">{{label}}</span><h2 class="space-top">{{title}}</h2><p>{{explanation}}</p>{{> careerModuleEvidence}}
-      <h3>Assessed areas to improve</h3><ul class="list-clean">{{#each gaps}}<li>{{this}}</li>{{else}}<li>No below-target scores in the linked assessed areas.</li>{{/each}}</ul>
-    </article>{{else}}<article class="card">No configured pathway matches the scored competencies in your passed modules yet.</article>{{/each}}</div>
+    <section class="card space-top"><h2>Matched career pathways</h2>
+      {{#if tracks.length}}<ul>{{#each tracks}}<li>{{title}}</li>{{/each}}</ul>
+      {{else}}<p>No configured pathway matches the scored competencies in your passed modules yet.</p>{{/if}}
+    </section>
     <div class="grid cols-2 space-top">
-      <section class="card"><h2>Passed module evidence</h2>{{#each passedModules}}<p>{{title}} · Quiz {{score}}% · {{percent}}% progress</p>{{/each}}</section>
-      <section class="card"><h2>Gaps from below-passing module quizzes</h2>{{#each developingCourses}}<p>{{title}} · {{percent}}% progress · Quiz {{score}}%</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
+      <section class="card"><h2>Passed module evidence</h2>{{#each passedModules}}<p>{{title}}</p>{{/each}}</section>
+      <section class="card"><h2>Gaps from below-passing module quizzes</h2>{{#each developingCourses}}<p>{{title}}</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
     </div>
   {{else}}<div class="card empty space-top"><h2>Your matches will appear here</h2></div>{{/if}}
 </section>

@@ -208,7 +208,9 @@ export async function explainCareer(
       summary: "These directions are based on scored competencies in your submitted module assessments.",
       matches: [...indexes].sort((a, b) => a - b).map(index => {
         const pathway = pathways[index];
-        return { title: pathway.title, label: pathway.label, supportingModules: pathway.supportingModules };
+        const { rank: alignment, assessedAreas, totalAreas } = evidence.tracks[index];
+        return { title: pathway.title, label: pathway.label, alignment, assessedAreas, totalAreas,
+          supportingModules: pathway.supportingModules };
       })
     };
   }
