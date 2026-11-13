@@ -1,7 +1,7 @@
 {{> studentTop}}
-<p class="small"><a href="/student/learning">← My learning</a></p><div class="row between"><span class="small muted">Attempt {{attempt.attemptNumber}}</span><span class="save-status" id="save-status" role="status">Progress saved to your account</span></div>
+<p class="small"><a href="/student/learning">← My learning</a></p><div class="row between"><span class="small muted">Attempt {{attempt.attemptNumber}}</span><span class="save-status" id="save-status" role="status">Learning activity synced</span></div>
 {{#if completed}}<div class="notice">Course completed. <a href="/student/achievements"><strong>View your certificate and badge →</strong></a> You can review the lessons and results here.</div>{{/if}}
-{{#if pretestNeeded}}<div class="notice info">Start with the course pre-test to record your initial knowledge. <a class="text-link" href="/student/learn/{{attempt.id}}/quiz/pretest">Take pre-test →</a></div>{{/if}}<div class="toolbar"><a class="button secondary" href="/student/learn/{{attempt.id}}/activities">Practical activities & feedback →</a><span class="small muted">{{#if attempt.snapshot.deadline}}Recommended deadline: {{attempt.snapshot.deadline}}{{/if}}</span></div><div class="lesson-layout" data-attempt="{{attempt.id}}">{{> studentTopicOutline}}
+{{#if pretestNeeded}}<div class="notice info">Start with the course pre-test to record your initial knowledge. <a class="text-link" href="/student/learn/{{attempt.id}}/quiz/pretest">Take pre-test →</a></div>{{/if}}<div class="toolbar"><span class="small muted">{{#if attempt.snapshot.deadline}}Recommended deadline: {{attempt.snapshot.deadline}}{{/if}}</span></div><div class="lesson-layout" data-attempt="{{attempt.id}}">{{> studentTopicOutline}}
 <article class="card lesson-content">
   {{#unless moduleOnly}}<p class="eyebrow">{{selected.moduleTitle}}</p>{{/unless}}
   <div class="lesson-position">
@@ -17,7 +17,7 @@
   {{#if materials.length}}
   <section class="notice info">
     <h2>Original learning materials</h2>
-    <ul>{{#each materials}}<li><a href="{{href}}" target="_blank" rel="noopener">{{filename}}</a></li>{{/each}}</ul>
+    <ul class="learning-materials">{{#each materials}}<li><a href="{{href}}" target="_blank" rel="noopener"><span aria-hidden="true">👉</span> {{filename}}</a></li>{{/each}}</ul>
   </section>
   {{/if}}
   {{#if readingConfirmed}}<p class="small muted">Reading confirmed.</p>{{else}}{{#if readingRequired}}{{#unless completed}}
@@ -67,6 +67,7 @@
     </form>
     {{/unless}}{{/unless}}{{/unless}}
   {{/unless}}
+{{#unless moduleOnly}}{{#if showCourseActivities}}<p class="space-top"><a class="text-link" href="/student/learn/{{attempt.id}}/activities">Course activities &amp; feedback →</a></p>{{/if}}{{/unless}}
 </article></div>
 {{#if lessonChallenge}}<script src="/js/lesson-completion.js" defer></script>{{/if}}
 {{> studentBottom}}

@@ -368,7 +368,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     assert.equal(publish.status, 302, publish.html);
     assert.equal((await course.reload()).published, false);
     await f.get("/faculty/upload");
-    const created = await f.post("/faculty/courses", { title: "Faculty-owned course" });
+    const created = await f.post("/faculty/courses", { title: "Faculty-owned course", description: "A survey of tourism operations and guest services." });
     assert.equal(created.status, 302);
     const destinationId = Number(new URL(created.location, "https://example.test").searchParams.get("courseId"));
     for (const moduleTitle of ["First generated module", "Second generated module"]) {
@@ -397,6 +397,7 @@ test("three large files upload incrementally, retry without duplicates, and gene
     }
     const anchoredCourse = await Course.findByPk(destinationId);
     assert.equal(anchoredCourse.title, "FACULTY-OWNED COURSE");
+    assert.equal(anchoredCourse.description, "A survey of tourism operations and guest services.");
     assert.deepEqual(anchoredCourse.modules.map(module => [module.number, module.title]), [[1, "First generated module"], [2, "Second generated module"]]);
     assert.equal(anchoredCourse.published, false);
     assert.ok(anchoredCourse.modules.every(module => module.materials.length === 3));

@@ -4,8 +4,8 @@
     <progress class="faculty-module-progress" value="{{evidence.overall}}" max="100" aria-label="Overall module progress"></progress>
     {{#each domains}}<div class="space-top"><div class="row between"><span>{{name}}</span><strong>{{percent}}%</strong></div>
       <progress class="faculty-module-progress" value="{{percent}}" max="100" aria-label="{{name}} progress"></progress>
-      <small>{{passed}} of {{total}} started modules passed</small></div>{{/each}}
-    <p class="small muted space-top">An unpassed module contributes up to 25% toward its competency progress.</p>
+      <small>{{passed}} of {{total}} available modules passed</small></div>{{/each}}
+    <p class="small muted space-top">Progress includes all published modules in your courses. An in-progress module can earn up to one-quarter of its own progress credit until passed.</p>
   </section>
   <section class="card"><h2>Career directions</h2>
     {{#each careerSuggestions}}<article class="feedback-item"><h3>{{title}}</h3><p class="small muted">{{explanation}}</p></article>

@@ -37,11 +37,11 @@ await test('Google login never registers users; registration completion and owne
     r = await b.get('/'); assert.ok(!r.html.includes('value="Google Student"'));
     flow = await start('register'); await callback(flow);
     r = await b.get('/register'); assert.ok(r.html.includes('value="Google Student"')); assert.ok(r.html.includes('name="identityId"'));
-    r = await b.post('/register', { account_type: 'student', name: 'Google Student' }); assert.equal(r.location, '/register?role=student');
-    r = await b.post('/register', { account_type: 'admin', name: 'Google Student', identityId: '2026-G01', section: 'BSTM 4-1', gender: 'Female' }); assert.equal(r.status, 302);
+    r = await b.post('/register', { acceptTerms: 'yes', account_type: 'student', name: 'Google Student' }); assert.equal(r.location, '/register?role=student');
+    r = await b.post('/register', { acceptTerms: 'yes', account_type: 'admin', name: 'Google Student', identityId: '2026-G01', section: 'BSTM 4-1', gender: 'Female' }); assert.equal(r.status, 302);
     assert.equal(await User.count({ where: { email: 'new@gmail.com' } }), 0);
     await b.get('/register');
-    r = await b.post('/register', { account_type: 'student', name: 'Google Student', identityId: '2026-G01', section: 'BSTM 4-1', gender: 'Female', email: 'tampered@example.com', role: 'admin' });
+    r = await b.post('/register', { acceptTerms: 'yes', account_type: 'student', name: 'Google Student', identityId: '2026-G01', section: 'BSTM 4-1', gender: 'Female', email: 'tampered@example.com', role: 'admin' });
     assert.equal(r.location, '/student/profile');
     const student = await User.findOne({ where: { email: 'new@gmail.com' } }); assert.equal(student.role, 'student'); assert.equal(student.password, null); assert.equal(student.gender, 'Female'); assert.equal(student.studentId, '2026-G01'); assert.equal(student.googleId, 'google-new');
     await b.get('/student/profile'); await b.post('/logout');
@@ -49,7 +49,7 @@ await test('Google login never registers users; registration completion and owne
     await b.get('/student/profile'); await b.post('/logout');
     flow = await start('register', 'faculty'); await callback(flow, { sub: 'google-faculty', email: 'faculty@gmail.com', name: 'Google Faculty' });
     r = await b.get('/register'); assert.ok(r.html.includes('Faculty ID'));
-    await b.post('/register', { account_type: 'faculty', name: 'Google Faculty', identityId: 'FAC-001', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', section: 'injected', gender: 'Male' });
+    await b.post('/register', { acceptTerms: 'yes', account_type: 'faculty', name: 'Google Faculty', identityId: 'FAC-001', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', section: 'injected', gender: 'Male' });
     const faculty = await User.findOne({ where: { email: 'faculty@gmail.com' } }); assert.equal(faculty.facultyId, 'FAC-001'); assert.equal(faculty.section, null); assert.equal(faculty.approvalStatus, 'pending');
     flow = await start(); r = await callback(flow, { sub: 'google-faculty', email: 'faculty@gmail.com' }); assert.equal(r.location, '/?auth=login');
     r = await b.get('/faculty'); assert.equal(r.location, '/login');

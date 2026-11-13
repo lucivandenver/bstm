@@ -216,3 +216,23 @@
 .module-failed .progress-circle :is(div, small) { color: #a71b32; }
 .module-failed .progress-fill { background: #b9233a; }
 .module-failed .progress-circle { background: conic-gradient(#b9233a var(--angle), #f7e3e7 0); }
+
+.learning-materials {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: .5rem;
+}
+.learning-materials a {
+  display: block;
+  padding: .65rem .85rem;
+  border: 1px solid currentColor;
+  border-radius: .5rem;
+  background: #fff;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.learning-materials a:hover,
+.learning-materials a:focus-visible {
+  background: #e6f4ec;
+}

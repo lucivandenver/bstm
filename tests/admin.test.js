@@ -19,10 +19,13 @@ await test('Admin management is protected and Faculty/Student registration remai
   assert.equal((await User.findByPk(owner.id)).password, initialHash, 'bootstrap must not replace an existing password');
   const server = await startServer(0); const base = `http://127.0.0.1:${server.address().port}`;
   const admin = browser(base), student = browser(base), faculty = browser(base), outsider = browser(base);
-  const studentData = { account_type: 'student', name: 'Learner', email: 'learner@example.com', identityId: '2026-STA', section: 'BSTM 4-1', gender: 'Male', password: 'DummyStudentPass!', confirm_password: 'DummyStudentPass!' };
-  const facultyData = { account_type: 'faculty', name: 'Faculty Member', email: 'teacher@example.com', identityId: 'FAC-2026', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', password: 'DummyFacultyPass!', confirm_password: 'DummyFacultyPass!' };
+  const studentData = { acceptTerms: 'yes', account_type: 'student', name: 'Learner', email: 'learner@example.com', identityId: '2026-STA', section: 'BSTM 4-1', gender: 'Male', password: 'DummyStudentPass!', confirm_password: 'DummyStudentPass!' };
+  const facultyData = { acceptTerms: 'yes', account_type: 'faculty', name: 'Faculty Member', email: 'teacher@example.com', identityId: 'FAC-2026', facultyPosition: 'Instructor', facultyEducation: 'BS Tourism Management', facultyQualifications: 'Tourism instruction experience', password: 'DummyFacultyPass!', confirm_password: 'DummyFacultyPass!' };
   try {
     await student.get('/register'); let r = await student.post('/register', { ...studentData, email: ownerEmail() }); assert.equal(r.location, '/register?role=student');
+    r = await student.post('/register', { ...studentData, acceptTerms: '' });
+    assert.equal(r.location, '/register?role=student');
+    assert.equal(await User.count({ where: { email: studentData.email } }), 0);
     r = await student.post('/register', studentData); assert.equal(r.location, '/student/profile');
     const learner = await User.findOne({ where: { email: studentData.email } });
     assert.equal((await student.get('/admin')).status, 403);

@@ -282,7 +282,7 @@ async function storeDraft(userId, source, draft, job, action) {
       if (duplicate) throw generationError("COURSE_DUPLICATE_MODULE", duplicateModuleMessage(duplicate));
       const merged = courseInput({
         ...draft, ...course.get({ plain: true }), title: course.title.toUpperCase(),
-        description: course.description || draft.description, domain: course.domain || draft.domain,
+        description: course.description || `Explore the topics covered in ${course.title}.`, domain: course.domain || draft.domain,
         level: course.level || draft.level, minutes: Math.min(6000, (course.minutes || 0) + draft.minutes),
         competencyAreas: [...new Set([...course.competencyAreas, ...draft.competencyAreas])],
         outcomes: [...new Set([...course.outcomes, ...draft.outcomes])].slice(0, 20),
