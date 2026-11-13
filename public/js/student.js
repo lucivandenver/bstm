@@ -149,10 +149,6 @@ for (const form of document.querySelectorAll('[data-inline-topic]')) {
     if ([...form.querySelectorAll('fieldset')].some(question => !question.querySelector('input:checked'))) return;
     if (next) next.disabled = false;
     if (!outline) return;
-    const circle = outline.querySelector('.check-circle');
-    circle.classList.remove('is-empty', 'is-current');
-    circle.classList.add('is-complete');
-    circle.textContent = '✓';
     outline.querySelector('[data-topic-state]').textContent = 'Answered';
   });
 }

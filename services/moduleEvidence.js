@@ -1,7 +1,25 @@
 import { domains } from '../data/starterCourses.js';
 import { careerMatches } from './learning.js';
 
-export function moduleEvidence(attempts, tracks, { assessedOnly = false } = {}) {
+function moduleQuestionAreas(course, module) {
+  return [...new Set((course.questions || [])
+    .filter(question => question.moduleId === module.id)
+    .map(question => question.domain)
+    .filter(area => domains.includes(area)))];
+}
+
+function courseAreas(course) {
+  return (course.competencyAreas?.length ? course.competencyAreas : [course.domain])
+    .filter(area => domains.includes(area));
+}
+
+function moduleCompletionPercent(modules) {
+  if (!modules.length) return 0;
+  const completed = modules.reduce((sum, module) => sum + (module.passed ? 1 : module.fraction * 0.25), 0);
+  return completed === modules.length ? 100 : Math.min(99, Math.round(100 * completed / modules.length));
+}
+
+export function moduleEvidence(attempts, tracks, { assessedOnly = false, availableCourses } = {}) {
   const modules = new Map();
   const sorted = [...attempts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt) || b.attemptNumber - a.attemptNumber);
   for (const attempt of sorted) {
@@ -19,10 +37,8 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false } = {}) 
       if (!Number.isFinite(score) && !lessons && !read) continue;
       const passingScore = snapshot.passingScore;
       const passed = Number.isFinite(score) && score >= passingScore;
-      const questionAreas = [...new Set((snapshot.questions || [])
-        .filter(question => question.moduleId === module.id).map(question => question.domain).filter(area => domains.includes(area)))];
-      const areas = questionAreas.length ? questionAreas :
-        (snapshot.competencyAreas?.length ? snapshot.competencyAreas : [snapshot.domain]).filter(area => domains.includes(area));
+      const questionAreas = moduleQuestionAreas(snapshot, module);
+      const areas = questionAreas.length ? questionAreas : courseAreas(snapshot);
       const result = latestResult || attempt.quizAttempts?.findLast(quiz => quiz.scope === module.id && !quiz.expired && quiz.score === score);
       // Older attempts store only the total quiz score. Use it for the module's primary assessed area.
       const primary = assessedOnly
@@ -41,12 +57,19 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false } = {}) 
   const records = [...modules.values()];
   const completed = records.filter(module => module.passed);
   const developing = records.filter(module => !module.passed);
+  const progressModules = availableCourses ? availableCourses.flatMap(course => course.modules.map(module => {
+    const questionAreas = moduleQuestionAreas(course, module);
+    const record = modules.get(`${course.id}:${module.id}`);
+    return {
+      areas: questionAreas.length ? questionAreas : courseAreas(course),
+      passed: Boolean(record?.passed),
+      fraction: record ? record.done / record.total : 0
+    };
+  })) : records.map(module => ({ ...module, fraction: module.done / module.total }));
   const competencies = domains.map(name => {
-    const relevant = records.filter(module => module.areas.includes(name));
+    const relevant = progressModules.filter(module => module.areas.includes(name));
     const passed = relevant.filter(module => module.passed).length;
-    const percent = relevant.length ? Math.round(relevant.reduce((sum, module) =>
-      sum + (module.passed ? 100 : module.percent * 0.25), 0) / relevant.length) : 0;
-    return { name, percent, passed, total: relevant.length };
+    return { name, percent: moduleCompletionPercent(relevant), passed, total: relevant.length };
   });
   const scores = Object.fromEntries(domains.map(area => {
     const values = completed.map(module => module.scores[area]).filter(Number.isFinite);
@@ -57,8 +80,7 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false } = {}) 
     ...track,
     explanation: `Passed module assessments cover ${track.assessedAreas} of ${track.totalAreas} required competency areas.`
   }));
-  const overall = records.length ? Math.round(records.reduce((sum, module) => sum + (module.passed ? module.total : module.done), 0) /
-    records.reduce((sum, module) => sum + module.total, 0) * 100) : 0;
+  const overall = moduleCompletionPercent(progressModules);
   return { ...ranked, completed, developing, competencies, overall,
     lowScores: developing.filter(module => module.score !== null) };
 }

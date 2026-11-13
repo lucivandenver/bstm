@@ -82,7 +82,7 @@ test('signed assessment challenge binds user and scope and rejects tampering', (
   assert.throws(() => checkChallenge('not-a-token', 1, 'baseline'));
 });
 test('signup validates identity fields, confirmation and bcrypt byte limits', () => {
-  const input = { name: 'Student Test', email: ' TEST@EXAMPLE.COM ', student_id: '2026-001', section: 'BSTM 4-1', gender: 'Male', password: 'longpassword123', confirm_password: 'longpassword123', role: 'admin' };
+  const input = { acceptTerms: 'yes', name: 'Student Test', email: ' TEST@EXAMPLE.COM ', student_id: '2026-001', section: 'BSTM 4-1', gender: 'Male', password: 'longpassword123', confirm_password: 'longpassword123', role: 'admin' };
   assert.equal(registrationInput(input).email, 'test@example.com');
   assert.equal(registrationInput(input).studentId, '2026-001');
   assert.equal(registrationInput(input).role, 'student');

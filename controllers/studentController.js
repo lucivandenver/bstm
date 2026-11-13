@@ -60,17 +60,16 @@ export const requireCompleteProfile = async (req, res, next) => {
   next();
 };
 export const dashboard = async (req, res) => {
-  const [attempts, profile, credentials, baseline] = await Promise.all([
+  const [attempts, profile, credentials] = await Promise.all([
     attemptsFor(req.user.id), StudentProfile.findOne({ where: { userId: req.user.id } }),
-    Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] }),
-    Assessment.findOne({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] })
+    Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] })
   ]);
   const completed = attempts.filter(a => a.status === 'completed');
   const ongoing = await visibleOngoingAttempts(attempts);
-  const { competencies } = moduleEvidence(attempts);
+  const { competencies } = moduleEvidence(attempts, undefined, { availableCourses: await publishedCatalog() });
   render(res, 'dashboard', { title: 'My dashboard', profileComplete: profile?.complete && req.user.studentId && req.user.section && genders.includes(req.user.gender),
     completedCount: completed.length, credentialCount: credentials.length, activeCount: ongoing.length,
-    totalStars: credentials.reduce((sum, c) => sum + c.stars, 0), baseline: plain(baseline),
+    totalStars: credentials.reduce((sum, c) => sum + c.stars, 0),
     competencies,
     recentCredentials: credentials.slice(0, 3).map(c => ({ ...plain(c), date: date(c.issuedAt) })) });
 };
@@ -102,16 +101,23 @@ export const saveProfile = async (req, res) => {
   }
   req.flash('success_msg', 'Your profile has been saved.'); res.redirect('/student/profile');
 };
+async function publishedCatalog() {
+  const courses = await Course.findAll({
+    where: { published: true, ownerId: { [Op.not]: null } }, order: [['title', 'ASC']]
+  });
+  const faculty = await User.findAll({
+    where: { id: [...new Set(courses.map(course => course.ownerId))], role: 'faculty', approvalStatus: 'approved', active: true },
+    attributes: ['id', 'name']
+  });
+  const names = new Map(faculty.map(user => [user.id, user.name]));
+  return courses.filter(course => names.has(course.ownerId) && course.modules.length)
+    .map(course => ({ ...plain(course), author: names.get(course.ownerId) }));
+}
+
 export const catalog = async (req, res) => {
-  const [courses, attempts, savedRows] = await Promise.all([
-    Course.findAll({ where: { published: true, ownerId: { [Op.not]: null } }, order: [['title', 'ASC']] }),
-    attemptsFor(req.user.id),
-    SavedModule.findAll({ where: { userId: req.user.id } })
+  const [visible, attempts, savedRows] = await Promise.all([
+    publishedCatalog(), attemptsFor(req.user.id), SavedModule.findAll({ where: { userId: req.user.id } })
   ]);
-  const ownerIds = [...new Set(courses.map(course => course.ownerId))];
-  const facultyRows = ownerIds.length ? await User.findAll({ where: { id: { [Op.in]: ownerIds }, role: 'faculty', approvalStatus: 'approved', active: true }, attributes: ['id', 'name'] }) : [];
-  const facultyById = new Map(facultyRows.map(user => [user.id, user.name]));
-  const visible = courses.filter(course => facultyById.has(course.ownerId) && course.modules.length);
   const savedByCourse = new Map();
   for (const row of savedRows) {
     if (recordedModule(attempts.filter(attempt => attempt.courseId === row.courseId), row.moduleId)) continue;
@@ -138,7 +144,7 @@ export const catalog = async (req, res) => {
     .filter(course => matchesDomain(course) && (!search ||
       (course.description || '').toLowerCase().includes(search) || course.modules.some(module => matchesModule(course, module))))
     .map(course => ({
-      ...plain(course), author: facultyById.get(course.ownerId), moduleCount: course.modules.length,
+      ...course, moduleCount: course.modules.length,
       required: assignments.some(assignment => assignment.courseId === course.id && assignment.required),
       due: date(assignments.find(assignment => assignment.courseId === course.id)?.dueAt)
     }));
@@ -477,7 +483,7 @@ export const learn = async (req, res) => {
   const topicDraft = draftsByScope.get(selected?.moduleId);
   const inlineDraft = selected?.quizOpen ? topicDraft || await draftFor(req.user.id, attempt, selected.moduleId, undefined, false) : null;
   const seconds = inlineDraft?.startedAt && attempt.snapshot.policy?.quizMinutes ? quizSeconds(attempt, inlineDraft) : null;
-  render(res, 'learn', { ...outline, topicRevision: inlineDraft?.revision, timedTopic: seconds !== null, remainingSeconds: seconds, topicExpired: seconds === 0, readingRequired: !currentModule?.readingReady, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${currentModule.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: currentModule?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: outline.moduleOnly ? currentModule.title : course.title, attempt: decorate(attempt), selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || '') });
+  render(res, 'learn', { ...outline, topicRevision: inlineDraft?.revision, timedTopic: seconds !== null, remainingSeconds: seconds, topicExpired: seconds === 0, readingRequired: !currentModule?.readingReady, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${currentModule.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: currentModule?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), showCourseActivities: outline.finalAvailable && Boolean(course.tasks?.length || course.policy?.feedbackRequired), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: outline.moduleOnly ? currentModule.title : course.title, attempt: decorate(attempt), selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || '') });
 };
 export const completeLesson = async (req, res) => {
   const next = await sequelize.transaction(async transaction => {

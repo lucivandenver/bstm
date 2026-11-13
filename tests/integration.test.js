@@ -45,7 +45,7 @@ await test('student HTTP workflow, ownership, scoring, retakes and downloads', a
     assert.equal(response.r.status, 302); assert.equal(response.r.headers.get('location'), '/login');
     await student.get('/register');
     assert.equal((await student.post('/register', {}, 'bad')).status, 403);
-    const signup = { name: 'Student One', email: 'one@example.com', student_id: '2026-001', section: 'BSTM 4-1', gender: 'Male', password: 'password12345', confirm_password: 'password12345', role: 'admin' };
+    const signup = { acceptTerms: 'yes', name: 'Student One', email: 'one@example.com', student_id: '2026-001', section: 'BSTM 4-1', gender: 'Male', password: 'password12345', confirm_password: 'password12345', role: 'admin' };
     response = await student.post('/register', signup);
     assert.equal(response.headers.get('location'), '/student/profile');
     const user = await User.findOne({ where: { email: 'one@example.com' } });

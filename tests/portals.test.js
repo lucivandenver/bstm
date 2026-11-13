@@ -423,6 +423,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await a.post(`/admin/courses/${studentCourse.id}/approve-publication`, { revisionId: pending.id })).status, 302);
     const published = await s.get(catalogUrl);
     assert.match(published.html, /Independent module/);
+    assert.match(published.html, /<h2>Learning outcomes<\/h2><ul>.*<li>Independent module<\/li><\/ul>/);
     assert.equal((published.html.match(/Take assessment/g) || []).length, 1);
     assert.match(published.html, /module-failed/);
     assert.match(published.html, /Quiz score 50%/);

@@ -713,12 +713,14 @@ async function generationDestinations(ownerId, selectedId, transaction) {
 const sourceView = async (res, source, body, error) => render(res, 'source', { destinations: await generationDestinations(source.ownerId, body?.destinationId), title: 'Review source material', backUrl: '/faculty/upload', source: { ...plain(source), sections: sourceSections(source) }, sourceDiagnostics: sourceDiagnostics(source), domains, aiReady: (await aiConfiguration()).ready, aiProviderLabel: (await aiConfiguration()).label, values: sourceValues(body), error });
 export const createCourse = async (req, res) => {
   const title = text(req.body.title, 160).toUpperCase();
+  const description = text(req.body.description, 2000);
   if (title.length < 4) fail('Enter a course name of at least four characters.');
+  if (!description) fail('Enter a description for the whole course.');
   const course = await sequelize.transaction(async transaction => {
     await User.findByPk(req.user.id, { transaction, lock: transaction.LOCK.UPDATE });
     const existing = (await generationDestinations(req.user.id, null, transaction))
       .find(item => courseNameKey(item.title) === courseNameKey(title));
-    return existing || Course.create({ title, ownerId: req.user.id, slug: `course-${newModuleId()}`, published: false }, { transaction });
+    return existing || Course.create({ title, description, ownerId: req.user.id, slug: `course-${newModuleId()}`, published: false }, { transaction });
   });
   res.redirect(`/faculty/upload?courseId=${course.id}`);
 };
@@ -913,9 +915,11 @@ export const students = async (req, res) => {
   render(res, 'students', { title: 'Student progress', q: req.query.q, gender, status, students: rows });
 };
 export const student = async (req, res) => {
-  const student = await studentAccess(req), owned = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id'] }), attempts = await CourseAttempt.findAll({ where: { userId: student.id, courseId: { [Op.in]: owned.map(c => c.id) } }, order: [['createdAt', 'DESC']] }), assessments = await Assessment.findAll({ where: { userId: student.id }, order: [['createdAt', 'DESC']] });
+  const student = await studentAccess(req), owned = await Course.findAll({ where: { ownerId: req.user.id } }), attempts = await CourseAttempt.findAll({ where: { userId: student.id, courseId: { [Op.in]: owned.map(c => c.id) } }, order: [['createdAt', 'DESC']] }), assessments = await Assessment.findAll({ where: { userId: student.id }, order: [['createdAt', 'DESC']] });
   const paths = await CareerPath.findAll({ where: { active: true } });
-  const evidence = moduleEvidence(attempts.map(plain), paths.length ? paths.map(plain) : undefined);
+  const evidence = moduleEvidence(attempts.map(plain), paths.length ? paths.map(plain) : undefined, {
+    availableCourses: owned.filter(course => course.published).map(plain)
+  });
   render(res, 'student', { title: student.name, student: plain(student), evidence, careerSuggestions: evidence.tracks.slice(0, 3), attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, ...progress(a), date: date(a.createdAt), lastActivity: date(a.lastActivityAt), minutes: Math.floor(a.activeSeconds / 60), elapsedDays: Math.floor((Date.now() - new Date(a.createdAt)) / 86400000) })), domains: evidence.competencies, assessments: assessments.map(a => ({ ...plain(a), date: date(a.createdAt) })), notes: (await FacultyNote.findAll({ where: { studentId: student.id, facultyId: req.user.id }, order: [['createdAt', 'DESC']] })).map(n => ({ ...plain(n), date: date(n.createdAt) })) });
 };
 export const note = async (req, res) => { const student = await studentAccess(req); const feedback = text(req.body.feedback, 3000), remediation = text(req.body.remediation, 1500); if (!feedback) fail('Enter feedback.'); await FacultyNote.create({ studentId: student.id, facultyId: req.user.id, feedback, remediation, visibility: req.body.visibility === 'student' ? 'student' : 'internal' }); if (req.body.visibility === 'student') await Notification.create({ userId: student.id, title: 'Faculty feedback', message: 'Your faculty added learning feedback and recommended next steps.', href: '/student/results' }); await audit(req.user.id, 'faculty.feedback_added', 'user', student.id); res.redirect(`/faculty/students/${student.id}`); };

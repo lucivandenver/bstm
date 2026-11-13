@@ -21,7 +21,6 @@
         </a>
         {{#if questions.length}}{{#if lectureDone}}
         <a data-outline-quiz="{{id}}" class="lesson-link outline-topic-quiz" href="/student/learn/{{../../attempt.id}}?lesson={{id}}#topic-quiz">
-          <span class="check-circle {{#if quizDone}}is-complete{{else}}is-empty{{/if}}" aria-hidden="true">{{#if quizDone}}✓{{/if}}</span>
           <span>Topic {{number}} Quiz ({{questions.length}}) · <span data-topic-state>{{#if quizDone}}Answered{{else}}To do{{/if}}</span></span>
         </a>
         {{else}}<span class="lesson-link outline-topic-quiz muted">Topic {{number}} Quiz ({{questions.length}}) · Locked</span>{{/if}}{{/if}}

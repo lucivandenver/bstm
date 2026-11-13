@@ -1,6 +1,7 @@
 export const text = (value, max = 200) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 export const email = value => text(value, 254).toLowerCase();
 export function registrationInput(body, google = null) {
+  if (body.acceptTerms !== 'yes') throw new Error('Accept the Terms & Conditions and Privacy Policy to create an account.');
   const role = body.account_type || 'student';
   if (!['student', 'faculty'].includes(role)) throw new Error('Select Student or Faculty registration.');
   if (google && role !== google.role) throw new Error('Restart Google registration to change account type.');
