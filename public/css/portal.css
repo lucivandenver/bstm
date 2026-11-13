@@ -261,3 +261,9 @@
 }
 
 .topic-navigation { margin-block-start: 1rem; align-items: center; gap: .75rem; }
+
+.faculty-certificate-preview { position: relative; }
+.certificate-brand { position: absolute; inset: .75rem auto auto .75rem; width: clamp(2.5rem, 12%, 7.5rem); height: auto; }
+.faculty-progress-report table { min-width: 49rem; }
+.faculty-progress-report td { overflow-wrap: normal; }
+.faculty-progress-report td small { display: block; }

@@ -846,7 +846,11 @@ export const certificate = async (req, res) => {
   res.set('Content-Type', 'application/pdf'); res.set('Content-Disposition', `${req.query.view === '1' ? 'inline' : 'attachment'}; filename="CareerBridge-${c.id}.pdf"`);
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 25 });
   doc.on('error', () => res.end()); doc.pipe(res);
+  const background = doc.linearGradient(25, 25, 817, 570);
+  background.stop(0, '#eef7f1').stop(0.3, '#ffffff').stop(0.7, '#ffffff').stop(1, '#f8f1e3');
+  doc.rect(25, 25, 792, 545).fill(background);
   doc.rect(25, 25, 792, 545).lineWidth(2).stroke('#007042');
+  doc.rect(29, 29, 784, 537).lineWidth(0.8).stroke('#007042');
   const brand = await readFile(new URL('../public/images/careerbridge_brand_logo.png', import.meta.url));
   doc.image(brand, 55, 48, { fit: [130, 65] });
   const logoX = [310, 391, 472];
@@ -869,7 +873,7 @@ export const certificate = async (req, res) => {
   doc.fontSize(9).text(facultyPosition, 65, 522, { width: 225, height: 16, ellipsis: true });
   doc.image(qr, (doc.page.width - 64) / 2, 470, { width: 64, link: url });
   doc.fillColor('#64748b').fontSize(8).text(`Cert ID: ${c.id}`, 271, 542, { width: 300, align: 'center' });
-  doc.fillColor('#172533').fontSize(10).text(date(attempt?.completedAt || c.issuedAt), 552, 506, { width: 225, align: 'right' });
+  doc.fillColor('#172533').fontSize(10).text(date(c.moduleId ? c.issuedAt : attempt?.completedAt || c.issuedAt), 552, 506, { width: 225, align: 'right' });
   doc.fontSize(9).text('Completion Date', 552, 522, { width: 225, align: 'right' });
   doc.end();
 };

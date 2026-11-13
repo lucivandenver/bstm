@@ -28,6 +28,7 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   assert.match(facultyProgress.html,/value="38" max="100" aria-label="Tourism and Hospitality Knowledge progress"/);
   let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
   r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
+  assert.doesNotMatch(r.html, /Quiz 85%|evidence alignment/);
   process.env.GEMINI_API_KEY='test-key';process.env.GEMINI_MODEL='test-model';
   globalThis.fetch=async(url,init)=>{
    if(!String(url).startsWith('https://generativelanguage.googleapis.com/'))return original(url,init);
@@ -37,7 +38,7 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   };
   const body=new URLSearchParams({_csrf:client.csrf,consent:'yes'});
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).redirect,'/student/careers#ai-results');
-  r=await client.get('/student/careers');assert.match(r.html,/Tourism service module/);assert.match(r.html,/Quiz 85%/);assert.doesNotMatch(r.html,/Invented certificate claim|Never assessed module/);assert.match(r.html,/id="ai-results"/);
+  r=await client.get('/student/careers');assert.match(r.html,/Tourism service module/);assert.match(r.html,/Quiz 85%/);assert.match(r.html,/% evidence alignment/);assert.doesNotMatch(r.html,/Invented certificate claim|Never assessed module/);assert.match(r.html,/id="ai-results"/);
   await developing.update({completedLessons:['l2','l3']});r=await client.get('/student/careers');assert.doesNotMatch(r.html,/id="ai-results"/,'changing progress invalidates the cached guidance');
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({_csrf:client.csrf})});assert.equal(r.status,400);
  }finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;if(model===undefined)delete process.env.GEMINI_MODEL;else process.env.GEMINI_MODEL=model;await new Promise(r=>server.close(r));await closeResources();}
