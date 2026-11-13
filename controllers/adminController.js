@@ -464,7 +464,7 @@ export const saveCourse = async (req, res) => {
     if (latest?.action === 'pending-review' && latest.version === course.version) fail('Resolve the pending submission first.');
     const published = !unpublishing && (course.published || !course.ownerId && req.body.published === 'true');
     const archivedForRepublication = !published && (course.published || await archivedCourseCanRepublish(course, transaction));
-    if (published) publishCheck({ ...plain(course), outcomes: course.outcomes?.length ? course.outcomes : course.starter ? ['Starter learning outcomes in lessons'] : [], questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
+    if (published) publishCheck({ ...plain(course), questions: course.questions.map(q => course.starter ? { ...q, reviewed: true } : q) });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: 'admin-before-edit', snapshot: plain(course) }, { transaction });
     await course.update({ ...settings, published, version: course.version + 1 }, { transaction });
     await CourseRevision.create({ courseId: course.id, actorId: req.user.id, version: course.version, action: course.published ? 'admin-published' : 'admin-archived', snapshot: { ...plain(course), archivedForRepublication } }, { transaction });

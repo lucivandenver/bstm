@@ -1,0 +1,7 @@
+<details class="module-outcomes">
+  <summary>Learning outcomes</summary>
+  {{#if outcomes.length}}<ul>{{#each outcomes}}<li>{{this}}</li>{{/each}}</ul>
+  {{else}}{{#if (eq outcomes.length 0)}}<p class="muted">No learning outcomes yet.</p>
+  {{else}}{{#if skills.length}}<ul>{{#each skills}}<li>{{this}}</li>{{/each}}</ul>
+  {{else}}<p class="muted">No learning outcomes yet.</p>{{/if}}{{/if}}{{/if}}
+</details>

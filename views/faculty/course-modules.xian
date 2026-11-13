@@ -15,14 +15,12 @@
     </div>
     {{#if declineReason}}<p class="notice error"><strong>Admin declined this submission.</strong> {{declineReason}}</p>{{/if}}
     <h2>{{title}}</h2>
-    <details><summary>{{lessons.length}} topic areas</summary>
-      <ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol>
-    </details>
+    {{> moduleOutcomes}}
     <div class="actions faculty-module-actions">
       {{#if (eq status 'Published')}}
       <a class="button module-review" href="{{actionUrl}}/preview">Preview</a>
       <form method="post" action="{{actionUrl}}/edit"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-edit">Edit</button></form>
-      <form method="post" action="{{actionUrl}}/unpublish" data-confirm="Move this module to Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button secondary">Unpublish</button></form>
+      <form method="post" action="{{actionUrl}}/unpublish" data-confirm="Move this module to Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><button class="button module-delete">Unpublish</button></form>
       {{else}}{{#if (eq status 'Archived')}}
       <form method="post" action="{{actionUrl}}/delete-module" data-confirm="Delete this module from Archive?"><input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="revisionId" value="{{revisionId}}"><button class="button module-delete">Delete module</button></form>
       {{else}}

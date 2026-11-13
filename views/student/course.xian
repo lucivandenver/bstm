@@ -1,11 +1,11 @@
 {{> studentTop}}
-<p class="small"><a href="/student/courses">← Back to catalog</a></p><div class="page-heading"><div><span class="chip">{{areaLabels course.competencyAreas course.domain}}</span><p class="muted">{{course.description}}</p></div></div>{{#if modules.length}}<section class="card space-top"><h2>Learning outcomes</h2><ul>{{#each modules}}<li>{{title}}</li>{{/each}}</ul></section>{{/if}}
+<p class="small"><a href="/student/courses">← Back to catalog</a></p><div class="page-heading"><div><span class="chip">{{areaLabels course.competencyAreas course.domain}}</span><p class="muted">{{course.description}}</p></div></div>
 <section class="space-top" aria-label="Course modules">
 <div class="grid cols-3">{{#each modules}}
 <article class="card module-card{{#if progress.failed}} module-failed{{/if}}" id="module-{{id}}">
 <h2>{{title}}</h2>
 <p class="small muted">{{lessons.length}} topics</p>
-<details><summary>View topics</summary><ol>{{#each lessons}}<li>{{title}}</li>{{/each}}</ol></details>
+{{> moduleOutcomes}}
 {{#if progress}}
 <div class="progress-label space-top"><span>{{progress.statusLabel}}</span><strong>{{#if progress.answered}}Quiz score {{progress.score}}%{{else}}{{progress.percent}}%{{/if}}</strong></div>
 <div class="progress-track" role="progressbar" aria-label="Module progress" aria-valuenow="{{progress.percent}}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="--progress:{{progress.percent}}%"></div></div>

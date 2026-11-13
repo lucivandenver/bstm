@@ -334,12 +334,13 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.match(scopedEdit.html, /Submit reviewed module for Admin approval/);
     assert.match(scopedEdit.html, /id="course-editor" data-module-editor/);
     const revisionId = new URL(editModule.location, 'http://local').searchParams.get('revision');
-    const editData = { modules: [{ ...c.modules[1], title: 'Edited module draft' }],
+    const editData = { modules: [{ ...c.modules[1], title: 'Edited module draft', outcomes: ['Explain an independent module concept.'] }],
       questions: c.questions.filter(question => question.moduleId === 'm2') };
     assert.equal((await f2.post(`/faculty/courses/${c.id}/modules/${revisionId}/topics`, {
       courseData: JSON.stringify(editData), action: 'draft'
     })).status, 302);
     assert.equal((await CourseRevision.findByPk(revisionId)).snapshot.module.title, 'Edited module draft');
+    assert.deepEqual((await CourseRevision.findByPk(revisionId)).snapshot.module.outcomes, ['Explain an independent module concept.']);
     assert.equal((await c.reload()).modules[1].title, 'Independent module');
     const editing = await CourseRevision.findOne({ where: { id: new URL(editModule.location, 'http://local').searchParams.get('revision') } });
     assert.equal((await f2.post(actionUrl + '/delete-draft', { revisionId: editing.id })).status, 302);
@@ -413,7 +414,7 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     const learnerAttempt = await CourseAttempt.findOne({ where: { courseId: studentCourse.id, userId: student.id } });
     const learnUrl = `/student/learn/${learnerAttempt.id}`;
     await learnerAttempt.update({ completedLessons: ['l1'], quizScores: { m1: 50 } });
-    const moduleTwo = c.modules.find(module => module.id === 'm2');
+    const moduleTwo = { ...c.modules.find(module => module.id === 'm2'), outcomes: ['Explain an independent module concept.'] };
     const moduleTwoQuestions = c.questions.filter(question => question.moduleId === moduleTwo.id);
     const pending = await CourseRevision.create({
       courseId: studentCourse.id, actorId: otherFaculty.id, version: studentCourse.version, action: 'module-pending',
@@ -423,7 +424,9 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     assert.equal((await a.post(`/admin/courses/${studentCourse.id}/approve-publication`, { revisionId: pending.id })).status, 302);
     const published = await s.get(catalogUrl);
     assert.match(published.html, /Independent module/);
-    assert.match(published.html, /<h2>Learning outcomes<\/h2><ul>.*<li>Independent module<\/li><\/ul>/);
+    assert.match(published.html, /<summary>Learning outcomes<\/summary>/);
+    assert.match(published.html, /<li>Explain an independent module concept\.<\/li>/);
+    assert.doesNotMatch(published.html, /<h2>Learning outcomes<\/h2>|View topics/);
     assert.equal((published.html.match(/Take assessment/g) || []).length, 1);
     assert.match(published.html, /module-failed/);
     assert.match(published.html, /Quiz score 50%/);
@@ -459,6 +462,14 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     for (const lesson of moduleTwo.lessons) {
       const page = await s.get(learnUrl + '?lesson=' + lesson.id);
       assert.equal(page.status, 200);
+      const previousIndex = moduleTwo.lessons.indexOf(lesson) - 1;
+      if (previousIndex >= 0) {
+        const previousLink = page.html.match(/href="([^"]+)" data-topic-previous/);
+        assert.ok(previousLink);
+        assert.equal(previousLink[1].split('#')[0], learnUrl + '?lesson=' + moduleTwo.lessons[previousIndex].id);
+      } else {
+        assert.doesNotMatch(page.html, /data-topic-previous/);
+      }
       const revision = page.html.match(/data-revision="([0-9]+)"/);
       if (!revision) continue;
       const ids = [...new Set([...page.html.matchAll(/name="answers\[([^\]]+)\]"/g)].map(match => match[1]))];

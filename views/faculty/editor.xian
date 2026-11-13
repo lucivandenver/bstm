@@ -3,6 +3,9 @@
 {{#unless pending}}<form method="post" action="/faculty/courses/{{../course.id}}/modules/{{id}}/topics">
 <input type="hidden" name="_csrf" value="{{../csrf}}">
 <label class="field">Module title<input name="moduleTitle" value="{{snapshot.module.title}}" minlength="4" maxlength="160" required></label>
+<label class="field">Learning outcomes · one per line<textarea name="moduleOutcomes" rows="4" maxlength="6100">{{#unless (eq snapshot.module.outcomes undefined)}}{{#each snapshot.module.outcomes}}{{this}}
+{{/each}}{{else}}{{#each snapshot.module.skills}}{{this}}
+{{/each}}{{/unless}}</textarea></label>
 {{#each snapshot.module.lessons}}<label class="field">Topic area title<input name="topicTitle" value="{{title}}" maxlength="160" required></label><label class="field">Topic area content<textarea name="topicBody" minlength="30" maxlength="16000" rows="4" required>{{body}}</textarea></label>{{/each}}
 <h3>Assessment</h3>
 {{#each snapshot.questions}}<details class="editor-block"><summary>{{prompt}}</summary>

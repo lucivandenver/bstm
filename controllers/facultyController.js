@@ -323,7 +323,7 @@ export const attachGeneratedModule = async (req, res) => {
     if (duplicate) fail(duplicateModuleMessage(duplicate), 409);
     const data = courseInput({
       ...plain(destination),
-      modules: [...modules, { id, title, number, lessons, materials, skills }],
+      modules: [...modules, { id, title, number, lessons, materials, skills, outcomes: [...new Set(selected.flatMap(module => module.outcomes ?? module.skills ?? []))].slice(0, 12) }],
       questions: [...savedArray(destination.questions), ...questions]
     }, { draft: true });
     const separateModuleDrafts = !modules.length && await CourseRevision.count({
@@ -469,7 +469,10 @@ export const saveModuleTopics = async (req, res) => {
         answer: Number(edited.answer), reviewed: false
       }, course.domain);
     });
-    await revision.update({ snapshot: { ...revision.snapshot, questions, module: { ...module, title, lessons } } }, { transaction });
+    const outcomes = req.body.moduleOutcomes === undefined ? module.outcomes ?? module.skills ?? []
+      : text(req.body.moduleOutcomes, 6100).split(/\r?\n/).map(value => text(value, 500)).filter(Boolean);
+    if (outcomes.length > 12) fail('Enter up to 12 module learning outcomes.', 422);
+    await revision.update({ snapshot: { ...revision.snapshot, questions, module: { ...module, title, lessons, outcomes } } }, { transaction });
   });
   req.flash('success_msg', req.body.action === 'publish' ? 'Module submitted for Admin review.' : 'Module draft saved.');
   res.redirect(`/faculty/courses/${req.params.id}/edit?revision=${req.params.revisionId}#module-revision-${req.params.revisionId}`);
@@ -814,9 +817,9 @@ export const approveBlueprint = async (req, res) => {
     });
     const areas = [].concat(req.body.competencyAreas || []).filter(a => domains.includes(a));
     if (!areas.length) return res.status(422).json({ ok: false, message: 'Select at least one competency area.' });
-    const blueprint = { ...original, title: text(req.body.title, 160), description: text(req.body.description, 2000), outcomes: text(req.body.outcomes, 1500).split(/\r?\n/).map(v => text(v, 500)).filter(Boolean).slice(0, 12), competencyAreas: [...new Set(areas)], modules };
-    if (blueprint.title.length < 4 || !blueprint.description || !blueprint.outcomes.length || modules.some(m => !m.outcomes.length)) return res.status(422).json({ ok: false, message: 'Complete the title, description, learning outcomes and outcomes for each module.' });
-    const options = { ...previous.state.options, domain: areas[0], competencyAreas: [...new Set(areas)], outcomes: blueprint.outcomes.join('\n'), courseTitle: blueprint.title, blueprint, consent: 'yes' };
+    const blueprint = { ...original, title: text(req.body.title, 160), description: text(req.body.description, 2000), competencyAreas: [...new Set(areas)], modules };
+    if (blueprint.title.length < 4 || !blueprint.description || modules.some(m => !m.outcomes.length)) return res.status(422).json({ ok: false, message: 'Complete the title, description and learning outcomes for each module.' });
+    const options = { ...previous.state.options, domain: areas[0], competencyAreas: [...new Set(areas)], outcomes: modules.flatMap(module => module.outcomes).join('\n').slice(0, 1500), courseTitle: blueprint.title, blueprint, consent: 'yes' };
     await previous.update({ status: 'approved', state: { ...previous.state, blueprint } });
     const job = await startCourseJob(req.user.id, source, options);
     return res.status(202).json({ ok: true, redirect: `/faculty/generation/${job.id}` });
