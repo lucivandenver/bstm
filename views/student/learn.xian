@@ -53,6 +53,8 @@
     {{/if}}
   </section>
   {{/if}}
+  <div class="actions topic-navigation">
+  {{#if previousTopicUrl}}<a class="button secondary" href="{{previousTopicUrl}}" data-topic-previous>← Previous</a>{{/if}}
   {{#unless completed}}
     {{#unless readingRequired}}{{#unless pretestNeeded}}{{#unless topicExpired}}
     <form {{#if selected.quizOpen}}data-topic-continue="{{selected.id}}"{{/if}} action="/student/learn/{{attempt.id}}/complete" method="post" {{#if lessonChallenge}}data-lesson-completion data-lesson-challenge="{{lessonChallenge}}"{{/if}}>
@@ -67,6 +69,7 @@
     </form>
     {{/unless}}{{/unless}}{{/unless}}
   {{/unless}}
+</div>
 {{#unless moduleOnly}}{{#if showCourseActivities}}<p class="space-top"><a class="text-link" href="/student/learn/{{attempt.id}}/activities">Course activities &amp; feedback →</a></p>{{/if}}{{/unless}}
 </article></div>
 {{#if lessonChallenge}}<script src="/js/lesson-completion.js" defer></script>{{/if}}

@@ -8,7 +8,7 @@
   {{#unless ../pendingOnly}}
   {{#if published}}<form method="post" action="/admin/courses/{{id}}" data-confirm="Unpublish this course from the student catalog?">
     <input type="hidden" name="_csrf" value="{{../csrf}}"><input type="hidden" name="version" value="{{version}}">
-    <button class="button secondary" name="unpublish" value="yes">Unpublish</button>
+    <button class="button module-delete" name="unpublish" value="yes">Unpublish</button>
   </form>{{/if}}
   {{#if canRepublish}}
   <form method="post" action="/admin/courses/{{id}}/republish" data-confirm="Republish this course and restore its modules to the student catalog?">

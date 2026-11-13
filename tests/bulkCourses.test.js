@@ -317,7 +317,6 @@ test("three large files upload incrementally, retry without duplicates, and gene
     const approvedBlueprint = await f.post(`/faculty/generation/${state.id}/approve-blueprint`, {
       title: state.blueprint.title,
       description: state.blueprint.description,
-      outcomes: state.blueprint.outcomes.join("\n"),
       competencyAreas: state.blueprint.competencyAreas,
       moduleTitle: state.blueprint.modules.map((module) => module.title),
       moduleOutcomes: state.blueprint.modules.map((module) => module.outcomes.join("\n")),
@@ -472,7 +471,6 @@ test("three large files upload incrementally, retry without duplicates, and gene
     const failedStart = await f.post(`/faculty/generation/${blueprintState.id}/approve-blueprint`, {
       title: blueprintState.blueprint.title,
       description: blueprintState.blueprint.description,
-      outcomes: blueprintState.blueprint.outcomes.join("\n"),
       competencyAreas: blueprintState.blueprint.competencyAreas,
       moduleTitle: blueprintState.blueprint.modules.map((module) => module.title),
       moduleOutcomes: blueprintState.blueprint.modules.map((module) => module.outcomes.join("\n")),

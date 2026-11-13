@@ -469,6 +469,9 @@ export const learn = async (req, res) => {
     modules.find(module => module.lessons.some(lesson => !lesson.done)) || modules[0];
   const lesson = currentModule?.lessons.find(item => item.id === req.query.lesson) ||
     currentModule?.lessons.find(item => item.unlocked && !item.done) || currentModule?.lessons[0];
+  const lessonIndex = currentModule?.lessons.indexOf(lesson) ?? -1;
+  const previous = lessonIndex > 0 ? currentModule.lessons[lessonIndex - 1] : null;
+  const previousTopicUrl = previous?.unlocked ? topicHref(attempt, previous, Boolean(previous.questions.length)) : null;
   const selected = lesson && { ...lesson, moduleTitle: currentModule.title, moduleId: currentModule.id };
   if (selected?.id && attempt.status !== 'completed' && attempt.lastLessonId !== selected.id) await row.update({ lastLessonId: selected.id, lastActivityAt: new Date() });
   const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id } });
@@ -483,7 +486,7 @@ export const learn = async (req, res) => {
   const topicDraft = draftsByScope.get(selected?.moduleId);
   const inlineDraft = selected?.quizOpen ? topicDraft || await draftFor(req.user.id, attempt, selected.moduleId, undefined, false) : null;
   const seconds = inlineDraft?.startedAt && attempt.snapshot.policy?.quizMinutes ? quizSeconds(attempt, inlineDraft) : null;
-  render(res, 'learn', { ...outline, topicRevision: inlineDraft?.revision, timedTopic: seconds !== null, remainingSeconds: seconds, topicExpired: seconds === 0, readingRequired: !currentModule?.readingReady, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${currentModule.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: currentModule?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), showCourseActivities: outline.finalAvailable && Boolean(course.tasks?.length || course.policy?.feedbackRequired), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: outline.moduleOnly ? currentModule.title : course.title, attempt: decorate(attempt), selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || '') });
+  render(res, 'learn', { ...outline, previousTopicUrl, topicRevision: inlineDraft?.revision, timedTopic: seconds !== null, remainingSeconds: seconds, topicExpired: seconds === 0, readingRequired: !currentModule?.readingReady, materials: materials.map(file => ({ filename: file.filename, href: `/student/learn/${attempt.id}/materials/${currentModule.id}/${file.sourceId}/${file.documentKey}` })), readingModuleId: currentModule?.id, readingConfirmed, lessonChallenge, tasks: (course.tasks || []).map(t => ({ ...t, submission: plain(submissions.find(s => s.taskId === t.id)) })), showCourseActivities: outline.finalAvailable && Boolean(course.tasks?.length || course.policy?.feedbackRequired), hasTasks: Boolean(course.tasks?.length), feedbackRequired: course.policy?.feedbackRequired, pretestNeeded: course.policy?.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'), title: outline.moduleOnly ? currentModule.title : course.title, attempt: decorate(attempt), selected, iataIllustration: /\biata\b.*\bcodes?\b/i.test(selected?.title || '') });
 };
 export const completeLesson = async (req, res) => {
   const next = await sequelize.transaction(async transaction => {
