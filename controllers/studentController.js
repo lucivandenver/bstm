@@ -1,3 +1,4 @@
+import { awardGallery } from '../services/awardGallery.js';
 import { profileFacultySignature } from '../services/publicationCredentials.js';
 import { moduleEvidence, studentCareerEvidence } from '../services/moduleEvidence.js';
 import { pipeline } from 'node:stream/promises';
@@ -814,14 +815,8 @@ export const achievements = async (req, res) => {
   const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
   const pendingAwards = completed.filter(attempt => !attempt.snapshot.modules.some(module => Array.isArray(module.skills)) && attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
-  const credentialRows = rows.map(c => ({ ...plain(c), courseId: allAttempts.find(a => Number(a.id) === Number(c.attemptId))?.courseId ?? `legacy-${c.attemptId}`, date: date(c.issuedAt), starsText: '★'.repeat(c.stars) }));
-  const awardGroups = [...new Set(credentialRows.map(c => c.courseId))].map(courseId => {
-    const certificates = credentialRows.filter(c => c.courseId === courseId);
-    const earnedModules = [...new Map(certificates.filter(c => c.moduleId).map(c => [c.moduleId, c])).values()];
-    return { courseId, title: certificates[0].courseTitle, certificates, earnedModules,
-      skills: [...new Set(earnedModules.flatMap(c => c.skills || []))] };
-  });
-  render(res, 'achievements', { awardGroups, pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
+  const gallery = awardGallery(rows.map(plain), allAttempts.map(a => a.get ? plain(a) : a), { q: text(req.query.q, 200), type: ['badge', 'certificate'].includes(req.query.type) ? req.query.type : '', sort: req.query.sort === 'az' ? 'az' : 'latest', page: req.query.page, academy: await setting('institutionName', 'MinSU Bongabong Campus') });
+  render(res, 'achievements', { gallery, pendingAwards, completionHistory: groups, title: 'My achievements' });
 };
 function credentialSkills(snapshot) {
   const skills = [...new Set((snapshot?.modules || []).flatMap(module => module.skills || []))];
@@ -894,6 +889,12 @@ export const verify = async (req, res) => {
   const c = await Credential.findByPk(req.params.id);
   if (!c) return res.status(404).render('verify', { title: 'Credential not found', missing: true });
   const attempt = c.revoked ? null : await CourseAttempt.findByPk(c.attemptId);
+  if (req.query.badge === 'course' && !c.revoked && attempt) {
+    const attempts = await CourseAttempt.findAll({ where: { userId: c.userId, courseId: attempt.courseId } });
+    const earned = await Credential.findAll({ where: { userId: c.userId, revoked: false, attemptId: { [Op.in]: attempts.map(a => a.id) } } });
+    const gallery = awardGallery(earned.map(plain), attempts.map(plain), { type: 'badge' });
+    return res.render('courseBadge', { title: 'Course badge', badge: gallery.records[0], recipientName: c.recipientName });
+  }
   res.render('verify', { title: 'Verify credential', credential: { ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(attempt?.snapshot) } });
 };
 export const downloadReport = async (req, res) => {

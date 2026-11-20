@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { awardGallery } from '../services/awardGallery.js';
+const attempts = [{ id: 1, courseId: 11, snapshot: { modules: [] } }, { id: 2, courseId: 12, snapshot: { modules: [] } }];
+const credentials = [
+  { id: 'a', attemptId: 1, courseTitle: 'Tourism systems', moduleId: 'm1', moduleTitle: 'Booking', skills: ['Bookings'], issuedAt: '2026-11-01' },
+  { id: 'b', attemptId: 1, courseTitle: 'Tourism systems', moduleId: 'm2', moduleTitle: 'Travel', skills: ['Itineraries'], issuedAt: '2026-11-02' },
+  { id: 'c', attemptId: 2, courseTitle: 'Guiding', moduleId: 'm3', moduleTitle: 'Visitor care', skills: ['Safety'], issuedAt: '2026-11-03' }
+];
+test('one course badge combines earned module skills without adding unearned modules', () => {
+  const gallery = awardGallery(credentials, attempts, { type: 'badge' });
+  assert.equal(gallery.count, 2);
+  const badge = gallery.records.find(r => r.courseId === 11);
+  assert.deepEqual(new Set(badge.skills), new Set(['Bookings', 'Itineraries']));
+  assert.equal(badge.modules.length, 2);
+  assert.ok(badge.shareUrl.endsWith('?badge=course'));
+});
+test('search, type and sorting work together and pagination preserves filters', () => {
+  const certificates = awardGallery(credentials, attempts, { type: 'certificate', q: 'Tourism', sort: 'az' });
+  assert.deepEqual(certificates.records.map(r => r.title), ['Booking', 'Travel']);
+  assert.equal(awardGallery(credentials, attempts, { q: 'MinSU' }).count, 5);
+  assert.equal(awardGallery(credentials, attempts, { q: 'no matching academy' }).count, 0);
+  const more = [...credentials, ...Array.from({ length: 5 }, (_,i) => ({ ...credentials[0], id: `extra${i}`, moduleId: `extra${i}` }))];
+  const page = awardGallery(more, attempts, { type: 'certificate', q: 'Tourism', sort: 'az', page: 2 });
+  assert.equal(page.records.length, 2);
+  assert.ok(page.previous.includes('type=certificate'));
+  assert.ok(page.previous.includes('q=Tourism'));
+  assert.equal(page.page, 2);
+});

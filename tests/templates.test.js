@@ -38,12 +38,17 @@ test('quiz pages contain no answer keys or explanations', async () => {
 });
 
 await test('student awards group one badge per course and list only earned module skills', async () => {
-  const html = await render('views/student/achievements.xian', { ...data, awardGroups: [
-    { courseId: 7, title: 'Tourism systems', earnedModules: [{ moduleTitle: 'Booking', score: 90, skills: ['Reservation workflow'] }], certificates: [{ id: 'earned', moduleTitle: 'Booking', score: 90 }] },
-    { courseId: 8, title: 'Tour guiding', earnedModules: [], certificates: [] }
-  ] });
+  const { awardGallery } = await import('../services/awardGallery.js');
+  const gallery = awardGallery([
+    { id: 'earned', attemptId: 1, courseTitle: 'Tourism systems', moduleId: 'm1', moduleTitle: 'Booking', skills: ['Reservation workflow'] },
+    { id: 'earned2', attemptId: 2, courseTitle: 'Tour guiding', moduleId: 'm2', moduleTitle: 'Guiding', skills: [] }
+  ], [{ id: 1, courseId: 7, snapshot: { modules: [] } }, { id: 2, courseId: 8, snapshot: { modules: [] } }]);
+  const html = await render('views/student/achievements.xian', { ...data, gallery });
   assert.equal((html.match(/data-open-award="course-badge-/g) || []).length, 2);
   assert.match(html, /Reservation workflow/);
+  assert.match(html, /View &amp; Download/);
+  assert.match(html, /View &amp; Share Badge/);
+  assert.match(html, /Search by name, course, academy/);
   assert.match(html, /course-badge-7/); assert.match(html, /course-badge-8/);
   assert.doesNotMatch(html, /<details[^>]*\sopen(?:\s|>)/);
 });

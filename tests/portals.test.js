@@ -213,6 +213,10 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     r=await s.get(`/student/learn/${id}/activities`);assert.match(r.html,/Clear and accurate/);r=await s.post(`/student/learn/${id}/feedback`,{rating:'5',comment:'Useful practice.'});assert.equal(r.status,302);assert.equal((await CourseAttempt.findByPk(id)).status,'completed');assert.equal(await Credential.count(),1);
     const award=await Credential.findOne();r=await s.get(`/student/credentials/${award.id}/certificate`);assert.equal(r.status,200);assert.equal(r.response.headers.get('content-type'),'application/pdf');
     assert.equal((await o.get(`/student/credentials/${award.id}/certificate`)).status,404);
+    const courseBadge = await s.get(`/verify/${award.id}?badge=course`);
+    assert.equal(courseBadge.status, 200);
+    assert.match(courseBadge.html, /COURSE BADGE/);
+    assert.match(courseBadge.html, /earned module achievements/);
     r=await s.get(`/student/credentials/${award.id}/certificate?view=1`);assert.match(r.response.headers.get('content-disposition'),/^inline;/);
     assert.equal((await o.get(`/student/credentials/${award.id}/certificate?view=1`)).status,404);
     const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');
