@@ -1,10 +1,17 @@
+export function briefAwardDescription(value) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  const sentences = [...new Set(clean.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g)?.map(s => s.trim()) || [])].slice(0, 2).join(' ');
+  if (sentences.length <= 320) return sentences;
+  const short = sentences.slice(0, 317);
+  return short.slice(0, short.lastIndexOf(' ')) + '…';
+}
 export function awardGallery(credentials, attempts, { q = '', type = '', sort = 'latest', page = 1, academy = 'MinSU Bongabong Campus' } = {}) {
   const rows = credentials.map(row => {
     const attempt = attempts.find(a => Number(a.id) === Number(row.attemptId));
     const module = attempt?.snapshot.modules?.find(m => m.id === row.moduleId);
     return { ...row, courseId: attempt?.courseId ?? `legacy-${row.attemptId}`, academy,
       title: row.moduleTitle || row.courseTitle, type: 'certificate',
-      description: attempt?.snapshot.description || '', minutes: attempt?.snapshot.minutes,
+      description: briefAwardDescription(attempt?.snapshot.description), minutes: attempt?.snapshot.minutes,
       skills: row.skills || module?.skills || [], issued: new Date(row.issuedAt || 0).getTime(),
       date: row.issuedAt ? new Date(row.issuedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) : '—',
       dialogId: `certificate-${row.id}` };
@@ -20,9 +27,17 @@ export function awardGallery(credentials, attempts, { q = '', type = '', sort = 
   const query = String(q).trim().toLowerCase();
   let records = [...badges, ...rows].filter(row => (!type || row.type === type) && `${row.title} ${row.courseTitle} ${row.academy}`.toLowerCase().includes(query));
   records.sort(sort === 'az' ? (a,b) => a.title.localeCompare(b.title) || a.type.localeCompare(b.type) : (a,b) => b.issued - a.issued || a.title.localeCompare(b.title));
-  const pages = Math.max(1, Math.ceil(records.length / 5));
+  // Keep each course badge in the left column and its certificates in the right.
+  const grouped = [...new Set(records.map(row => row.courseId))].map(courseId => ({
+    courseId, badges: records.filter(row => row.courseId === courseId && row.type === 'badge'),
+    certificates: records.filter(row => row.courseId === courseId && row.type === 'certificate')
+  }));
+  const units = type ? records : grouped;
+  const pages = Math.max(1, Math.ceil(units.length / 5));
   const current = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
   const href = next => `?${new URLSearchParams({ q, type, sort, page: String(next) })}`;
-  return { records: records.slice((current-1)*5,current*5), count: records.length, page: current, pages,
+  const selected = units.slice((current-1)*5,current*5);
+  return { records: type ? selected : selected.flatMap(group => [...group.badges, ...group.certificates]),
+    groups: type ? null : selected, paired: !type, count: records.length, page: current, pages,
     previous: current > 1 ? href(current-1) : null, next: current < pages ? href(current+1) : null, q, type, sort };
 }
