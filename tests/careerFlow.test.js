@@ -19,13 +19,16 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   assert.match(dashboard.html,/Tourism and Hospitality Knowledge<\/strong><span>1 of 3 passed/);
   assert.match(dashboard.html,/Digital skills<\/strong><span>0 of 1 passed/);
   assert.match(dashboard.html,/Communication<\/strong><span>No available modules/);
-  assert.match(dashboard.html,/Tourism and Hospitality Knowledge module progress" value="38" max="100"/);
+  assert.match(dashboard.html,/Tourism and Hospitality Knowledge module progress" value="33" max="100"/);
   const facultyClient=browser(base);
   await facultyClient.login(faculty.email,'TestingPassword-2026!');
   const facultyProgress=await facultyClient.get('/faculty/students/'+user.id);
   assert.equal(facultyProgress.status,200);
   assert.match(facultyProgress.html,/1 of 3 available modules passed/);
-  assert.match(facultyProgress.html,/value="38" max="100" aria-label="Tourism and Hospitality Knowledge progress"/);
+  assert.match(facultyProgress.html, /Student Learning Overview/);
+  assert.match(facultyProgress.html, /Needs attention/);
+  assert.doesNotMatch(facultyProgress.html, /FACULTY \/ WORKSPACE|partial credit/);
+  assert.match(facultyProgress.html,/value="33" max="100" aria-label="Tourism and Hospitality Knowledge progress"/);
   let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
   r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
   assert.doesNotMatch(r.html, /Quiz 85%|evidence alignment/);

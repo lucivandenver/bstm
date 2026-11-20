@@ -814,7 +814,14 @@ export const achievements = async (req, res) => {
   const rows = await Credential.findAll({ where: { userId: req.user.id, revoked: false }, order: [['issuedAt', 'DESC']] });
   const groups = [...new Set(completed.map(a => a.courseId))].map(courseId => { const all = completed.filter(a => a.courseId === courseId); return { title: all.at(-1).snapshot.title, first: date(all[0].completedAt), latest: date(all.at(-1).completedAt), completions: all.length, repeats: Math.max(0,all.length - 1), best: Math.max(...all.map(a => a.finalScore)), latestScore: all.at(-1).finalScore }; });
   const pendingAwards = completed.filter(attempt => !attempt.snapshot.modules.some(module => Array.isArray(module.skills)) && attempt.snapshot.certificateEnabled !== false && !rows.some(row => row.attemptId === attempt.id)).map(attempt => ({ title: attempt.snapshot.title, date: date(attempt.completedAt) }));
-  render(res, 'achievements', { pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
+  const credentialRows = rows.map(c => ({ ...plain(c), courseId: allAttempts.find(a => Number(a.id) === Number(c.attemptId))?.courseId ?? `legacy-${c.attemptId}`, date: date(c.issuedAt), starsText: '★'.repeat(c.stars) }));
+  const awardGroups = [...new Set(credentialRows.map(c => c.courseId))].map(courseId => {
+    const certificates = credentialRows.filter(c => c.courseId === courseId);
+    const earnedModules = [...new Map(certificates.filter(c => c.moduleId).map(c => [c.moduleId, c])).values()];
+    return { courseId, title: certificates[0].courseTitle, certificates, earnedModules,
+      skills: [...new Set(earnedModules.flatMap(c => c.skills || []))] };
+  });
+  render(res, 'achievements', { awardGroups, pendingAwards, completionHistory: groups, title: 'My achievements', credentials: rows.map(c => ({ ...plain(c), date: date(c.issuedAt), skills: c.moduleId ? c.skills : credentialSkills(completed.find(attempt => Number(attempt.id) === Number(c.attemptId))?.snapshot), starsText: '★'.repeat(c.stars) })) });
 };
 function credentialSkills(snapshot) {
   const skills = [...new Set((snapshot?.modules || []).flatMap(module => module.skills || []))];

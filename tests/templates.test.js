@@ -36,3 +36,20 @@ test('quiz pages contain no answer keys or explanations', async () => {
   assert.ok(!html.includes(course.questions[0].explanation));
   assert.ok(!html.includes('correctAnswer'));
 });
+
+await test('student awards group one badge per course and list only earned module skills', async () => {
+  const html = await render('views/student/achievements.xian', { ...data, awardGroups: [
+    { courseId: 7, title: 'Tourism systems', earnedModules: [{ moduleTitle: 'Booking', score: 90, skills: ['Reservation workflow'] }], certificates: [{ id: 'earned', moduleTitle: 'Booking', score: 90 }] },
+    { courseId: 8, title: 'Tour guiding', earnedModules: [], certificates: [] }
+  ] });
+  assert.equal((html.match(/data-open-award="course-badge-/g) || []).length, 2);
+  assert.match(html, /Reservation workflow/);
+  assert.match(html, /course-badge-7/); assert.match(html, /course-badge-8/);
+  assert.doesNotMatch(html, /<details[^>]*\sopen(?:\s|>)/);
+});
+await test('faculty announcement selection offers search, section and gender with checkboxes', async () => {
+  const html = await render('views/faculty/announcements.xian', { ...data, sections: ['BSTM 4-1'], students: [{ id: 1, name: 'Student A', studentId: 'ID1', section: 'BSTM 4-1', gender: 'Female' }] });
+  for (const attribute of ['data-student-search', 'data-student-section', 'data-student-gender', 'data-select-results', 'data-clear-recipients']) assert.ok(html.includes(attribute));
+  assert.match(html, /type="checkbox" name="studentIds" value="1"/);
+  assert.doesNotMatch(html, /multiple size|Hold Ctrl/);
+});

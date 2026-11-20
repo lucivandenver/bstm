@@ -54,3 +54,53 @@
   document.addEventListener('click', event => { for (const menu of menus) if (!menu.contains(event.target)) menu.open = false; });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') for (const menu of menus) if (menu.open) { menu.open = false; menu.querySelector('summary').focus(); } });
 })();
+
+// Five records per page; independent controls for nested course/module lists.
+const recordPagers = new WeakMap();
+document.querySelectorAll('[data-page-list]').forEach(list => {
+  const items = [...list.children].filter(item => item.hasAttribute('data-page-item'));
+  const nav = document.createElement('nav'); nav.className = 'record-pagination actions'; nav.setAttribute('aria-label', 'Record pages');
+  const previous = document.createElement('button'), next = document.createElement('button'), status = document.createElement('span');
+  previous.type = next.type = 'button'; previous.className = next.className = 'button secondary';
+  previous.textContent = '← Previous'; next.textContent = 'Next →'; status.setAttribute('aria-live', 'polite');
+  nav.append(previous, status, next);
+  (list.tagName === 'TBODY' ? list.closest('.table-wrap') : list).after(nav);
+  let page = 1;
+  const draw = (reset = false) => {
+    if (reset) page = 1;
+    const visible = items.filter(item => item.dataset.filtered !== 'true');
+    const pages = Math.max(1, Math.ceil(visible.length / 5)); page = Math.min(page, pages);
+    items.forEach(item => { item.hidden = true; });
+    visible.slice((page - 1) * 5, page * 5).forEach(item => { item.hidden = false; });
+    nav.hidden = pages <= 1; previous.disabled = page === 1; next.disabled = page === pages;
+    status.textContent = `Page ${page} of ${pages} · ${visible.length} records`;
+  };
+  previous.addEventListener('click', () => { page--; draw(); }); next.addEventListener('click', () => { page++; draw(); });
+  recordPagers.set(list, draw); draw();
+});
+document.querySelectorAll('[data-recipient-form]').forEach(form => {
+  const rows = [...form.querySelectorAll('[data-recipient]')];
+  const section = form.querySelector('[name="section"]');
+  const search = form.querySelector('[data-student-search]'), sectionFilter = form.querySelector('[data-student-section]'), gender = form.querySelector('[data-student-gender]');
+  const mode = () => form.querySelector('[name="audience"]:checked')?.value;
+  const update = (reset = false) => {
+    const specific = mode() === 'students';
+    form.querySelector('[data-section-panel]').hidden = specific; form.querySelector('[data-students-panel]').hidden = !specific;
+    section.disabled = specific; section.required = !specific;
+    rows.forEach(row => {
+      row.dataset.filtered = String(!(row.dataset.search.toLowerCase().includes(search.value.trim().toLowerCase()) && (!sectionFilter.value || row.dataset.section === sectionFilter.value) && (!gender.value || row.dataset.gender === gender.value)));
+      row.querySelector('input').disabled = !specific;
+    });
+    const selected = rows.filter(row => row.querySelector('input').checked).length;
+    const sectionCount = rows.filter(row => row.dataset.section === section.value && section.value).length;
+    form.querySelector('[data-selected-count]').textContent = `${selected} students selected`;
+    form.querySelector('[data-section-count]').textContent = `${sectionCount} recipients`;
+    form.querySelector('[data-no-recipients]').hidden = rows.some(row => row.dataset.filtered === 'false');
+    form.querySelector('[data-send-announcement]').disabled = !(form.elements.title.value.trim() && form.elements.body.value.trim() && (specific ? selected : sectionCount));
+    recordPagers.get(form.querySelector('[data-recipient-list]'))?.(reset);
+  };
+  form.addEventListener('input', event => update([search, sectionFilter, gender].includes(event.target))); form.addEventListener('change', event => update([search, sectionFilter, gender].includes(event.target)));
+  form.querySelector('[data-select-results]').addEventListener('click', () => { rows.filter(row => row.dataset.filtered === 'false').forEach(row => { row.querySelector('input').checked = true; }); update(); });
+  form.querySelector('[data-clear-recipients]').addEventListener('click', () => { rows.forEach(row => { row.querySelector('input').checked = false; }); update(); });
+  update();
+});
