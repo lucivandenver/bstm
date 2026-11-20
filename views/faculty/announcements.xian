@@ -1,21 +1,17 @@
 {{> facultyTop}}
 <section class="card">
   <h2>Send an update to assigned students</h2>
-  <form method="post" action="/faculty/announcements" class="stack">
+  <form method="post" action="/faculty/announcements" class="stack" data-recipient-form>
     <input type="hidden" name="_csrf" value="{{csrf}}">
     <label class="field">Title<input name="title" maxlength="160" required></label>
     <label class="field">Message<textarea name="body" maxlength="3000" required rows="5"></textarea></label>
-    <fieldset class="field"><legend>Send to</legend>
-      <label><input type="radio" name="audience" value="section" required> A section</label>
-      <label class="field">Section<select name="section"><option value="">Select a section</option>{{#each sections}}<option>{{this}}</option>{{/each}}</select></label>
-      <label><input type="radio" name="audience" value="students" required> Specific students</label>
-      <label class="field">Students<select name="studentIds" multiple size="6">{{#each students}}<option value="{{id}}">{{name}} · {{section}} · {{studentId}}</option>{{/each}}</select></label>
-      <p class="small muted">Hold Ctrl or Command to select more than one student.</p>
-    </fieldset>
-    <button class="button">Send announcement</button>
+    <fieldset class="recipient-options"><legend>Send to</legend><div class="actions"><label><input type="radio" name="audience" value="section" checked> Entire section</label><label><input type="radio" name="audience" value="students"> Specific students</label></div>
+<div data-section-panel><label class="field">Section<select name="section"><option value="">Select a section</option>{{#each sections}}<option>{{this}}</option>{{/each}}</select></label><p data-section-count role="status">0 recipients</p></div>
+<div data-students-panel hidden><div class="recipient-filters"><label class="field">Search students<input type="search" data-student-search placeholder="Name or Student ID"></label><label class="field">Section<select data-student-section><option value="">All sections</option>{{#each sections}}<option>{{this}}</option>{{/each}}</select></label><label class="field">Gender<select data-student-gender><option value="">All genders</option><option>Female</option><option>Male</option></select></label></div><div class="actions"><button class="button secondary" type="button" data-select-results>Select all results</button><button class="button secondary" type="button" data-clear-recipients>Clear selection</button><span data-selected-count role="status">0 students selected</span></div><div class="recipient-list" data-page-list data-recipient-list>{{#each students}}<label class="recipient-row" data-page-item data-recipient data-search="{{name}} {{studentId}}" data-section="{{section}}" data-gender="{{gender}}"><input type="checkbox" name="studentIds" value="{{id}}"><span><strong>{{name}}</strong><small>{{studentId}} · {{section}} · {{gender}}</small></span></label>{{/each}}</div><p data-no-recipients hidden>No matching students.</p></div></fieldset>
+    <button class="button" data-send-announcement>Send announcement</button>
   </form>
 </section>
 <section class="card space-top"><h2>Sent announcements</h2>
-  {{#each announcements}}<article class="feedback-item"><h3>{{title}}</h3><p class="small muted">{{date}}</p><p class="lesson-body">{{body}}</p></article>{{else}}<p class="empty">No announcements sent.</p>{{/each}}
+  <div data-page-list>{{#each announcements}}<article data-page-item class="feedback-item"><h3>{{title}}</h3><p class="small muted">{{date}}</p><p class="lesson-body">{{body}}</p></article>{{else}}<p class="empty">No announcements sent.</p>{{/each}}</div>
 </section>
 {{> studentBottom}}

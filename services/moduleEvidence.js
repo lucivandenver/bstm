@@ -15,7 +15,7 @@ function courseAreas(course) {
 
 function moduleCompletionPercent(modules) {
   if (!modules.length) return 0;
-  const completed = modules.reduce((sum, module) => sum + (module.passed ? 1 : module.fraction * 0.25), 0);
+  const completed = modules.filter(module => module.passed).length;
   return completed === modules.length ? 100 : Math.min(99, Math.round(100 * completed / modules.length));
 }
 

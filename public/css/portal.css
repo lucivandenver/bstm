@@ -267,3 +267,25 @@
 .faculty-progress-report table { min-width: 49rem; }
 .faculty-progress-report td { overflow-wrap: normal; }
 .faculty-progress-report td small { display: block; }
+
+/* Accessible course records, previews and recipient selection. */
+[hidden] { display: none !important; }
+.course-disclosure > summary { cursor: pointer; font-weight: 800; padding: .8rem 0; overflow-wrap: anywhere; }
+.course-disclosure > summary:focus-visible { outline: 3px solid #007042; outline-offset: 5px; }
+.course-disclosure table { width: 100%; min-width: 38rem; }
+.course-disclosure td, .course-disclosure th { padding: .9rem; text-align: left; vertical-align: top; }
+.overview-summary, .course-awards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1.2rem; }
+.overview-summary strong { display: block; font-size: 1.8rem; color: #007042; }
+.course-awards { grid-template-columns: minmax(0,1fr) minmax(0,2fr); }
+.recipient-options { border: 1px solid #d7e3dd; border-radius: 14px; padding: 1.2rem; min-width: 0; }
+.recipient-options input[type=radio], .recipient-options input[type=checkbox] { width: 1.2rem; height: 1.2rem; padding: 0; margin: 0; flex: 0 0 auto; accent-color: #007042; }
+.recipient-options .actions > label, .recipient-row { display: flex; gap: .8rem; align-items: center; padding: .8rem; }
+.recipient-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1rem; }
+.recipient-filters input, .recipient-filters select { width: 100%; min-width: 0; }
+.recipient-list { max-height: 24rem; overflow-y: auto; margin-top: 1rem; }
+.recipient-row { border-bottom: 1px solid #e1e8e4; cursor: pointer; }
+.recipient-row small { display: block; overflow-wrap: anywhere; }
+.recipient-row:focus-within { outline: 2px solid #007042; outline-offset: -2px; }
+.record-pagination { margin: 1rem 0; flex-wrap: wrap; }
+.course-disclosure .faculty-certificate-preview { max-width: 48rem; margin-inline: auto; }
+@media(max-width:700px) { .overview-summary, .course-awards, .recipient-filters { grid-template-columns: minmax(0,1fr); } .recipient-options { padding: .8rem; } .record-pagination .button { padding: .65rem .8rem; } }

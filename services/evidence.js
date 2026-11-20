@@ -11,7 +11,7 @@ export function moduleResults(attempt) {
     const saved = attempt.quizScores?.[module.id];
     const latest = attempt.quizAttempts?.findLast(quiz => quiz.scope === module.id && !quiz.expired);
     const score = saved >= attempt.snapshot.passingScore ? saved : latest?.score ?? saved;
-    return { title: module.title, score, assessed: Number.isFinite(score),
+    return { title: module.title, score, retakes: attempt.quizScores?.[`retake:${module.id}`] || 0, assessed: Number.isFinite(score),
       passed: Number.isFinite(score) && score >= attempt.snapshot.passingScore };
   });
 }
