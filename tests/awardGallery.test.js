@@ -27,3 +27,15 @@ test('search, type and sorting work together and pagination preserves filters', 
   assert.ok(page.previous.includes('q=Tourism'));
   assert.equal(page.page, 2);
 });
+
+test('badge/certificate pairs stay together and descriptions remain brief', async () => {
+  const { briefAwardDescription } = await import('../services/awardGallery.js');
+  assert.equal(briefAwardDescription('First sentence. First sentence. Second sentence. Third sentence.'), 'First sentence. Second sentence.');
+  assert.ok(briefAwardDescription('A very long description '.repeat(100)).length <= 320);
+  const gallery = awardGallery(credentials, attempts);
+  assert.equal(gallery.groups.length, 2);
+  for (const group of gallery.groups) {
+    assert.equal(group.badges.length, 1);
+    assert.ok(group.certificates.every(c => c.courseId === group.badges[0].courseId));
+  }
+});

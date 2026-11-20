@@ -323,3 +323,14 @@
 @media(max-width:1100px) { .award-gallery { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:800px) { .award-gallery { grid-template-columns:repeat(2,minmax(0,1fr)); } .award-filters { grid-template-columns:1fr 1fr; } .award-search { grid-column:1/-1; } }
 @media(max-width:480px) { .award-gallery { grid-template-columns:1fr; } .award-detail { padding:1.2rem; } .award-metadata { grid-template-columns:1fr; } .award-metadata > div + div { border-left:0; padding-left:0; } .award-intro { flex-direction:column; } }
+
+/* One compact, consistently sized dialog for both achievement types. */
+dialog.award-dialog.award-detail { box-sizing:border-box; width:min(760px,calc(100vw - 32px)); max-width:760px; height:min(580px,calc(100dvh - 48px)); max-height:calc(100dvh - 48px); padding:28px; overflow:auto; margin:auto; }
+.award-detail .award-intro p { font-size:.9rem; line-height:1.6; }
+.award-detail .award-metadata { margin:1.4rem 0; }
+.award-detail .award-detail-footer { position:sticky; bottom:-28px; background:white; padding-bottom:16px; }
+.award-course-gallery { display:grid; gap:24px; }
+.award-course-pair { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; max-width:840px; width:100%; margin-inline:auto; align-items:start; }
+.award-badge-column,.award-certificate-column { display:grid; gap:20px; min-width:0; }
+.award-course-pair .award-gallery-card { min-height:300px; }
+@media(max-width:480px) { .award-course-pair { gap:10px; } .award-course-pair .award-art { width:70px; height:70px; } .award-course-pair .award-gallery-card strong { font-size:.8rem; padding:0 .4rem; } .award-date { font-size:.7rem; } dialog.award-dialog.award-detail { padding:18px; } .award-detail .award-detail-footer { bottom:-18px; } }

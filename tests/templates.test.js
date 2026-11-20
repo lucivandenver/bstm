@@ -45,7 +45,8 @@ await test('student awards group one badge per course and list only earned modul
   ], [{ id: 1, courseId: 7, snapshot: { modules: [] } }, { id: 2, courseId: 8, snapshot: { modules: [] } }]);
   const html = await render('views/student/achievements.xian', { ...data, gallery });
   assert.equal((html.match(/data-open-award="course-badge-/g) || []).length, 2);
-  assert.match(html, /Reservation workflow/);
+  assert.match(html, /Booking/);
+  assert.doesNotMatch(html.match(/<dialog id="course-badge-7"[\s\S]*?<\/dialog>/)[0], /Reservation workflow/);
   assert.match(html, /View &amp; Download/);
   assert.match(html, /View &amp; Share Badge/);
   assert.match(html, /Search by name, course, academy/);

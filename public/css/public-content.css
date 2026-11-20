@@ -424,3 +424,17 @@ body .rounded-none { border-radius: 14px; }
 @keyframes journey-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-7px); } }
 @media(max-width:700px) { .cb-journey-mini { max-width:100%; margin:12px auto; gap:12px; } .cb-journey-card { padding:15px; } .cb-journey-card:nth-child(2),.cb-journey-card:nth-child(3) { margin-inline:0; } }
 @media(prefers-reduced-motion:reduce) { .cb-journey-card { animation:none; } }
+
+.cb-journey-mini { max-width:240px; gap:22px; padding:12px; }
+.cb-journey-card { padding:12px; gap:10px; border-radius:14px; animation:journey-drift 8s ease-in-out infinite; }
+.cb-journey-card:nth-child(2) { margin-left:12px; animation-delay:-2.7s; }
+.cb-journey-card:nth-child(3) { margin-right:10px; animation-delay:-5.4s; }
+.cb-journey-card .cb-icon-tile { width:34px; height:34px; flex-basis:34px; }
+.cb-journey-card:nth-child(2) .cb-icon-tile { background:#fff0f5; color:#d63376; border-color:#ffd1e2; }
+.cb-journey-card h3 { font-size:14px; margin:3px 0; }
+.cb-journey-card p { font-size:11px; line-height:1.5; }
+.cb-journey-card .cb-step-label { font-size:8px; }
+.cb-journey-card .cb-published-count { color:#007042; font-weight:800; }
+@keyframes journey-drift { 0%,100% { transform:translate(0,0) rotate(-.5deg); } 25% { transform:translate(7px,-5px) rotate(.5deg); } 50% { transform:translate(-5px,4px) rotate(-.3deg); } 75% { transform:translate(-7px,-3px) rotate(.4deg); } }
+@media(max-width:700px) { .cb-journey-mini { max-width:250px; } }
+@media(prefers-reduced-motion:reduce) { .cb-journey-card { animation:none; } }
