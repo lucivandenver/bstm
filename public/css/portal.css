@@ -289,3 +289,37 @@
 .record-pagination { margin: 1rem 0; flex-wrap: wrap; }
 .course-disclosure .faculty-certificate-preview { max-width: 48rem; margin-inline: auto; }
 @media(max-width:700px) { .overview-summary, .course-awards, .recipient-filters { grid-template-columns: minmax(0,1fr); } .recipient-options { padding: .8rem; } .record-pagination .button { padding: .65rem .8rem; } }
+
+.award-filters { display:grid; grid-template-columns:minmax(12rem,1fr) 10rem 10rem auto; gap:1rem; align-items:end; margin:1.5rem 0; }
+.award-filters .field { margin:0; min-width:0; }
+.award-filters input,.award-filters select { width:100%; min-width:0; }
+.award-gallery { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1.4rem; }
+.award-gallery-item { min-width:0; }
+.award-gallery-card { display:flex; flex-direction:column; align-items:center; width:100%; height:100%; padding:1.2rem 0 0; border:1px solid #d7dadd; border-radius:9px; background:white; color:#20282e; cursor:pointer; font:inherit; overflow:hidden; box-shadow:0 3px 10px #152a3510; text-align:center; }
+.award-gallery-card:hover { box-shadow:0 6px 20px #152a3520; border-color:#007042; }
+.award-gallery-card:focus-visible { outline:3px solid #007042; outline-offset:4px; }
+.award-type { background:#daedce; border-left:5px solid #467a35; padding:4px 12px; font-size:.8rem; font-weight:800; }
+.award-art { display:block; width:108px; height:108px; margin:1rem auto; color:#55a83c; flex-shrink:0; }
+.award-art svg { display:block; width:100%; height:100%; }
+.award-gallery-card small { letter-spacing:.22em; font-size:.7rem; color:#596773; margin:.3rem 0 1rem; }
+.award-gallery-card strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:1rem; line-height:1.5; min-height:3rem; padding:0 1rem; margin-bottom:1.5rem; }
+.award-date { display:block; width:100%; margin-top:auto; background:#f3f4f5; padding:1rem .5rem; color:#55616b; font-size:.8rem; }
+.award-detail { width:min(920px,calc(100vw - 32px)); max-width:920px; max-height:85dvh; border:0; border-radius:5px; padding:2.4rem; color:#252b30; }
+.award-detail::backdrop { background:#0008; }
+.award-detail h2 { padding-right:2rem; margin:0 0 1.6rem; }
+.award-close { float:right; }
+.award-close button { border:0; background:transparent; font-size:1.8rem; color:#333; min-width:44px; min-height:44px; cursor:pointer; }
+.award-intro { display:flex; align-items:flex-start; gap:1.2rem; }
+.award-intro .award-art { margin:0; width:90px; height:90px; }
+.award-intro h3 { color:#427c32; font-weight:600; }
+.award-metadata { display:grid; grid-template-columns:1fr 1fr 1fr; margin:2rem 0; gap:1rem; }
+.award-metadata > div + div { border-left:1px solid #d5d5d5; padding-left:1rem; }
+.award-metadata dt,.award-section-label { font-size:.85rem; font-weight:500; color:#64696b; }
+.award-metadata dd { margin:.4rem 0 0; font-weight:700; }
+.award-module-skills { margin:1.3rem 0; }
+.award-module-skills h4 { margin-bottom:.5rem; }
+.award-detail-footer { border-top:1px solid #ddd; margin-top:2rem; padding-top:1.5rem; display:flex; justify-content:flex-end; flex-wrap:wrap; gap:.7rem; }
+.award-detail-footer .button { border-radius:30px; }
+@media(max-width:1100px) { .award-gallery { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:800px) { .award-gallery { grid-template-columns:repeat(2,minmax(0,1fr)); } .award-filters { grid-template-columns:1fr 1fr; } .award-search { grid-column:1/-1; } }
+@media(max-width:480px) { .award-gallery { grid-template-columns:1fr; } .award-detail { padding:1.2rem; } .award-metadata { grid-template-columns:1fr; } .award-metadata > div + div { border-left:0; padding-left:0; } .award-intro { flex-direction:column; } }

@@ -411,3 +411,16 @@ body .rounded-none { border-radius: 14px; }
 .hero-highlight-icon{display:inline-block;object-fit:contain;flex-shrink:0;width:25px;height:25px}
 
 .landing-benefit-icon{display:block;width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 5px 5px #18382a12)}
+
+/* Three compact floating journey cards leave the hero photograph visible. */
+.cb-journey-mini { display:grid; gap:18px; max-width:420px; margin:24px 0 24px auto; padding:8px; }
+.cb-journey-card { display:flex; gap:16px; align-items:center; padding:20px; background:#fffffff0; border:1px solid #dce8df; border-radius:18px; box-shadow:0 12px 30px #103d2b15; color:#193f30; text-decoration:none; animation:journey-float 6s ease-in-out infinite; }
+.cb-journey-card:nth-child(2) { margin-left:26px; animation-delay:-2s; }
+.cb-journey-card:nth-child(3) { margin-right:22px; animation-delay:-4s; }
+.cb-journey-card .cb-icon-tile { width:44px; height:44px; flex:0 0 44px; }
+.cb-journey-card h3 { font-size:17px; line-height:1.4; margin:5px 0; font-weight:800; }
+.cb-journey-card p { font-size:13px; line-height:1.6; color:#62796c; margin:0; }
+.cb-journey-card:hover,.cb-journey-card:focus-visible { animation-play-state:paused; border-color:#007042; }
+@keyframes journey-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-7px); } }
+@media(max-width:700px) { .cb-journey-mini { max-width:100%; margin:12px auto; gap:12px; } .cb-journey-card { padding:15px; } .cb-journey-card:nth-child(2),.cb-journey-card:nth-child(3) { margin-inline:0; } }
+@media(prefers-reduced-motion:reduce) { .cb-journey-card { animation:none; } }
