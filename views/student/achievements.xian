@@ -7,6 +7,6 @@
 <p class="small muted" role="status">{{gallery.count}} achievements</p>
 <div class="award-gallery award-gallery-flow">{{#each gallery.records}}{{> awardGalleryItem}}{{else}}<section class="card empty">No matching achievements. Try another search or type.</section>{{/each}}</div>
 
-<nav class="record-pagination actions" aria-label="Achievement pages">{{#if gallery.previous}}<a class="button secondary" href="{{gallery.previous}}">← Previous</a>{{/if}}<span>Page {{gallery.page}} of {{gallery.pages}}</span>{{#if gallery.next}}<a class="button secondary" href="{{gallery.next}}">Next →</a>{{/if}}</nav>
+{{#if gallery.hasPages}}<nav class="record-pagination actions achievement-pagination" aria-label="Achievement pages">{{#if gallery.previous}}<a class="button secondary" href="{{gallery.previous}}">← Previous</a>{{/if}}<span>Page {{gallery.page}} of {{gallery.pages}}</span>{{#if gallery.next}}<a class="button secondary" href="{{gallery.next}}">Next →</a>{{/if}}</nav>{{/if}}
 {{#if pendingAwards}}<details class="card space-top"><summary>Pending course certificates</summary>{{#each pendingAwards}}<p>{{title}} · Eligibility check pending</p>{{/each}}</details>{{/if}}
 {{> studentBottom}}

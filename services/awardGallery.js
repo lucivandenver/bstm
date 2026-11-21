@@ -27,17 +27,18 @@ export function awardGallery(credentials, attempts, { q = '', type = '', sort = 
   const query = String(q).trim().toLowerCase();
   let records = [...badges, ...rows].filter(row => (!type || row.type === type) && `${row.title} ${row.courseTitle} ${row.academy}`.toLowerCase().includes(query));
   records.sort(sort === 'az' ? (a,b) => a.title.localeCompare(b.title) || a.type.localeCompare(b.type) : (a,b) => b.issued - a.issued || a.title.localeCompare(b.title));
-  // Keep each course badge in the left column and its certificates in the right.
+  // Keep each course badge before its certificates in the flowing gallery.
   const grouped = [...new Set(records.map(row => row.courseId))].map(courseId => ({
     courseId, badges: records.filter(row => row.courseId === courseId && row.type === 'badge'),
     certificates: records.filter(row => row.courseId === courseId && row.type === 'certificate')
   }));
   const units = type ? records : grouped.flatMap(group => [...group.badges, ...group.certificates]);
-  const pages = Math.max(1, Math.ceil(units.length / 5));
+  const pageSize = 8;
+  const pages = Math.max(1, Math.ceil(units.length / pageSize));
   const current = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
   const href = next => `?${new URLSearchParams({ q, type, sort, page: String(next) })}`;
-  const selected = units.slice((current-1)*5,current*5);
+  const selected = units.slice((current-1)*pageSize,current*pageSize);
   return { records: selected,
-    groups: grouped, paired: false, count: records.length, page: current, pages,
+    groups: grouped, paired: false, count: records.length, page: current, pages, hasPages: pages > 1,
     previous: current > 1 ? href(current-1) : null, next: current < pages ? href(current+1) : null, q, type, sort };
 }
