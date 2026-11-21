@@ -20,9 +20,9 @@ test('search, type and sorting work together and pagination preserves filters', 
   assert.deepEqual(certificates.records.map(r => r.title), ['Booking', 'Travel']);
   assert.equal(awardGallery(credentials, attempts, { q: 'MinSU' }).count, 5);
   assert.equal(awardGallery(credentials, attempts, { q: 'no matching academy' }).count, 0);
-  const more = [...credentials, ...Array.from({ length: 5 }, (_,i) => ({ ...credentials[0], id: `extra${i}`, moduleId: `extra${i}` }))];
+  const more = [...credentials, ...Array.from({ length: 9 }, (_,i) => ({ ...credentials[0], id: `extra${i}`, moduleId: `extra${i}` }))];
   const page = awardGallery(more, attempts, { type: 'certificate', q: 'Tourism', sort: 'az', page: 2 });
-  assert.equal(page.records.length, 2);
+  assert.equal(page.records.length, 3);
   assert.ok(page.previous.includes('type=certificate'));
   assert.ok(page.previous.includes('q=Tourism'));
   assert.equal(page.page, 2);
@@ -45,4 +45,20 @@ test('all awards flow badge-first without reserving a course column', () => {
   assert.equal(gallery.paired, false);
   assert.deepEqual(gallery.records.map(row => row.type), ['badge', 'certificate', 'badge', 'certificate', 'certificate']);
   assert.equal(gallery.records.length, 5);
+});
+
+test('achievement pagination fills eight cards before starting another page', () => {
+  const make = count => Array.from({ length: count }, (_, i) => ({ ...credentials[0], id: `card${i}`, moduleId: `module${i}` }));
+  const eight = awardGallery(make(8), attempts, { type: 'certificate' });
+  assert.equal(eight.records.length, 8);
+  assert.equal(eight.hasPages, false);
+  assert.equal(eight.next, null);
+  const nine = awardGallery(make(9), attempts, { type: 'certificate' });
+  assert.equal(nine.records.length, 8);
+  assert.equal(nine.hasPages, true);
+  const second = awardGallery(make(9), attempts, { type: 'certificate', page: 2 });
+  assert.equal(second.records.length, 1);
+  assert.equal(second.next, null);
+  assert.equal(new Set([...nine.records, ...second.records].map(row => row.id)).size, 9);
+  assert.equal(awardGallery(make(7), attempts).records.length, 8, 'course badge counts as a gallery card');
 });
