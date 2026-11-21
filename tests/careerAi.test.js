@@ -19,7 +19,7 @@ test('optional Gemini only receives anonymised evidence and validates its output
     assert.equal((await explainCareer(evidence)).nextSteps.length, 3);
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"summary":42}' }] } }] }) });
     await assert.rejects(explainCareer(evidence), /Invalid AI response/);
-    globalThis.fetch = async () => ({ ok: false });
+    globalThis.fetch = async () => Response.json({}, { status: 503 });
     await assert.rejects(explainCareer(evidence), /temporarily unavailable/);
   } finally {
     globalThis.fetch = original;
@@ -71,3 +71,14 @@ test('career guidance parses Groq responses and retains rule-ranked titles', asy
     else process.env.GROQ_API_KEY = keyBefore;
   }
 });
+
+ test('career provider network failures are bounded to one request', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  try {
+    globalThis.fetch = async () => { calls++; throw new TypeError('Network failure'); };
+    await assert.rejects(explainCareer({ scores: {}, tracks: [{ title: 'Reservations Assistant' }] }, undefined,
+      { provider: 'gemini', ready: true, model: 'test-model', apiKey: 'test-key' }), error => error.code === 'AI_TIMEOUT' && error.status === 504);
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+ });
