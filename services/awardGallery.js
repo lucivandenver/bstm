@@ -32,12 +32,12 @@ export function awardGallery(credentials, attempts, { q = '', type = '', sort = 
     courseId, badges: records.filter(row => row.courseId === courseId && row.type === 'badge'),
     certificates: records.filter(row => row.courseId === courseId && row.type === 'certificate')
   }));
-  const units = type ? records : grouped;
+  const units = type ? records : grouped.flatMap(group => [...group.badges, ...group.certificates]);
   const pages = Math.max(1, Math.ceil(units.length / 5));
   const current = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
   const href = next => `?${new URLSearchParams({ q, type, sort, page: String(next) })}`;
   const selected = units.slice((current-1)*5,current*5);
-  return { records: type ? selected : selected.flatMap(group => [...group.badges, ...group.certificates]),
-    groups: type ? null : selected, paired: !type, count: records.length, page: current, pages,
+  return { records: selected,
+    groups: grouped, paired: false, count: records.length, page: current, pages,
     previous: current > 1 ? href(current-1) : null, next: current < pages ? href(current+1) : null, q, type, sort };
 }

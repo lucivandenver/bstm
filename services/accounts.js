@@ -35,5 +35,10 @@ export async function seedAdministration() {
   const old = await User.findAll({ where: { role: 'student' }, attributes: ['section'] });
   for (const user of old) if (user.section) await Section.findOrCreate({ where: { name: user.section }, defaults: { active: true } });
   if (firstSeed) for (const track of defaultCareerTracks) await CareerPath.findOrCreate({ where: { title: track.title }, defaults: { ...track, active: true } });
+  // Versioned additions preserve later administrator edits and deactivation choices.
+  if (!await Setting.findOne({ where: { key: 'careerSectorCatalogV3' } })) {
+    for (const track of defaultCareerTracks) await CareerPath.findOrCreate({ where: { title: track.title }, defaults: { ...track, active: true } });
+    await Setting.create({ key: 'careerSectorCatalogV3', value: '1' });
+  }
   for (const [key, value] of Object.entries({ adminSeedVersion: '1', institutionName: 'MinSU Bongabong Campus', academicYear: '2026-2027', registrationEnabled: 'true', facultyRegistrationEnabled: 'true', certificateFooter: 'Platform course completion record. Not a TESDA or professional licence.' })) await Setting.findOrCreate({ where: { key }, defaults: { value } });
 }

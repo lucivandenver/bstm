@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { PracticalSubmission } from '../models/portalModels.js';
-import { careerMatches } from './learning.js';
+import { careerMatches, moduleAssessmentResult } from './learning.js';
 export async function buildEvidence(attempts, baseline, interest = '', tracks) {
   const ids = attempts.filter(a => a.status === 'completed').map(a => a.id);
   const practicals = ids.length ? await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: ids }, status: 'graded' }, attributes: ['attemptId','taskId','grade'] }) : [];
@@ -8,9 +8,7 @@ export async function buildEvidence(attempts, baseline, interest = '', tracks) {
 }
 export function moduleResults(attempt) {
   return (attempt.snapshot.modules || []).map(module => {
-    const saved = attempt.quizScores?.[module.id];
-    const latest = attempt.quizAttempts?.findLast(quiz => quiz.scope === module.id && !quiz.expired);
-    const score = saved >= attempt.snapshot.passingScore ? saved : latest?.score ?? saved;
+    const score = moduleAssessmentResult(attempt, module.id)?.score;
     return { title: module.title, score, retakes: attempt.quizScores?.[`retake:${module.id}`] || 0, assessed: Number.isFinite(score),
       passed: Number.isFinite(score) && score >= attempt.snapshot.passingScore };
   });

@@ -4,31 +4,34 @@
 <section class="card career-finder">
   <div class="row wrap"><h2>Your career matches</h2><a class="button secondary" href="/student/careers?find=matches#career-matches" data-career-match-search aria-controls="career-matches">{{> icon name="search"}} Find My Career Matches</a></div>
   <p class="small muted">Passed module assessments inform your matches. Below-passing module quiz scores identify areas to work on.</p>
-  <div class="career-cloud-search" data-career-match-loading hidden role="status"><strong>Finding your career matches…</strong></div>
+  <div class="career-cloud-search" data-career-match-loading hidden role="status" aria-live="polite"><span class="career-clouds" aria-hidden="true"></span><span class="career-magnifier" aria-hidden="true">{{> icon name="search"}}</span><strong>Finding your career matches…</strong><p>Comparing your assessed competencies and earned learning evidence.</p></div>
   {{#if aiReady}}<details class="space-top"><summary>Get an optional AI explanation</summary>
     <form action="/student/careers/generate" method="post" data-career-form>
       <input type="hidden" name="provider" value="{{aiProvider}}"><input type="hidden" name="_csrf" value="{{csrf}}">
       <label class="answer"><input type="checkbox" name="consent" value="yes" required><span>I agree to share anonymised module titles, progress, and assessment scores with {{aiProviderLabel}}.</span></label>
       <button type="submit" class="button secondary space-top">Ask AI to explain my matches</button>
-      <p class="notice error" data-career-error role="alert" hidden></p><p data-career-loading hidden role="status">Preparing your explanation…</p>
+      <p class="notice error" data-career-error role="alert" hidden></p><p class="career-ai-loading" data-career-loading hidden role="status"><span class="career-spinner" aria-hidden="true"></span> Preparing explanations for your matched pathways…</p>
     </form>
   </details>{{/if}}
 </section>
 <script src="/js/career-finder.js" defer></script>
 <section id="career-matches" aria-live="polite">
   {{#if showCareerMatches}}
+    <section class="card space-top"><h2>Your career sectors</h2><p class="small muted">New published modules are considered when you complete their assessments. Only sectors supported by your passed module assessments appear.</p><div class="career-results-grid">{{#each sectors}}<article class="career-ai-match"><h3>{{name}}</h3><strong>{{percent}}% evidence alignment</strong><p>{{passedModules}} passed modules · {{certificates}} supporting certificates · {{matches}} related career directions</p></article>{{/each}}</div></section>
+
     {{#if ai}}<div id="ai-results" class="card space-top"><h2>AI career guidance</h2><p>{{ai.summary}}</p><p class="small muted">Alignment reflects quiz evidence and coverage of the pathway’s required competencies.</p>
-      <div class="grid cols-2">{{#each ai.matches}}<article class="career-ai-match"><h3>{{title}}</h3>{{#if alignment}}<p><strong>{{alignment}}% evidence alignment</strong> · {{assessedAreas}} of {{totalAreas}} required areas assessed</p>{{/if}}<p class="small">These passed module assessments overlap with the pathway:</p>{{> careerModuleEvidence}}</article>{{/each}}</div>
+      <div class="career-results-grid">{{#each ai.matches}}<article class="career-ai-match"><h3>{{title}}</h3><p class="small muted">{{sector}}</p>{{#if alignment}}<p><strong>{{alignment}}% evidence alignment</strong> · {{assessedAreas}} of {{totalAreas}} required areas assessed</p>{{/if}}<p>{{reason}}</p><p><strong>Next learning step:</strong> {{nextStep}}</p><details><summary>View supporting assessments and certificates</summary>{{> careerModuleEvidence}}</details>{{#if failedModules}}<details><summary>Related assessment gaps</summary>{{#each failedModules}}<p>{{title}} · {{score}}% · {{passingScore}}% to pass · {{retakeCount}} retake(s)</p>{{/each}}</details>{{/if}}</article>{{/each}}</div>
     </div>{{/if}}
     <section class="card space-top"><h2>Matched career pathways</h2>
-      {{#if tracks.length}}<ul>{{#each tracks}}<li>{{title}}</li>{{/each}}</ul>
+      <p class="small muted">Percentages measure learning evidence alignment: 65% assessed score + 35% competency coverage within the related sector. Assessed scores average passed module competency results and each valid completed-course final once per competency. Certificates confirm the same learning; they do not add duplicate points. Broad competency overlap is exploratory, not verified job readiness or employment probability.</p>
+      {{#if tracks.length}}<div class="career-results-grid">{{#each tracks}}<article class="career-ai-match" data-career-pathway><h3>{{title}}</h3><p class="small muted">{{sector}}</p><p><strong>{{rank}}% evidence alignment</strong></p><progress value="{{rank}}" max="100" aria-label="{{title}} learning evidence alignment"></progress><p class="small">{{assessedAreas}} of {{totalAreas}} required competency areas assessed · {{label}}</p><details><summary>Assessment and certificate evidence</summary>{{> careerModuleEvidence}}</details>{{#if failedModules}}<details><summary>Related assessment gaps</summary>{{#each failedModules}}<p>{{title}} · {{score}}% · {{passingScore}}% to pass · {{retakeCount}} retake(s)</p>{{/each}}</details>{{/if}}</article>{{/each}}</div>
       {{else}}<p>No configured pathway matches the scored competencies in your passed modules yet.</p>{{/if}}
     </section>
     <div class="grid cols-2 space-top">
       <section class="card"><h2>Passed module evidence</h2>{{#each passedModules}}<p>{{title}}</p>{{/each}}</section>
-      <section class="card"><h2>Gaps from below-passing module quizzes</h2>{{#each developingCourses}}<p>{{title}}</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
+      <section class="card"><h2>Gaps from below-passing module quizzes</h2>{{#each developingCourses}}<p><strong>{{title}}</strong> · {{score}}% · {{passingScore}}% to pass · {{retakeCount}} retake(s) · Review and retake</p>{{else}}<p>No below-passing module quiz results.</p>{{/each}}</section>
     </div>
   {{else}}<div class="card empty space-top"><h2>Your matches will appear here</h2></div>{{/if}}
 </section>
-{{else}}<section class="card"><h2>Take and pass a module assessment to see career matches</h2><a class="button secondary" href="/student/courses">Explore Courses →</a></section>{{/if}}
+{{else}}<section class="card"><h2>Take and pass a module assessment to see career matches</h2><a class="button secondary" href="/student/courses">Explore Courses →</a></section>{{#if developingCourses}}<section class="card space-top"><h2>Assessments to review</h2>{{#each developingCourses}}<p>{{title}} · {{score}}% · {{passingScore}}% to pass · {{retakeCount}} retake(s)</p>{{/each}}</section>{{/if}}{{/if}}
 {{> studentBottom}}

@@ -1,6 +1,6 @@
 <ul class="list-clean small">
   {{#each supportingModules}}
-  <li><strong>{{title}}</strong> · Quiz {{score}}% · {{percent}}% progress
+  <li><strong>{{title}}</strong> · Quiz {{score}}% · {{#if retakeHistoryAvailable}}{{#if retakesBeforePass}}Passed after {{retakesBeforePass}} retake(s){{else}}Passed on first attempt · 0 retakes{{/if}}{{else}}Retake history unavailable{{/if}} · {{percent}}% progress{{#if certificateEarned}} · Certificate earned{{/if}}{{#if finalAssessmentScore}} · Completed-course final {{finalAssessmentScore}}%{{/if}}
     <ul>{{#each areas}}<li>{{name}} · {{score}}%</li>{{/each}}</ul>
   </li>
   {{/each}}

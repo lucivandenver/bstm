@@ -1,3 +1,4 @@
+import { careerSectors } from './careerSectors.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sessionSecret } from '../config/env.js';
 import { domains } from '../data/starterCourses.js';
@@ -35,6 +36,14 @@ export function publishedAttemptSnapshot(attempt, course) {
     courseVersion: course.version,
     finalScore: scopeChanged ? null : attempt.finalScore
   };
+}
+export function moduleAssessmentResult(attempt, moduleId) {
+  const submissions = (attempt.quizAttempts || []).filter(result => result.scope === moduleId && !result.expired && Number.isFinite(result.score));
+  const firstPass = submissions.find(result => result.score >= attempt.snapshot.passingScore);
+  if (firstPass) return firstPass;
+  const saved = attempt.quizScores?.[moduleId];
+  if (Number.isFinite(saved) && saved >= attempt.snapshot.passingScore) return { score: saved };
+  return submissions.at(-1) || (Number.isFinite(saved) ? { score: saved } : null);
 }
 export function canTakeQuiz(attempt, moduleId) {
   const module = attempt.snapshot.modules.find(item => item.id === moduleId);
@@ -133,9 +142,7 @@ export function careerMatches(attempts, baseline, interest = '', tracks = defaul
   }).sort((a, b) => b.rank - a.rank) };
 }
 
-export const defaultCareerTracks = [
-    { title: 'Travel Consultant / Tour Operations Assistant', focus: 'Travel and tour operations', required: [domains[0], domains[1], domains[3]] },
-    { title: 'Guest Services / Front Office Assistant', focus: 'Hospitality and guest services', required: [domains[1], domains[2], domains[3]] },
-    { title: 'Events Coordination Assistant', focus: 'Events and MICE', required: [domains[0], domains[1], domains[2]] },
-    { title: 'Tourism Information Assistant', focus: 'Destination and visitor services', required: [domains[0], domains[1]] }
-  ];
+export const defaultCareerTracks = careerSectors.flatMap(sector => sector.roles.map(title => ({
+  title, focus: sector.name, required: sector.name === 'Tourism Destination/Community Management' ? [domains[0], domains[1]] :
+    ['Travel and Tour Operations', 'Airline and Airport Services', 'General Management/Entrepreneurship'].includes(sector.name) ? [domains[0], domains[1], domains[3]] : [domains[0], domains[1], domains[2]]
+})));

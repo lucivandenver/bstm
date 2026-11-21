@@ -491,6 +491,21 @@ await test('complete Faculty→Student→rubric→award workflow, scopes, versio
     });
     assert.match(submitted.location, /\/result\//);
     assert.equal((await learnerAttempt.reload()).quizScores.m2, 100);
+    const lockedHistoryCount = learnerAttempt.quizAttempts.length;
+    assert.equal((await s.post(learnUrl + '/retake/m2', {})).status, 403);
+    const passedPage = await s.get(learnUrl + '/quiz/m2');
+    assert.equal(passedPage.status, 302);
+    assert.match(passedPage.location, /review\/m2/);
+    assert.equal((await s.post(learnUrl + '/quiz/m2', { challenge: issueChallenge(student.id, `${learnerAttempt.id}:m2`), ...answers })).status, 409);
+    assert.equal((await s.post(learnUrl + '/draft/m2', { revision: 0 })).status, 403);
+    await learnerAttempt.reload();
+    assert.equal(learnerAttempt.quizScores.m2, 100);
+    assert.equal(learnerAttempt.quizAttempts.length, lockedHistoryCount);
+    const passedOverview = await s.get(learnUrl + '?module=m2');
+    assert.equal(passedOverview.status, 200);
+    assert.doesNotMatch(passedOverview.html, /\(Locked\)|Quiz[^<]* \u00b7 Locked/);
+
+
     const facultyReport = await f2.get('/faculty/reports');
     assert.match(facultyReport.html, /Independent module . 100% . Passed/);
     assert.match(facultyReport.html, /Final assessment: Not submitted/);

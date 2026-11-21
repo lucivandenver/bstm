@@ -9,11 +9,12 @@
       matchLink.dataset.searching = "true";
       matchLink.setAttribute("aria-disabled", "true");
       matchLoading.hidden = false;
+      matchLink.setAttribute("aria-busy", "true");
       matchLoading.scrollIntoView({
         block: "nearest",
         behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
       });
-      window.setTimeout(() => location.assign(matchLink.href), 850);
+      window.setTimeout(() => location.assign(matchLink.href), 1600);
     });
   }
   const form = document.querySelector("[data-career-form]");
