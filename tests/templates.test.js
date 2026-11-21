@@ -59,3 +59,24 @@ await test('faculty announcement selection offers search, section and gender wit
   assert.match(html, /type="checkbox" name="studentIds" value="1"/);
   assert.doesNotMatch(html, /multiple size|Hold Ctrl/);
 });
+
+await test('career names and AI cards stay inside their respective sector sections', async () => {
+  const sectorGroups = [
+    { name: 'Travel and Tour Operations', tracks: [{ title: 'Reservations Assistant' }], explanations: [{ title: 'Reservations Assistant', alignment: 90, reason: 'Booking evidence.', nextStep: 'Study itineraries.' }] },
+    { name: 'Events and MICE', tracks: [{ title: 'Events Coordination Assistant' }], explanations: [{ title: 'Events Coordination Assistant', alignment: 80, reason: 'Events evidence.', nextStep: 'Study conferences.' }] }
+  ];
+  const context = { ...data, hasPassedModule: true, showCareerMatches: true, sectorGroups };
+  const names = await render('views/student/careers.xian', context);
+  const lists = [...names.matchAll(/data-career-sector>([\s\S]*?)<\/section>/g)].map(match => match[1]);
+  assert.equal(lists.length, 2);
+  assert.match(lists[0], /Travel and Tour Operations[\s\S]*Reservations Assistant/);
+  assert.doesNotMatch(lists[0], /Events Coordination Assistant/);
+  assert.match(lists[1], /Events and MICE[\s\S]*Events Coordination Assistant/);
+  assert.doesNotMatch(names, /career-ai-match|evidence alignment|Booking evidence/);
+  const explained = await render('views/student/careers.xian', { ...context, ai: { summary: 'Your learning evidence.' } });
+  const groups = [...explained.matchAll(/data-career-guidance-sector>([\s\S]*?)<\/section>/g)].map(match => match[1]);
+  assert.equal(groups.length, 2);
+  assert.match(groups[0], /Travel and Tour Operations[\s\S]*90% evidence alignment[\s\S]*Booking evidence/);
+  assert.doesNotMatch(groups[0], /Events evidence/);
+  assert.match(groups[1], /Events and MICE[\s\S]*80% evidence alignment[\s\S]*Events evidence/);
+});
