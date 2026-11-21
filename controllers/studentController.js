@@ -779,8 +779,13 @@ export const careers = async (req, res) => {
   const hasPassedModule = evidence.completed.length > 0;
   const showCareerMatches = hasPassedModule && req.session.careerMatchSearchUserId === req.user.id;
   const provider = hasPassedModule ? await careerProvider() : {};
-  render(res, 'careers', { title: 'Find My Career', hasPassedModule, showCareerMatches, tracks: evidence.tracks,
-    sectors: evidence.sectors, passedModules: evidence.completed, developingCourses: evidence.developing,
+  const sectorGroups = evidence.sectors.map(sector => ({
+    name: sector.name,
+    tracks: evidence.tracks.filter(track => track.sector === sector.name),
+    explanations: (req.session.careerAi?.matches || []).filter(match => match.sector === sector.name)
+  }));
+  render(res, 'careers', { title: 'Find My Career', hasPassedModule, showCareerMatches, sectorGroups,
+    developingCourses: evidence.developing,
     aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi });
 };
 export const generateGuidance = async (req, res) => {

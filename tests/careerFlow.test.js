@@ -31,9 +31,9 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   assert.match(facultyProgress.html,/value="33" max="100" aria-label="Tourism and Hospitality Knowledge progress"/);
   let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
   r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
-  assert.match(r.html, /% evidence alignment/);
+  assert.doesNotMatch(r.html, /% evidence alignment|career-ai-match|View supporting assessments|Passed module evidence/);
   assert.ok((r.html.match(/data-career-pathway/g) || []).length >= 3);
-  assert.match(r.html, /Your career sectors/);
+  assert.match(r.html, /data-career-sector>\s*<h3>Travel and Tour Operations<\/h3>\s*<ul><li data-career-pathway>/);
   assert.doesNotMatch(r.html, /Airline and Airport Services/);
   assert.doesNotMatch(r.html, /No assessed evidence yet/);
   assert.match(r.html, /career-magnifier/);
@@ -47,7 +47,7 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   };
   const body=new URLSearchParams({_csrf:client.csrf,consent:'yes'});
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).redirect,'/student/careers#ai-results');
-  r=await client.get('/student/careers');assert.match(r.html,/Tourism service module/);assert.match(r.html,/Quiz 85%/);assert.match(r.html,/% evidence alignment/);assert.doesNotMatch(r.html,/Invented certificate claim|Never assessed module/);assert.match(r.html,/id="ai-results"/);
+  r=await client.get('/student/careers');assert.match(r.html,/Tourism service module/);assert.match(r.html,/Quiz 85%/);assert.match(r.html,/% evidence alignment/);assert.doesNotMatch(r.html,/Invented certificate claim|Never assessed module/);assert.match(r.html,/id="ai-results"/);assert.match(r.html,/data-career-guidance-sector>\s*<h3>Travel and Tour Operations<\/h3>\s*<div class="career-results-grid">/);assert.match(r.html,/Related assessment gaps/);assert.match(r.html,/Digital reservations module/);
   await developing.update({completedLessons:['l2','l3']});r=await client.get('/student/careers');assert.doesNotMatch(r.html,/id="ai-results"/,'changing progress invalidates the cached guidance');
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({_csrf:client.csrf})});assert.equal(r.status,400);
  }finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;if(model===undefined)delete process.env.GEMINI_MODEL;else process.env.GEMINI_MODEL=model;await new Promise(r=>server.close(r));await closeResources();}
