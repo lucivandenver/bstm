@@ -14,7 +14,7 @@
         block: "nearest",
         behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
       });
-      window.setTimeout(() => location.assign(matchLink.href), 1600);
+      window.setTimeout(() => location.assign(matchLink.href), 250);
     });
   }
   const form = document.querySelector("[data-career-form]");
@@ -24,6 +24,7 @@
     error = form.querySelector("[data-career-error]");
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (button.disabled) return;
     const body = new URLSearchParams(new FormData(form));
     button.disabled = true;
     loading.hidden = false;

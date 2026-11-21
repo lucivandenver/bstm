@@ -19,7 +19,6 @@ import { text, email as normalizeEmail, profileInput, topicTitle } from '../serv
 import { baselineQuestions, domains } from '../data/starterCourses.js';
 import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, moduleAssessmentResult, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerFingerprint } from '../services/careerAi.js';
-import { aiConfiguration } from '../services/gemini.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
 import { appUrl } from '../config/env.js';
 import { readFile } from 'node:fs/promises';
@@ -766,9 +765,7 @@ export const results = async (req, res) => {
 };
 async function careerProvider() {
   const course = await courseAiConfiguration();
-  const gemini = aiConfiguration();
-  if (course.ready && course.provider === 'groq') return course;
-  return { ...gemini, provider: 'gemini', label: 'Gemini' };
+  return { ...course, fallback: false };
 }
 export const careers = async (req, res) => {
   if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
@@ -801,6 +798,12 @@ export const generateGuidance = async (req, res) => {
     if (!evidence.completed.length) return reject('Pass at least one module before finding career matches.');
     if (!evidence.tracks.length) return reject('Your passed modules do not yet have a scored competency linked to a configured pathway.');
     const { learning } = evidence;
+    const fingerprint = careerFingerprint(evidence, learning);
+    if (req.session.careerAi?.fingerprint === fingerprint) {
+      req.session.careerMatchSearchUserId = req.user.id;
+      if (json) return res.json({ ok: true, redirect: '/student/careers#ai-results' });
+      return res.redirect('/student/careers#ai-results');
+    }
     const provider = await careerProvider();
     if ((req.body.provider || 'gemini') !== provider.provider) return reject('The AI provider changed. Reopen Career Matches and confirm the new provider.', 409);
     const ai = await explainCareer(evidence, learning, provider, { moduleOnly: true });

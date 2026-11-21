@@ -129,7 +129,7 @@ export function createCourseTransport({
   now = Date.now,
   random = Math.random,
 } = {}) {
-  return async function request(config, { system, payload, schema, onStatus }) {
+  return async function request(config, { system, payload, schema, onStatus, timeoutMs = 90000, maxAttempts = 4, maxOutputTokens }) {
     const key = (config.apiKey || (config.provider === "groq" ? process.env.GROQ_API_KEY : config.provider === "vertex" ? process.env.VERTEX_API_KEY : process.env.GEMINI_API_KEY || process.env.GEMINI_FALLBACK_API_KEY))?.trim();
     if (config.provider === "vertex" ? !vertexReady() : !key) throw generationError("COURSE_AI_NOT_CONFIGURED");
     const groq = config.provider === "groq";
@@ -175,7 +175,7 @@ export function createCourseTransport({
             },
           },
           temperature: 0.2,
-          max_completion_tokens: 3500,
+          max_completion_tokens: maxOutputTokens || 3500,
         }
       : {
           systemInstruction: { parts: [{ text: system }] },
@@ -184,24 +184,24 @@ export function createCourseTransport({
             responseMimeType: "application/json",
             responseJsonSchema: schema,
             temperature: 0.2,
-            maxOutputTokens: Math.min(
+            maxOutputTokens: maxOutputTokens || Math.min(
               14000,
               2500 + payload.questionCount * 350,
             ),
           },
         };
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let response, data;
       try {
         response = await fetchImpl(url, {
           method: "POST",
           headers,
-          signal: AbortSignal.timeout(90000),
+          signal: AbortSignal.timeout(timeoutMs),
           body: JSON.stringify(body),
         });
         data = (await response.json().catch(() => ({}))) || {};
       } catch (error) {
-        if (attempt === 3) throw generationError("COURSE_AI_TIMEOUT");
+        if (attempt === maxAttempts - 1) throw generationError("COURSE_AI_TIMEOUT");
       }
       if (response?.ok) {
         if (groq) {
@@ -254,7 +254,7 @@ export function createCourseTransport({
         info.delayMs,
         Math.min(30000, 2000 * 2 ** attempt) + Math.floor(random() * 1000),
       );
-      if (attempt === 3 || delay > 60000) {
+      if (attempt === maxAttempts - 1 || delay > 60000) {
         const error = generationError(
           status === 429 ? "COURSE_AI_QUOTA" : "COURSE_AI_UNAVAILABLE",
         );
