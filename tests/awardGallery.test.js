@@ -39,3 +39,10 @@ test('badge/certificate pairs stay together and descriptions remain brief', asyn
     assert.ok(group.certificates.every(c => c.courseId === group.badges[0].courseId));
   }
 });
+
+test('all awards flow badge-first without reserving a course column', () => {
+  const gallery = awardGallery(credentials, attempts);
+  assert.equal(gallery.paired, false);
+  assert.deepEqual(gallery.records.map(row => row.type), ['badge', 'certificate', 'badge', 'certificate', 'certificate']);
+  assert.equal(gallery.records.length, 5);
+});

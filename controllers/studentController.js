@@ -17,7 +17,7 @@ import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notifica
 import { User } from '../models/userModel.js';
 import { text, email as normalizeEmail, profileInput, topicTitle } from '../services/validation.js';
 import { baselineQuestions, domains } from '../data/starterCourses.js';
-import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
+import { progress, publishedAttemptSnapshot, canTakeQuiz, canTakeFinal, moduleAssessmentResult, grade, starsFor, publicQuestions, issueChallenge, checkChallenge, defaultCareerTracks } from '../services/learning.js';
 import { explainCareer, careerFingerprint } from '../services/careerAi.js';
 import { aiConfiguration } from '../services/gemini.js';
 import { courseAiConfiguration } from '../services/courseAiProvider.js';
@@ -371,7 +371,8 @@ function moduleProgress(attempt, module) {
   const results = submissions.filter(result => !result.expired);
   const recordedRetakes = attempt.quizScores[`retake:${module.id}`] || 0;
   const retakeCount = Math.max(recordedRetakes, results.length - 1);
-  const storedScore = attempt.quizScores[module.id];
+  const lockedResult = moduleAssessmentResult(attempt, module.id);
+  const storedScore = lockedResult?.score >= attempt.snapshot.passingScore ? lockedResult.score : attempt.quizScores[module.id];
   const passed = storedScore >= attempt.snapshot.passingScore;
   const retakeInProgress = recordedRetakes > 0 && typeof storedScore !== 'number';
   const score = retakeInProgress ? undefined : passed ? storedScore : results.at(-1)?.score ?? storedScore;
@@ -407,12 +408,12 @@ function moduleOutline(attempt, module, index, draft) {
   const questions = scopeQuestions(attempt, module.id);
   const topics = assessmentTopics(module, questions, draft || { answers: {} });
   const progress = moduleProgress(attempt, module);
-  const readingReady = !module.materials?.length || Boolean(attempt.quizScores[`read:${module.id}`]);
-  const reviewing = attempt.status === 'completed';
+  const readingReady = progress.passed || !module.materials?.length || Boolean(attempt.quizScores[`read:${module.id}`]);
+  const reviewing = attempt.status === 'completed' || progress.passed;
   let unlocked = true;
   const lessons = module.lessons.map((lesson, lessonIndex) => {
     const topicQuestions = topics.find(topic => topic.id === lesson.id)?.questions || [];
-    const lectureDone = (reviewing || unlocked && readingReady) && attempt.completedLessons.includes(lesson.id);
+    const lectureDone = reviewing || unlocked && readingReady && attempt.completedLessons.includes(lesson.id);
     const quizDone = Boolean(topicQuestions.length && lectureDone && (progress.answered ||
       topicQuestions.every(question => question.options.some(option => option.checked))));
     const quizOpen = unlocked && lectureDone && topicQuestions.length && !progress.answered && !reviewing && quizAccess(attempt, module.id);
@@ -581,6 +582,7 @@ export const quizPage = async (req, res) => {
   if (attempt.status === 'completed') return res.redirect(`/student/learn/${attempt.id}`);
   const moduleIndex = attempt.snapshot.modules.findIndex(item => item.id === scope);
   const module = attempt.snapshot.modules[moduleIndex];
+  if (module && moduleProgress(attempt, module).passed) return res.redirect(`/student/learn/${attempt.id}/review/${encodeURIComponent(module.id)}`);
   if (module && moduleProgress(attempt, module).failed) {
     return res.redirect(moduleStartHref(attempt, module.id) || `/student/learn/${attempt.id}?module=${encodeURIComponent(module.id)}`);
   }
@@ -678,6 +680,7 @@ export const submitQuiz = async (req, res) => {
   await sequelize.transaction(async transaction => {
     const attempt = await ownedAttempt(req, transaction); if (!attempt) error('Attempt not found.', 404);
     if (attempt.status === 'completed' || attempt.quizAttempts.some(a => a.nonce === nonce)) return;
+    if (!final && !pretest && moduleAssessmentResult(attempt, scope)?.score >= attempt.snapshot.passingScore) error('This module is already passed. You can review its content and results.', 409);
     if (final && finalFeedbackAvailable(attempt)) error('You have already passed this final assessment.', 409);
     if (!scopeAllowed(attempt, scope)) error('Requirements are incomplete.', 403);
     const moduleIndex = attempt.snapshot.modules.findIndex(module => module.id === scope);
@@ -692,7 +695,7 @@ export const submitQuiz = async (req, res) => {
     const result = grade(scopeQuestions(attempt, scope), req.body.answers || {}), passed = result.score >= attempt.snapshot.passingScore;
     const update = { quizAttempts: [...attempt.quizAttempts, { nonce, scope, finalAssessmentRevision: attempt.snapshot.finalAssessmentRevision, score: result.score, scores: result.scores, correct: result.correct, total: result.total, nextDraftRevision: draft.revision + 1, seconds: Math.max(0, Math.floor((Date.now() - new Date(draft.startedAt)) / 1000)), at: new Date().toISOString() }], lastActivityAt: new Date() };
     if (final) update.finalScore = result.score;
-    else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: Math.max(attempt.quizScores[scope] || 0, result.score) };
+    else if (!pretest) update.quizScores = { ...attempt.quizScores, [scope]: result.score };
     await attempt.update(update, { transaction });
     await draft.destroy({ transaction });
     if (!final && !pretest) await removeStartedBookmark(attempt, scope, transaction);
@@ -769,7 +772,7 @@ async function careerProvider() {
 }
 export const careers = async (req, res) => {
   if (req.query.find === 'matches') req.session.careerMatchSearchUserId = req.user.id;
-  const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks());
+  const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks(), (await Credential.findAll({ where: { userId: req.user.id, revoked: false } })).map(plain));
   const { learning } = evidence;
   const fingerprint = careerFingerprint(evidence, learning);
   if (req.session.careerAi?.fingerprint !== fingerprint) delete req.session.careerAi;
@@ -777,7 +780,7 @@ export const careers = async (req, res) => {
   const showCareerMatches = hasPassedModule && req.session.careerMatchSearchUserId === req.user.id;
   const provider = hasPassedModule ? await careerProvider() : {};
   render(res, 'careers', { title: 'Find My Career', hasPassedModule, showCareerMatches, tracks: evidence.tracks,
-    passedModules: evidence.completed, developingCourses: evidence.developing,
+    sectors: evidence.sectors, passedModules: evidence.completed, developingCourses: evidence.developing,
     aiReady: provider.ready, aiProvider: provider.provider, aiProviderLabel: provider.label, ai: req.session.careerAi });
 };
 export const generateGuidance = async (req, res) => {
@@ -789,7 +792,7 @@ export const generateGuidance = async (req, res) => {
   };
   if (req.body.consent !== 'yes') return reject('Confirm permission to share your anonymised learning evidence.');
   try {
-    const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks());
+    const evidence = studentCareerEvidence(await attemptsFor(req.user.id), await activeCareerTracks(), (await Credential.findAll({ where: { userId: req.user.id, revoked: false } })).map(plain));
     if (!evidence.completed.length) return reject('Pass at least one module before finding career matches.');
     if (!evidence.tracks.length) return reject('Your passed modules do not yet have a scored competency linked to a configured pathway.');
     const { learning } = evidence;

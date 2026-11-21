@@ -1,3 +1,4 @@
+import { moduleAssessmentResult } from './learning.js';
 import { facultySignature } from './publicationCredentials.js';
 import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
 import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
@@ -58,6 +59,7 @@ export function validateDraftAnswers(questions, input) {
   return answers;
 }
 export function quizAccess(attempt, scope) {
+  if (attempt.snapshot.modules.some(m => m.id === scope) && moduleAssessmentResult(attempt, scope)?.score >= attempt.snapshot.passingScore) return false;
   const p = attempt.snapshot.policy || {};
   if (scope === 'pretest') return Boolean(p.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'));
   if (p.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest')) return false;

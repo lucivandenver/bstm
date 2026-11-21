@@ -1,5 +1,6 @@
+import { careerSectors, sectorsForModule, sectorCareerTracks } from './careerSectors.js';
 import { domains } from '../data/starterCourses.js';
-import { careerMatches } from './learning.js';
+import { careerMatches, moduleAssessmentResult } from './learning.js';
 
 function moduleQuestionAreas(course, module) {
   return [...new Set((course.questions || [])
@@ -26,17 +27,21 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false, availab
     const { snapshot } = attempt;
     for (const module of snapshot.modules || []) {
       const key = `${attempt.courseId}:${module.id}`;
-      if (modules.has(key)) continue;
-      const latestResult = assessedOnly && attempt.quizAttempts?.findLast(quiz =>
-        quiz.scope === module.id && !quiz.expired && Number.isFinite(quiz.score));
-      const score = latestResult ? latestResult.score : attempt.quizScores?.[module.id];
+      const latestResult = moduleAssessmentResult(attempt, module.id);
+      const score = latestResult?.score;
       if (assessedOnly && !Number.isFinite(score)) continue;
       const topics = module.lessons || [];
       const lessons = topics.filter(lesson => attempt.completedLessons?.includes(lesson.id)).length;
       const read = Boolean(attempt.quizScores?.[`read:${module.id}`]);
       if (!Number.isFinite(score) && !lessons && !read) continue;
       const passingScore = snapshot.passingScore;
+      const submissions = (attempt.quizAttempts || []).filter(result => result.scope === module.id);
+      const firstPassIndex = submissions.findIndex(result => !result.expired && Number.isFinite(result.score) && result.score >= passingScore);
+      const retakeCount = Math.max(attempt.quizScores?.[`retake:${module.id}`] || 0, submissions.length - 1, 0);
+      const retakeHistoryAvailable = submissions.length > 0 || Object.hasOwn(attempt.quizScores || {}, `retake:${module.id}`);
+      const retakesBeforePass = retakeHistoryAvailable ? firstPassIndex >= 0 ? firstPassIndex : retakeCount : null;
       const passed = Number.isFinite(score) && score >= passingScore;
+      if (modules.has(key) && !passed) continue;
       const questionAreas = moduleQuestionAreas(snapshot, module);
       const areas = questionAreas.length ? questionAreas : courseAreas(snapshot);
       const result = latestResult || attempt.quizAttempts?.findLast(quiz => quiz.scope === module.id && !quiz.expired && quiz.score === score);
@@ -49,8 +54,8 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false, availab
         domains.includes(area) && Number.isFinite(value) && value >= 0 && value <= 100));
       const total = topics.length + Number(Boolean(module.materials?.length)) + 1;
       const done = lessons + Number(Boolean(module.materials?.length) && read) + Number(Number.isFinite(score));
-      modules.set(key, { title: module.title, courseTitle: snapshot.title, areas, scores,
-        score: Number.isFinite(score) ? score : null, assessed: Number.isFinite(score), passed, passingScore, done, total,
+      modules.set(key, { courseId: attempt.courseId, moduleId: module.id, attemptId: attempt.id, sectors: sectorsForModule(snapshot, module), finalAssessmentScore: attempt.status === 'completed' && Number.isFinite(attempt.finalScore) && attempt.finalScore >= snapshot.passingScore ? attempt.finalScore : null, title: module.title, courseTitle: snapshot.title, areas, scores,
+        retakeHistoryAvailable, retakesBeforePass, retakeCount, score: Number.isFinite(score) ? score : null, assessed: Number.isFinite(score), passed, passingScore, done, total,
         percent: passed && !assessedOnly ? 100 : Math.round(100 * done / total) });
     }
   }
@@ -85,23 +90,24 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false, availab
     lowScores: developing.filter(module => module.score !== null) };
 }
 
-export function studentCareerEvidence(attempts, tracks) {
+export function studentCareerEvidence(attempts, tracks, credentials = []) {
   const evidence = moduleEvidence(attempts, tracks, { assessedOnly: true });
+  for (const module of evidence.completed) module.certificateEarned = credentials.some(c => !c.revoked && Number(c.attemptId) === Number(module.attemptId) && (!c.moduleId || c.moduleId === module.moduleId));
   const learning = {
-    completed: evidence.completed.map(({ title, score, scores, percent }) => ({ title, score, scores, percent })),
-    developing: evidence.developing.map(({ title, score, scores, percent }) => ({ title, score, scores, percent }))
+    completed: evidence.completed.map(({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable })),
+    developing: evidence.developing.map(({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }))
   };
-  const ranked = evidence.tracks.map(track => ({
-    ...track,
-    required: track.required.filter(area => Object.hasOwn(evidence.scores, area) && evidence.scores[area] !== null),
-    gaps: track.required.filter(area => [...evidence.completed, ...evidence.developing].some(module =>
-      Number.isFinite(module.scores[area]) && module.scores[area] < module.passingScore)),
-    supportingModules: learning.completed.flatMap(module => {
-      const areas = Object.entries(module.scores).filter(([area]) => track.required.includes(area))
-        .map(([name, score]) => ({ name, score }));
-      return areas.length ? [{ title: module.title, score: module.score, percent: module.percent, areas }] : [];
-    }),
-    explanation: 'This pathway overlaps with competencies scored in your passed module quizzes.'
-  }));
-  return { ...evidence, tracks: ranked, learning };
+  const ranked = sectorCareerTracks(evidence.tracks, evidence.completed);
+  for (const track of ranked) {
+    track.failedModules = evidence.developing.filter(module => module.assessed && module.sectors.includes(track.sector));
+    track.gaps = [...new Set([...track.gaps, ...track.failedModules.flatMap(module => Object.entries(module.scores).filter(([,score]) => score < module.passingScore).map(([area]) => area))])];
+  }
+  const sectors = careerSectors.map(sector => {
+    const matches = ranked.filter(track => track.sector === sector.name);
+    const best = matches[0];
+    const modules = evidence.completed.filter(module => module.sectors.includes(sector.name));
+    return { name: sector.name, percent: best?.rank ?? 0, assessed: Boolean(best), matches: matches.length,
+      passedModules: modules.length, certificates: modules.filter(module => module.certificateEarned).length };
+  });
+  return { ...evidence, tracks: ranked, sectors: sectors.filter(sector => sector.assessed), learning };
 }

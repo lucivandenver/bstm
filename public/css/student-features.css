@@ -101,3 +101,15 @@ button.award-tile {
     overflow-y: auto;
   }
 }
+
+.career-ai-loading { display:flex; align-items:center; gap:12px; padding:16px 0; }
+.career-spinner { display:inline-block; width:24px; height:24px; border:3px solid #d5eade; border-top-color:#007042; border-radius:50%; animation:career-spin .8s linear infinite; flex:0 0 24px; }
+.career-results-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:18px; }
+.career-results-grid article { min-width:0; }
+.career-results-grid progress { width:100%; accent-color:#007042; }
+.career-results-grid details { margin-top:14px; }
+.career-results-grid summary { color:#007042; font-weight:700; cursor:pointer; }
+@keyframes career-spin { to { transform:rotate(360deg); } }
+@media(max-width:1100px) { .career-results-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:650px) { .career-results-grid { grid-template-columns:1fr; } }
+@media(prefers-reduced-motion:reduce) { .career-spinner { animation:none; } }

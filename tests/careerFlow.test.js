@@ -31,13 +31,19 @@ await test('career HTTP generation uses owned earned/developing evidence, return
   assert.match(facultyProgress.html,/value="33" max="100" aria-label="Tourism and Hospitality Knowledge progress"/);
   let r=await client.get('/student/careers');assert.match(r.html,/Your matches will appear here/);assert.doesNotMatch(r.html,/Travel Consultant \/ Tour Operations Assistant/,'first career visit keeps match content hidden');
   r=await client.get('/student/careers?find=matches');assert.match(r.html,/Travel Consultant \/ Tour Operations Assistant/,'career matches appear after the student asks to find them');
-  assert.doesNotMatch(r.html, /Quiz 85%|evidence alignment/);
+  assert.match(r.html, /% evidence alignment/);
+  assert.ok((r.html.match(/data-career-pathway/g) || []).length >= 3);
+  assert.match(r.html, /Your career sectors/);
+  assert.doesNotMatch(r.html, /Airline and Airport Services/);
+  assert.doesNotMatch(r.html, /No assessed evidence yet/);
+  assert.match(r.html, /career-magnifier/);
+  assert.match(r.html, /career-spinner/);
   process.env.GEMINI_API_KEY='test-key';process.env.GEMINI_MODEL='test-model';
   globalThis.fetch=async(url,init)=>{
    if(!String(url).startsWith('https://generativelanguage.googleapis.com/'))return original(url,init);
    assert(!init.body.includes(user.name));assert(!init.body.includes(user.email));assert(!init.body.includes(user.studentId));
    const payload=JSON.parse(JSON.parse(init.body).contents[0].parts[0].text);assert.equal(payload.learning.completed[0].score,85);assert.equal(payload.learning.completed.length,1);assert.equal(payload.learning.developing.length,1);assert(!init.body.includes('Never assessed module'));assert(!init.body.includes('Secret lesson text'));assert(!init.body.includes('courseTitle'));assert.equal(payload.learning.developing[0].score,60);assert(!Object.hasOwn(payload.scores,'Digital skills'),'below-passing quizzes do not become earned knowledge');
-   return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({pathwayIndexes:[0],summary:'Invented certificate claim'})}]}}]});
+   return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({matches:payload.pathways.map(p=>({pathwayIndex:p.index,reason:'Passed module evidence supports exploring this pathway.',nextStep:'Study the remaining competencies.'})),summary:'Invented certificate claim'})}]}}]});
   };
   const body=new URLSearchParams({_csrf:client.csrf,consent:'yes'});
   r=await client.request('/student/careers/generate',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body});assert.equal(r.status,200);assert.equal(JSON.parse(r.html).redirect,'/student/careers#ai-results');
