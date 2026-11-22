@@ -54,7 +54,7 @@ export function moduleEvidence(attempts, tracks, { assessedOnly = false, availab
         domains.includes(area) && Number.isFinite(value) && value >= 0 && value <= 100));
       const total = topics.length + Number(Boolean(module.materials?.length)) + 1;
       const done = lessons + Number(Boolean(module.materials?.length) && read) + Number(Number.isFinite(score));
-      modules.set(key, { courseId: attempt.courseId, moduleId: module.id, attemptId: attempt.id, sectors: sectorsForModule(snapshot, module), finalAssessmentScore: attempt.status === 'completed' && Number.isFinite(attempt.finalScore) && attempt.finalScore >= snapshot.passingScore ? attempt.finalScore : null, title: module.title, courseTitle: snapshot.title, areas, scores,
+      modules.set(key, { courseId: attempt.courseId, moduleId: module.id, attemptId: attempt.id, sectors: sectorsForModule(snapshot, module), title: module.title, courseTitle: snapshot.title, areas, scores,
         retakeHistoryAvailable, retakesBeforePass, retakeCount, score: Number.isFinite(score) ? score : null, assessed: Number.isFinite(score), passed, passingScore, done, total,
         percent: passed && !assessedOnly ? 100 : Math.round(100 * done / total) });
     }
@@ -94,8 +94,8 @@ export function studentCareerEvidence(attempts, tracks, credentials = []) {
   const evidence = moduleEvidence(attempts, tracks, { assessedOnly: true });
   for (const module of evidence.completed) module.certificateEarned = credentials.some(c => !c.revoked && Number(c.attemptId) === Number(module.attemptId) && (!c.moduleId || c.moduleId === module.moduleId));
   const learning = {
-    completed: evidence.completed.map(({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable })),
-    developing: evidence.developing.map(({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, finalAssessmentScore, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }))
+    completed: evidence.completed.map(({ title, score, scores, percent, certificateEarned, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable })),
+    developing: evidence.developing.map(({ title, score, scores, percent, certificateEarned, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }) => ({ title, score, scores, percent, certificateEarned, sectors, retakesBeforePass, retakeCount, retakeHistoryAvailable }))
   };
   const ranked = sectorCareerTracks(evidence.tracks, evidence.completed);
   for (const track of ranked) {

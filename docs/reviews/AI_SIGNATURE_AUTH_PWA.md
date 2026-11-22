@@ -7,7 +7,7 @@ Base: `19f2540` on `main`
 ## Result
 
 - Faculty course generation and Student career guidance share server-side Gemini configuration. The working default is `gemini-3.5-flash`, verified against the provider using synthetic teaching material and learning evidence.
-- PDF/DOCX/text extraction, editable course drafts, mandatory answer review, publishing, lesson progress, resume, quizzes and final assessments retain the existing application workflows. Generated drafts are unpublished until Faculty reviews and publishes them.
+- PDF/DOCX/text extraction, editable course drafts, mandatory answer review, publishing, lesson progress, resume, module quizzes retain the existing application workflows. Generated drafts are unpublished until Faculty reviews and publishes them.
 - Career guidance includes completed courses, valid award status and saved ongoing progress. Unfinished learning remains developing evidence. Gemini selects from predefined rule-ranked pathways; the server validates indexes and supplies the actual pathway titles. No employers or live job listings are fabricated.
 - The career finder displays a cloud/magnifying-glass animation during the actual asynchronous request, handles errors, and invalidates stale results when learning evidence changes. Fixed a null career-interest error on the career page.
 - Faculty/Admin signature uploads are decoded and processed on the server into transparent PNGs. Faculty changes return the credential configuration to Admin review; new awards wait for approval and both signatures. Existing issued awards retain their snapshots.

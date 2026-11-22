@@ -1,2 +1,2 @@
 {{#each moduleResults}}{{#if assessed}}<small>{{title}} · {{score}}% · {{#if passed}}Passed{{else}}Below passing{{/if}}</small>{{/if}}{{/each}}
-<small>Final assessment: {{#if (eq finalScore null)}}Not submitted{{else}}{{finalScore}}%{{/if}}</small>
+<small>Module average: {{#if (eq moduleAverage null)}}In progress{{else}}{{moduleAverage}}%{{/if}}</small>

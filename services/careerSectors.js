@@ -24,8 +24,7 @@ export function sectorCareerTracks(tracks, modules) {
     if (!supporting.length) return [];
     const scores = Object.fromEntries(track.required.map(area => {
       const relevant = supporting.filter(module => Number.isFinite(module.scores[area]));
-      const finals = [...new Map(relevant.filter(module => Number.isFinite(module.finalAssessmentScore)).map(module => [module.courseId, module.finalAssessmentScore])).values()];
-      const values = [...relevant.map(module => module.scores[area]), ...finals];
+      const values = relevant.map(module => module.scores[area]);
       return [area, values.length ? Math.round(values.reduce((a,b) => a+b,0) / values.length) : null];
     }));
     const known = track.required.filter(area => scores[area] !== null);
@@ -38,7 +37,7 @@ export function sectorCareerTracks(tracks, modules) {
       strengths: known.filter(area => scores[area] >= 75), gaps: track.required.filter(area => scores[area] === null || scores[area] < 75),
       supportingModules: supporting.flatMap(module => {
         const areas = Object.entries(module.scores).filter(([area]) => track.required.includes(area)).map(([name,score]) => ({ name,score }));
-        return areas.length ? [{ evidenceIndex: modules.indexOf(module), title: module.title, score: module.score, retakeHistoryAvailable: module.retakeHistoryAvailable, retakesBeforePass: module.retakesBeforePass, percent: module.percent, areas, certificateEarned: module.certificateEarned, finalAssessmentScore: module.finalAssessmentScore }] : [];
+        return areas.length ? [{ evidenceIndex: modules.indexOf(module), title: module.title, score: module.score, retakeHistoryAvailable: module.retakeHistoryAvailable, retakesBeforePass: module.retakesBeforePass, percent: module.percent, areas, certificateEarned: module.certificateEarned }] : [];
       }) }];
   }).sort((a,b) => b.rank - a.rank || a.title.localeCompare(b.title));
 }

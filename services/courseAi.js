@@ -239,7 +239,7 @@ export function validateGeneratedDraft(raw, sections, options) {
       questions,
       tasks: [],
       prerequisites: [],
-      policy: { quizWeight: 40, finalWeight: 60, practicalWeight: 0 },
+      policy: {},
       certificateEnabled: true,
     });
   } catch {
