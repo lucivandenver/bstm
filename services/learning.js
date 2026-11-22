@@ -3,14 +3,30 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sessionSecret } from '../config/env.js';
 import { domains } from '../data/starterCourses.js';
 export const lessonList = course => course.modules.flatMap(m => m.lessons.map(l => ({ ...l, moduleId: m.id })));
+export function moduleAssessmentResult(attempt, moduleId) {
+  const submissions = (attempt.quizAttempts || []).filter(result => result.scope === moduleId && !result.expired && Number.isFinite(result.score));
+  const firstPass = submissions.find(result => result.score >= attempt.snapshot.passingScore);
+  if (firstPass) return firstPass;
+  const saved = attempt.quizScores?.[moduleId];
+  if (Number.isFinite(saved) && saved >= attempt.snapshot.passingScore) return { score: saved };
+  return submissions.at(-1) || (Number.isFinite(saved) ? { score: saved } : null);
+}
+export function allModulesPassed(attempt) {
+  const modules = attempt?.snapshot?.modules || [];
+  return modules.length > 0 && modules.every(module => moduleAssessmentResult(attempt, module.id)?.score >= attempt.snapshot.passingScore);
+}
+export function courseModuleAverage(attempt) {
+  if (!allModulesPassed(attempt)) return null;
+  const scores = attempt.snapshot.modules.map(module => moduleAssessmentResult(attempt, module.id).score);
+  return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+}
 export function progress(attempt) {
   const course = attempt.snapshot;
   const lessons = lessonList(course).length;
   const quizzes = course.modules.length;
-  const tasks = (course.tasks || []).filter(t => t.required !== false);
-  const extras = (course.policy?.pretest ? 1 : 0) + (course.policy?.feedbackRequired ? 1 : 0) + tasks.length;
-  const done = lessonList(course).filter(lesson => attempt.completedLessons.includes(lesson.id)).length + course.modules.filter(m => attempt.quizScores[m.id] >= course.passingScore).length + (attempt.finalScore !== null && attempt.finalScore >= course.passingScore ? 1 : attempt.status === 'completed' ? 1 : 0) + tasks.filter(t => attempt.quizScores[`task:${t.id}`] >= course.passingScore).length + (course.policy?.pretest && attempt.quizAttempts.some(q => q.scope === 'pretest') ? 1 : 0) + (course.policy?.feedbackRequired && attempt.quizScores.feedback === 100 ? 1 : 0);
-  return { done, total: lessons + quizzes + 1 + extras, percent: Math.round(done / (lessons + quizzes + 1 + extras) * 100) };
+  const done = lessonList(course).filter(lesson => (attempt.completedLessons || []).includes(lesson.id)).length + course.modules.filter(m => moduleAssessmentResult(attempt, m.id)?.score >= course.passingScore).length;
+  const total = lessons + quizzes;
+  return { done, total, percent: total ? Math.round(done / total * 100) : 0 };
 }
 export function publishedAttemptSnapshot(attempt, course) {
   const previous = attempt.snapshot;
@@ -27,30 +43,18 @@ export function publishedAttemptSnapshot(attempt, course) {
     snapshot: {
       ...previous, modules,
       awardsApproved: course.awardsApproved,
-      finalAssessmentRevision: (previous.finalAssessmentRevision || 0) + Number(scopeChanged),
       questions: [
         ...previous.questions.filter(question => visible.has(question.moduleId)),
         ...course.questions.filter(question => added.has(question.moduleId))
       ]
     },
-    courseVersion: course.version,
-    finalScore: scopeChanged ? null : attempt.finalScore
+    courseVersion: course.version
   };
-}
-export function moduleAssessmentResult(attempt, moduleId) {
-  const submissions = (attempt.quizAttempts || []).filter(result => result.scope === moduleId && !result.expired && Number.isFinite(result.score));
-  const firstPass = submissions.find(result => result.score >= attempt.snapshot.passingScore);
-  if (firstPass) return firstPass;
-  const saved = attempt.quizScores?.[moduleId];
-  if (Number.isFinite(saved) && saved >= attempt.snapshot.passingScore) return { score: saved };
-  return submissions.at(-1) || (Number.isFinite(saved) ? { score: saved } : null);
 }
 export function canTakeQuiz(attempt, moduleId) {
   const module = attempt.snapshot.modules.find(item => item.id === moduleId);
   return Boolean(module && module.lessons.every(lesson => attempt.completedLessons.includes(lesson.id)));
 }
-export const canTakeFinal = attempt => attempt.snapshot.modules.length > 0 &&
-  attempt.snapshot.modules.every(module => attempt.quizScores[module.id] >= attempt.snapshot.passingScore);
 export function grade(questions, input) {
   if (!questions.length) throw new Error('This assessment has no questions.');
   const answers = questions.map(q => {
@@ -87,14 +91,14 @@ export function checkChallenge(token, userId, scope) {
 export function careerMatches(attempts, baseline, interest = '', tracks = defaultCareerTracks, practicals = []) {
   const latest = new Map();
   for (const attempt of [...attempts].sort((a, b) => new Date(a.completedAt || a.createdAt || 0) - new Date(b.completedAt || b.createdAt || 0))) {
-    if (attempt.status === 'completed') latest.set(attempt.courseId, attempt);
+    if (allModulesPassed(attempt)) latest.set(attempt.courseId, attempt);
   }
   const evidence = Object.fromEntries(domains.map(domain => [domain, []]));
   for (const attempt of latest.values()) {
     const areas = Array.isArray(attempt.snapshot.competencyAreas) && attempt.snapshot.competencyAreas.length
       ? attempt.snapshot.competencyAreas
       : [attempt.snapshot.domain];
-    const score = attempt.finalScore === null || attempt.finalScore === undefined ? NaN : Number(attempt.finalScore);
+    const score = courseModuleAverage(attempt);
     for (const domain of new Set(areas)) if (evidence[domain] && Number.isFinite(score) && score >= 0 && score <= 100) evidence[domain].push(score);
   }
   const scores = {}, knowledgeScores = {};

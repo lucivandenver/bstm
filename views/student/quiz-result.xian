@@ -8,9 +8,9 @@
   <p><span class="chip {{#unless passed}}pink{{/unless}}">{{#if passed}}Passed{{else}}Below passing score{{/if}}</span> Passing score {{passingScore}}%</p>
   {{#unless passed}}<p>This result does not qualify for a certificate.</p>{{/unless}}
   {{/if}}
-  {{#if retry}}<h2>Would you like to try again?</h2>{{#if final}}<p>The final assessment questions will appear in a different order when there is more than one question.</p>{{/if}}{{/if}}
+  {{#if retry}}<h2>Would you like to try again?</h2>{{/if}}
   <div class="actions">
-    {{#if retry}}{{#if final}}<a class="button" href="{{retryUrl}}">Retry assessment</a>{{else}}{{> moduleRetake}}{{/if}}{{/if}}
+    {{#if retry}}{{> moduleRetake}}{{/if}}
     <a class="button secondary" href="{{continueUrl}}">{{#if retry}}Back to course{{else}}Continue learning{{/if}}</a>
     {{#if completed}}<a class="button" href="/student/achievements">View achievements</a>{{/if}}
   </div>

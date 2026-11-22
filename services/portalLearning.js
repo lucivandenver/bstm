@@ -1,13 +1,13 @@
-import { moduleAssessmentResult } from './learning.js';
 import { facultySignature } from './publicationCredentials.js';
 import { Course, CourseAttempt, Credential, Notification, User } from '../models/learningModels.js';
-import { PracticalSubmission, CourseFeedback, QuizDraft, CredentialRequest } from '../models/portalModels.js';
-import { starsFor, canTakeFinal, grade, publishedAttemptSnapshot } from './learning.js';
+import { QuizDraft, CredentialRequest } from '../models/portalModels.js';
+import { starsFor, courseModuleAverage, moduleAssessmentResult, publishedAttemptSnapshot } from './learning.js';
 import { fail } from './courseAuthoring.js';
 export const tasksFor = a => a.snapshot.tasks || [];
-export async function ensureCompletionCredential(attempt, user, score = attempt.finalScore, transaction, module = null) {
+export async function ensureCompletionCredential(attempt, user, score, transaction, module = null) {
+  score ??= module ? null : courseModuleAverage(attempt);
   if (module && score < attempt.snapshot.passingScore) return null;
-  if (!module && attempt.status !== 'completed' || attempt.snapshot.certificateEnabled === false) return null;
+  if ((!module && (attempt.status !== 'completed' || score === null)) || attempt.snapshot.certificateEnabled === false) return null;
   const request = await CredentialRequest.findOne({ where: { courseId: attempt.courseId, status: 'approved' }, transaction });
   const course = await Course.findByPk(attempt.courseId, { transaction });
   const faculty = request ? await User.findByPk(request.facultyId, { transaction }) : course?.ownerId ? await User.findByPk(course.ownerId, { transaction }) : null;
@@ -28,30 +28,22 @@ export async function ensureCompletionCredential(attempt, user, score = attempt.
 export async function syncPublishedAttempt(attempt, course, transaction) {
   const update = publishedAttemptSnapshot(attempt, course);
   if (!update) return attempt;
-  if (update.snapshot.finalAssessmentRevision !== (attempt.snapshot.finalAssessmentRevision || 0)) {
-    const draft = await QuizDraft.findOne({ where: { attemptId: attempt.id, scope: 'final' }, transaction, lock: transaction.LOCK.UPDATE });
-    if (draft) await draft.update({ answers: {}, revision: draft.revision + 1, startedAt: new Date() }, { transaction });
-  }
-  await attempt.update(update, { transaction });
+  const snapshot = { ...update.snapshot };
+  delete snapshot.finalAssessmentRevision;
+  await attempt.update({ ...update, snapshot }, { transaction });
   return attempt;
 }
 export async function finalizeAttempt(attempt, user, transaction) {
-  if (attempt.status === 'completed' || attempt.finalScore === null || attempt.finalScore < attempt.snapshot.passingScore || !canTakeFinal(attempt)) return false;
-  const tasks = tasksFor(attempt).filter(t => t.required !== false);
-  const submissions = await PracticalSubmission.findAll({ where: { attemptId: attempt.id }, transaction });
-  if (tasks.some(t => !submissions.some(s => s.taskId === t.id && s.status === 'graded' && s.grade >= attempt.snapshot.passingScore))) return false;
-  if (attempt.snapshot.policy?.feedbackRequired && !await CourseFeedback.findOne({ where: { attemptId: attempt.id }, transaction })) return false;
-  const quizAverage = attempt.snapshot.modules.reduce((sum,m) => sum + (attempt.quizScores[m.id] || 0), 0) / attempt.snapshot.modules.length;
-  const p = attempt.snapshot.policy || {};
-  const practical = tasks.length ? submissions.filter(s => tasks.some(t => t.id === s.taskId)).reduce((sum,s) => sum + s.grade,0) / tasks.length : 0;
-  const weighted = Math.round(quizAverage * (p.quizWeight ?? 0) / 100 + attempt.finalScore * (p.finalWeight ?? 100) / 100 + practical * (p.practicalWeight ?? 0) / 100);
-  if (weighted < attempt.snapshot.passingScore) return false;
-  await attempt.update({ status: 'completed', completedAt: new Date() }, { transaction });
-  await ensureCompletionCredential(attempt, user, weighted, transaction);
-  await Notification.create({ userId: user.id, title: 'Course completed', message: `You completed ${attempt.snapshot.title}. View your completion history and eligible awards.`, href: '/student/achievements' }, { transaction });
-  return true;
+  await attempt.reload({ transaction, lock: transaction.LOCK.UPDATE });
+  const score = courseModuleAverage(attempt);
+  if (score === null) return false;
+  const wasCompleted = attempt.status === 'completed';
+  if (!wasCompleted) await attempt.update({ status: 'completed', completedAt: attempt.completedAt || new Date() }, { transaction });
+  await ensureCompletionCredential(attempt, user, score, transaction);
+  if (!wasCompleted) await Notification.create({ userId: user.id, title: 'Course completed', message: `You passed all module quizzes in ${attempt.snapshot.title}. View your completion history and eligible awards.`, href: '/student/achievements' }, { transaction });
+  return !wasCompleted;
 }
-export const scopeQuestions = (attempt, scope) => scope === 'final' || scope === 'pretest' ? attempt.snapshot.questions : attempt.snapshot.questions.filter(q => q.moduleId === scope);
+export const scopeQuestions = (attempt, scope) => scope === 'pretest' ? attempt.snapshot.questions : attempt.snapshot.questions.filter(q => q.moduleId === scope);
 export function validateDraftAnswers(questions, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Invalid answers.');
   const answers = {};
@@ -59,15 +51,13 @@ export function validateDraftAnswers(questions, input) {
   return answers;
 }
 export function quizAccess(attempt, scope) {
+  if (scope === 'final') return false;
   if (attempt.snapshot.modules.some(m => m.id === scope) && moduleAssessmentResult(attempt, scope)?.score >= attempt.snapshot.passingScore) return false;
   const p = attempt.snapshot.policy || {};
   if (scope === 'pretest') return Boolean(p.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest'));
-  if (p.pretest && !attempt.quizAttempts.some(a => a.scope === 'pretest')) return false;
   return true;
 }
-export const assessmentSubmissions = (attempt, scope) => attempt.quizAttempts.filter(result =>
-  result.scope === scope && (scope !== 'final' ||
-    (result.finalAssessmentRevision || 0) === (attempt.snapshot.finalAssessmentRevision || 0)));
+export const assessmentSubmissions = (attempt, scope) => attempt.quizAttempts.filter(result => result.scope === scope);
 
 export async function draftFor(userId, attempt, scope, transaction, startTimer = true) {
   const lastResult = assessmentSubmissions(attempt, scope).findLast(item => !item.expired);

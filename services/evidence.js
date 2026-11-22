@@ -1,8 +1,8 @@
 import { Op } from 'sequelize';
 import { PracticalSubmission } from '../models/portalModels.js';
-import { careerMatches, moduleAssessmentResult } from './learning.js';
+import { allModulesPassed, careerMatches, moduleAssessmentResult } from './learning.js';
 export async function buildEvidence(attempts, baseline, interest = '', tracks) {
-  const ids = attempts.filter(a => a.status === 'completed').map(a => a.id);
+  const ids = attempts.filter(allModulesPassed).map(a => a.id);
   const practicals = ids.length ? await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: ids }, status: 'graded' }, attributes: ['attemptId','taskId','grade'] }) : [];
   return careerMatches(attempts, baseline, interest, tracks, practicals);
 }
@@ -17,7 +17,7 @@ export function moduleResults(attempt) {
 export function completionTotals(attempts) {
   const modules = attempts.flatMap(moduleResults);
   return { modulesPassed: modules.filter(module => module.passed).length, modulesTotal: modules.length,
-    coursesCompleted: attempts.filter(attempt => attempt.status === 'completed').length };
+    coursesCompleted: attempts.filter(allModulesPassed).length };
 }
 
 export function summarizeLearning(students, attempts, assessments, practicals) {

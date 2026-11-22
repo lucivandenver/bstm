@@ -13,7 +13,8 @@ import { courseInput, publishCheck } from '../services/courseAuthoring.js';
 import { audit, ownerEmail, genders, setting } from '../services/accounts.js';
 import { text, email } from '../services/validation.js';
 import { domains } from '../data/starterCourses.js';
-import { starsFor } from '../services/learning.js';
+import { allModulesPassed, courseModuleAverage } from '../services/learning.js';
+import { ensureCompletionCredential } from '../services/portalLearning.js';
 const plain = row => row?.get({ plain: true });
 const publicUser = row => { const { password, googleId, ...user } = plain(row); return { ...user, googleConnected: Boolean(googleId), owner: user.email === ownerEmail() }; };
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
@@ -22,6 +23,15 @@ const render = (res, view, data = {}) => res.render(`admin/${view}`, {
   adminNav: view, backUrl: platformPages.has(view) ? '/admin/settings' : view === 'dashboard' ? null : '/admin', ...data
 });
 const date = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
+async function auditDisplayRows(rows) {
+  const ids = [...new Set(rows.flatMap(row => [Number(row.actorId), row.targetType === 'user' && /^\d+$/.test(String(row.targetId)) ? Number(row.targetId) : null]).filter(Number.isInteger))];
+  const users = ids.length ? await User.findAll({ where: { id: { [Op.in]: ids } }, attributes: ['id', 'name'] }) : [];
+  const names = new Map(users.map(user => [user.id, user.name]));
+  return rows.map(row => {
+    const targetUserName = row.targetType === 'user' ? names.get(Number(row.targetId)) : null;
+    return { ...plain(row), date: date(row.createdAt), actorName: names.get(Number(row.actorId)) || 'Former user', targetLabel: targetUserName || `${row.targetType || 'Record'}${row.targetId && row.targetType !== 'user' ? ` #${row.targetId}` : ''}` };
+  });
+}
 const coursePublicationActions = [
   'pending-review', 'publication-approved', 'publication-declined', 'publication-cancelled',
   'published', 'admin-published', 'archived', 'admin-archived', 'draft'
@@ -70,18 +80,19 @@ async function archivedCourseCanRepublish(course, transaction) {
 }
 
 export const dashboard = async (req, res) => {
-  const [students, faculty, pending, courses, enrollments, completed, credentials, pendingCredentials, recent] = await Promise.all([
+  const [students, faculty, pending, courses, attempts, credentials, pendingCredentials, recent] = await Promise.all([
     User.count({ where: { role: 'student' } }), User.count({ where: { role: 'faculty' } }), User.count({ where: { role: 'faculty', approvalStatus: 'pending' } }),
-    Course.count(), CourseAttempt.count(), CourseAttempt.count({ where: { status: 'completed' } }), Credential.count({ where: { revoked: false } }), CredentialRequest.count({ where: { status: 'pending' } }),
+    Course.count(), CourseAttempt.findAll({ attributes: ['snapshot', 'quizScores', 'quizAttempts'] }), Credential.count({ where: { revoked: false } }), CredentialRequest.count({ where: { status: 'pending' } }),
     AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 8 })
   ]);
+  const enrollments = attempts.length, completed = attempts.filter(allModulesPassed).length;
   const requests = await publicationRequests();
   const submittedCourses = requests.length ? await Course.findAll({
     where: { id: [...new Set(requests.map(request => request.courseId))] },
     attributes: ['id', 'ownerId', 'version', 'published', 'modules']
   }) : [];
   const pendingPublications = submittedCourses.reduce((count, course) => count + pendingForCourse(course, requests).length, 0);
-  render(res, 'dashboard', { pendingPublications, title: 'Administration', students, faculty, pending, pendingCredentials, courses, enrollments, completed, credentials, completionRate: enrollments ? Math.round(completed / enrollments * 100) : 0, recent: recent.map(r => ({ ...plain(r), date: date(r.createdAt) })) });
+  render(res, 'dashboard', { pendingPublications, title: 'Administration', students, faculty, pending, pendingCredentials, courses, enrollments, completed, credentials, completionRate: enrollments ? Math.round(completed / enrollments * 100) : 0, recent: await auditDisplayRows(recent) });
 };
 export const users = async (req, res) => {
   const where = {};
@@ -108,7 +119,7 @@ export const userDetail = async (req, res) => {
   const user = await User.findByPk(req.params.id); if (!user) return res.status(404).send('User not found.');
   const [profile, attempts, sections] = await Promise.all([StudentProfile.findOne({ where: { userId: user.id } }), CourseAttempt.findAll({ where: { userId: user.id }, order: [['createdAt', 'DESC']] }), Section.findAll({ order: [['name', 'ASC']] })]);
   render(res, 'user', { title: 'Account details', backUrl: '/admin/users', account: publicUser(user), profile: plain(profile), genders, sections: sections.map(plain),
-    attempts: attempts.map(a => ({ id: a.id, title: a.snapshot.title, attempt: a.attemptNumber, status: a.status, score: a.finalScore, date: date(a.createdAt) })), isSelf: req.user.id === user.id, canManageAdmins: req.user.email === ownerEmail() });
+    attempts: attempts.map(a => ({ id: a.id, title: a.snapshot.title, attempt: a.attemptNumber, status: allModulesPassed(a) ? 'completed' : a.status, moduleAverage: courseModuleAverage(a), date: date(a.createdAt) })), isSelf: req.user.id === user.id, canManageAdmins: req.user.email === ownerEmail() });
 };
 function accountValues(body) {
   const role = text(body.role);
@@ -501,14 +512,12 @@ export const reviewCredential = async (req, res) => {
     for (const attempt of attempts) {
       const snapshot = { ...attempt.snapshot, awardsApproved: status === 'approved' && attempt.snapshot.certificateEnabled !== false };
       await attempt.update({ snapshot }, { transaction });
-      if (status === 'approved' && snapshot.awardsApproved && !snapshot.modules?.some(module => Array.isArray(module.skills)) && attempt.status === 'completed' && attempt.finalScore >= snapshot.passingScore) {
-        const policy = attempt.snapshot.policy || {}, modules = attempt.snapshot.modules || [], tasks = (attempt.snapshot.tasks || []).filter(task => task.required !== false), practicals = tasks.length ? await PracticalSubmission.findAll({ where: { attemptId: attempt.id, status: 'graded' }, transaction }) : [];
-        const quizAverage = modules.length ? modules.reduce((sum, module) => sum + (attempt.quizScores?.[module.id] || 0), 0) / modules.length : attempt.finalScore;
-        const practicalAverage = tasks.length ? practicals.filter(submission => tasks.some(task => task.id === submission.taskId)).reduce((sum, submission) => sum + (submission.grade || 0), 0) / tasks.length : 0;
-        const weighted = Math.round(quizAverage * (policy.quizWeight ?? 0) / 100 + attempt.finalScore * (policy.finalWeight ?? 100) / 100 + practicalAverage * (policy.practicalWeight ?? 0) / 100);
-        const [credential, created] = await Credential.findOrCreate({ where: { attemptId: attempt.id, moduleId: '' }, defaults: { userId: attempt.userId, courseTitle: attempt.snapshot.title, recipientName: (await User.findByPk(attempt.userId, { transaction }))?.name || 'Learner', courseVersion: attempt.courseVersion, score: weighted, stars: starsFor(weighted), issuedAt: attempt.completedAt || new Date(), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', badgeLabel: request.badge?.label || 'Course completion' }, transaction });
-        if (!created && !credential.revoked) await credential.update({ facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', badgeLabel: request.badge?.label || credential.badgeLabel || 'Course completion' }, { transaction });
-        if (created) await Notification.create({ userId: attempt.userId, title: 'Certificate and badge approved', message: `Your completion of ${course.title} now qualifies for its approved certificate and badge.`, href: '/student/achievements' }, { transaction });
+      const score = courseModuleAverage(attempt);
+      if (status === 'approved' && snapshot.awardsApproved && score !== null) {
+        await attempt.update({ status: 'completed', completedAt: attempt.completedAt || new Date() }, { transaction });
+        const learner = await User.findByPk(attempt.userId, { transaction });
+        const credential = await ensureCompletionCredential(attempt, learner, score, transaction);
+        if (credential && !credential.revoked) await credential.update({ score, stars: Math.max(1, Math.min(3, score >= 95 ? 3 : score >= 85 ? 2 : 1)), facultySignature: request.facultySignature, facultyName: facultyAccount?.name || null, facultyPosition: facultyAccount?.facultyPosition || 'Course Faculty', badgeLabel: request.badge?.label || credential.badgeLabel || 'Course completion' }, { transaction });
       }
     }
     await Notification.create({ userId: request.facultyId, title: 'Credential configuration reviewed', message: `Your request for ${course.title} was ${status}.${remarks ? ` Feedback: ${remarks}` : ''}`, href: '/faculty/credentials' }, { transaction });
@@ -564,32 +573,36 @@ export const saveSettings = async (req, res) => {
   req.flash('success_msg', 'Settings saved.'); res.redirect('/admin/settings');
 };
 export const auditLogs = async (req, res) => {
-  const where = {}, q = text(req.query.q, 100), actor = text(req.query.actor, 20), from = text(req.query.from, 10), to = text(req.query.to, 10);
+  const where = {}, q = text(req.query.q, 100), actor = text(req.query.actor, 100), from = text(req.query.from, 10), to = text(req.query.to, 10);
   if (q) where.action = { [Op.like]: `%${q}%` };
-  if (/^\d+$/.test(actor)) where.actorId = Number(actor);
+  if (actor) {
+    const matches = await User.findAll({ where: { name: { [Op.like]: `%${actor}%` } }, attributes: ['id'] });
+    where.actorId = matches.length ? { [Op.in]: matches.map(user => user.id) } : -1;
+  }
   if (from || to) where.createdAt = { ...(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? { [Op.gte]: new Date(`${from}T00:00:00`) } : {}), ...(to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? { [Op.lt]: new Date(new Date(`${to}T00:00:00`).getTime() + 86400000) } : {}) };
   const logs = await AuditLog.findAll({ where, order: [['createdAt', 'DESC']], limit: 300 });
-  render(res, 'audit', { title: 'Activity & audit logs', q, actor, from, to, logs: logs.map(l => ({ ...plain(l), date: date(l.createdAt), detail: JSON.stringify(l.details) })) });
+  render(res, 'audit', { title: 'Activity & audit logs', q, actor, from, to, logs: (await auditDisplayRows(logs)).map(log => ({ ...log, detail: JSON.stringify(log.details) })) });
 };
 export const reports = async (req, res) => {
   const attempts = await CourseAttempt.findAll({ include: [{ model: User, attributes: ['id', 'name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });
   const diagnostics = await Assessment.findAll({ include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']], limit: 500 });
   const [students, allAttempts, allDiagnostics, practicals] = await Promise.all([
     User.findAll({ where: { role: 'student' }, attributes: ['id','section'] }),
-    CourseAttempt.findAll({ attributes: ['id','userId','courseId','snapshot','status','completedAt','finalScore'] }),
+    CourseAttempt.findAll(),
     Assessment.findAll({ attributes: ['userId','scores','createdAt'], order: [['createdAt','DESC']] }),
     PracticalSubmission.findAll({ where: { status: 'graded' }, attributes: ['attemptId','taskId','grade'] })
   ]);
-  const summary = summarizeLearning(students, allAttempts, allDiagnostics, practicals);
-  render(res, 'reports', { ...summary, title: 'Learning & readiness reports', attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, date: date(a.createdAt) })), diagnostics: diagnostics.map(d => ({ ...plain(d), date: date(d.createdAt) })) });
+  const normalizedAttempts = allAttempts.map(attempt => ({ ...plain(attempt), status: allModulesPassed(attempt) ? 'completed' : attempt.status }));
+  const summary = summarizeLearning(students, normalizedAttempts, allDiagnostics, practicals);
+  render(res, 'reports', { ...summary, title: 'Learning & readiness reports', attempts: attempts.map(a => ({ ...plain(a), title: a.snapshot.title, status: allModulesPassed(a) ? 'completed' : a.status, moduleAverage: courseModuleAverage(a), date: date(a.createdAt) })), diagnostics: diagnostics.map(d => ({ ...plain(d), date: date(d.createdAt) })) });
 };
 export const exportReport = async (req, res) => {
   const options = { include: [{ model: User, attributes: ['name', 'section'] }], order: [['createdAt', 'DESC']] };
   const [attempts, diagnostics] = await Promise.all([CourseAttempt.findAll(options), Assessment.findAll(options)]);
   return sendWorkbook(res, 'CareerBridge-learning-report.xlsx', [{
     name: 'Course activity',
-    headers: ['Student', 'Section', 'Course', 'Attempt', 'Status', 'Final score (%)', 'Active minutes', 'Started'],
-    rows: attempts.map(a => [a.User?.name, a.User?.section, a.snapshot.title, a.attemptNumber, a.status, a.finalScore, Math.floor(a.activeSeconds / 60), date(a.createdAt)])
+    headers: ['Student', 'Section', 'Course', 'Attempt', 'Status', 'Module average (%)', 'Active minutes', 'Started'],
+    rows: attempts.map(a => [a.User?.name, a.User?.section, a.snapshot.title, a.attemptNumber, allModulesPassed(a) ? 'completed' : a.status, courseModuleAverage(a), Math.floor(a.activeSeconds / 60), date(a.createdAt)])
   }, {
     name: 'Knowledge diagnostics',
     headers: ['Student', 'Section', 'Date', 'Score (%)'],

@@ -8,7 +8,7 @@ Branch: `feature/complete-learning-portals`. Built on main `39f5ab691103b8ce482c
 | --- | --- |
 | Student profile | Personal/academic/OJT/career preferences, target roles, relocation, work preferences, self-declared skills, photo and private qualification files. Official ID/section corrections require Admin review. |
 | Catalog | Search, competency filtering, course preview, outcomes, owner, duration, prerequisites, publication/enrollment gates, required section assignments and due dates. |
-| Learning | Version-frozen attempts, collapsible outline, persisted lesson checks, optional course pre-test, module quizzes, final assessment, practical tasks, feedback, progress and retakes. |
+| Learning | Version-frozen attempts, collapsible outline, persisted lesson checks, optional course pre-test, module quizzes, optional practical tasks and feedback, progress and retakes. |
 | Saved answers | Course and diagnostic drafts persist server-side. An optimistic revision prevents a stale tab silently overwriting another tab. The UI reports saved/pending/conflict states. Final submission validates all answers again. |
 | Assessments | Server grading, published passing score, configurable time/submission limits, random question order, immediate or post-completion answer explanations. Timed expiry is checked server-side; restarting records a used expired attempt. |
 | Practical evaluation | Student response and optional HTTPS evidence/recording link; faculty rubric scores and feedback; failed work may be resubmitted. Passed tasks and completed course records are immutable. Required practical tasks and feedback gate completion and awards. |
@@ -38,7 +38,7 @@ Branch: `feature/complete-learning-portals`. Built on main `39f5ab691103b8ce482c
 
 ## Assessment and matching policy
 
-Every required module quiz, final assessment and required practical task must meet the published course passing score. Completion also checks required feedback. The course's quiz/final/practical weights total 100 and determine the certificate grade. Stars: grade below 85 = one, 85–94 = two, 95–100 = three, after passing all requirements. Existing attempts preserve the policy and questions captured at enrollment.
+Course completion requires passing every module quiz at the published course passing score. Practical tasks and feedback remain optional and do not affect completion. Course certificate scores use the average of the first passing score for each module. Stars: average below 85 = one, 85–94 = two, 95–100 = three. Existing attempts preserve their captured modules and questions.
 
 For career alignment, use the latest completed attempt once per course, average final knowledge scores per domain, and use the latest diagnostic only where course evidence is absent. Faculty rubric scores from **the same latest completed attempts** provide practical evidence. Where both exist, domain alignment = 70% knowledge + 30% practical; without practical evidence it remains knowledge-only. Ongoing/unlocked courses, optional tasks and self-declared qualifications do not add earned competency. A gap is missing evidence or a domain score below 75. Strong alignment requires all required areas assessed, no gap and an average of at least 85. These are published initial rules requiring faculty validation, not an employment probability.
 

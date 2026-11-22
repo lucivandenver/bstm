@@ -83,11 +83,11 @@ Google reference: [OpenID Connect server flow](https://developers.google.com/ide
 
 - Profile: editable academic details, OJT, interests, languages, self-declared skills and qualifications. Account email cannot be changed through the profile form.
 - Catalog: search, competency filter, details, prerequisites, enrollment and resume.
-- Learning: persistent lesson checklist, module quizzes, locked sequential modules, final assessment and progress circle. Answers are graded on the server; answer keys are not rendered.
-- Failed quizzes/finals can be retried. All submitted quiz scores stay in the attempt history. A passing module score stays passed when reviewing or retrying a quiz.
+- Learning: persistent lesson checklist, module quizzes, locked sequential modules, module-based completion and progress circle. Answers are graded on the server; answer keys are not rendered.
+- Failed module quizzes can be retried. All submitted module quiz scores stay in the attempt history. A passing module score stays passed when reviewing or retrying a quiz.
 - Each course enrollment attempt snapshots the course version and requirements. Completing it issues one credential transactionally. A retake creates a new attempt without deleting previous credentials or scores.
 - Certificates are downloadable PDFs with a clickable verification URL and unique credential ID. Badges are downloadable SVG files. There is no QR code in this release.
-- Stars: final score 75–84 = 1, 85–94 = 2, 95–100 = 3 for the starter courses. These are achievement milestones, not employment credentials.
+- Stars: course module average 75–84 = 1, 85–94 = 2, 95–100 = 3. These are achievement milestones, not employment credentials.
 - Course activity is estimated from periodic active-tab heartbeats, excluding hidden/idle tabs. Elapsed days and estimated active minutes are shown separately. This is not proctoring or verified study time.
 - Notifications are persisted for course starts and course completions, with a mark-all-read action.
 - Results and PDF reports separate knowledge evidence from practical competence. Diagnostic retakes retain history.
@@ -124,7 +124,7 @@ The public pages now use a checked-in local Tailwind stylesheet. After changing 
 npm test
 ```
 
-The tests cover server-side grading, prerequisites, signup validation, role assignment, profiles, signed assessment challenges, ownership, full course completion, failed finals, duplicate submissions, PDFs, badges, retakes, template escaping and Google signup/linking decisions.
+The tests cover server-side grading, prerequisites, signup validation, role assignment, profiles, signed assessment challenges, ownership, module-based course completion, failed module quizzes, duplicate submissions, PDFs, badges, retakes, template escaping and Google signup/linking decisions.
 
 HTTP integration tests use Node's built-in SQLite through a test-only Sequelize adapter (`NODE_ENV=test` plus `TEST_DB_STORAGE`). Production uses MySQL. Tests never migrate or erase your Laragon database. Google token exchange and verification are mocked in the automated test: a real Google login still needs a manual smoke test with your OAuth client. The MySQL migration must also be checked against your backed-up local schema.
 
@@ -132,7 +132,7 @@ Manual checks after local setup:
 
 1. Register a student; confirm Student ID and section are saved.
 2. Sign up with Google using a configured test account; complete profiling.
-3. Enroll, complete lessons, fail and retry a quiz, then pass the final.
+3. Enroll, complete lessons, fail and retry a module quiz, then pass every module quiz.
 4. Download the PDF and SVG and open the verification URL.
 5. Retake the course; confirm the old certificate remains and new progress starts empty.
 6. Sign in as another student; verify the first account's private attempts/downloads are inaccessible.
