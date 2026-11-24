@@ -7,6 +7,7 @@ export function publicUrl(env = process.env) {
   return url.origin;
 }
 export function mysqlTransport(env = process.env, read = file => fs.readFileSync(file, 'utf8')) {
+  if (['localhost', '127.0.0.1'].includes(env.DB_HOST?.toLowerCase())) return {};
   const enabled = env.DB_SSL === 'true';
   const inline = env.DB_SSL_CA;
   const filename = env.DB_SSL_CA_FILE;
@@ -14,4 +15,15 @@ export function mysqlTransport(env = process.env, read = file => fs.readFileSync
   if (!enabled) return {};
   const ca = inline ? inline.replace(/\\n/g, '\n') : filename ? read(filename) : undefined;
   return { ssl: { rejectUnauthorized: true, ...(ca ? { ca } : {}) } };
+}
+
+export function mysqlConnection(env = process.env) {
+  return {
+    database: env.DB_NAME || 'BSTM',
+    user: env.DB_USER || 'root',
+    password: env.DB_PASSWORD || '',
+    host: env.DB_HOST || 'localhost',
+    port: Number(env.DB_PORT || 3306),
+    ...mysqlTransport({ ...env, DB_HOST: env.DB_HOST || 'localhost' })
+  };
 }

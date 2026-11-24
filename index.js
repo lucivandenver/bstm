@@ -50,6 +50,8 @@ app.use(express.json({ limit: '500kb' }));
 app.post(/^\/faculty\/courses\/\d+(?:\/modules\/\d+\/topics)?\/?$/,express.urlencoded({extended:true,limit:'16mb'}));
 app.use(express.urlencoded({ extended: true, limit: '500kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+const chartScript = fileURLToPath(new URL('chart.umd.js', import.meta.resolve('chart.js')));
+app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(chartScript));
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'strict-origin-when-cross-origin');

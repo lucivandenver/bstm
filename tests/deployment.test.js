@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { publicUrl, mysqlTransport } from '../config/deployment.js';
+import { publicUrl, mysqlConnection, mysqlTransport } from '../config/deployment.js';
 import flash from '../middleware/flash.js';
 test('production derives HTTPS origin from Render with an optional custom domain override', () => {
   assert.equal(publicUrl({ NODE_ENV: 'production', RENDER_EXTERNAL_URL: 'https://example-test.onrender.com/' }), 'https://example-test.onrender.com');
@@ -11,6 +11,10 @@ test('production derives HTTPS origin from Render with an optional custom domain
 });
 test('cloud database TLS verifies certificates and supports secret CA files', () => {
   assert.deepEqual(mysqlTransport({}), {});
+  for (const DB_HOST of ['localhost', '127.0.0.1']) {
+    assert.equal(mysqlConnection({ DB_HOST, DB_SSL: 'true', DB_SSL_CA_FILE: '/missing' }).ssl, undefined);
+  }
+  assert.equal(mysqlConnection({ DB_HOST: 'aiven.example', DB_SSL: 'true', DB_SSL_CA: 'aiven ca' }).ssl.ca, 'aiven ca');
   assert.deepEqual(mysqlTransport({ DB_SSL: 'true' }), { ssl: { rejectUnauthorized: true } });
   assert.equal(mysqlTransport({ DB_SSL: 'true', DB_SSL_CA: 'dummy\\nca' }).ssl.ca, 'dummy\nca');
   assert.equal(mysqlTransport({ DB_SSL: 'true', DB_SSL_CA_FILE: '/secret/ca.pem' }, path => { assert.equal(path, '/secret/ca.pem'); return 'dummy ca'; }).ssl.ca, 'dummy ca');
