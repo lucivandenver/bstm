@@ -5,22 +5,34 @@
   </header>
   <div class="dashboard-period-panel">
     <form class="dashboard-period-form" data-no-dirty>
+      <div class="analytics-faculty-controls">
+        <label class="dashboard-period-field">
+          <span>Search faculty by name</span>
+          <input type="search" data-faculty-search placeholder="e.g. Maria Santos" autocomplete="off">
+        </label>
+        <label class="dashboard-period-field">
+          <span>Faculty</span>
+          <select name="facultyId" data-faculty-select><option value="">All faculty</option></select>
+        </label>
+        <p class="small muted" data-faculty-matches role="status" hidden></p>
+      </div>
       {{> dashboardPeriodFields period="week" calendarPresets=true}}
     </form>
     <p class="dashboard-period-status small muted" data-analytics-message role="status">Loading learning analytics…</p>
   </div>
   <noscript>Enable JavaScript to view learning analytics.</noscript>
   <div data-analytics-results hidden>
-    <p class="small muted analytics-period-note">Activity counts use both dates. Progress shows recorded status through the end date, including earlier work.</p>
+    <p class="small muted analytics-period-note">Activity counts use both dates. Progress shows recorded status through the end date, including earlier work. Faculty filters use current course ownership. All faculty includes unassigned courses.</p>
     <dl class="analytics-totals">
-      <div><dt>Courses first published</dt><dd data-total="published"></dd></div>
+      <div><dt>Recorded first publications</dt><dd data-total="published"></dd></div>
       <div><dt>Learners started a course</dt><dd data-total="started"></dd></div>
       <div><dt>Module quiz submissions</dt><dd data-total="submitted"></dd></div>
-      <div><dt>Attempts completed</dt><dd data-total="completed"></dd></div>
+      <div><dt>Recorded retake starts</dt><dd data-total="retakes"></dd></div>
+      <div><dt>Course attempts completed</dt><dd data-total="completed"></dd></div>
     </dl>
     <div class="analytics-charts">
-      <section><h3>Activity over time</h3><div class="analytics-canvas"><canvas data-chart="trend" role="img" aria-label="Line chart of first publications, starts, quiz submissions and completions by date"></canvas></div></section>
-      <section><h3>Learner progress by status</h3><div class="analytics-canvas"><canvas data-chart="progress" role="img" aria-label="Pie chart of learner progress by status"></canvas></div></section>
+      <section class="analytics-trend"><h3>Activity in period</h3><p class="small muted">Recorded events by Philippine calendar date</p><p class="empty" data-trend-empty hidden>No activity recorded in this period.</p><div class="analytics-canvas"><canvas data-chart="trend" role="img" aria-label="Line chart of first publications, starts, quiz submissions and completions by date"></canvas></div></section>
+      <section><h3>Progress as of end date</h3><p class="small muted">One record per learner and course</p><p class="empty" data-progress-empty hidden>No learner progress for these filters.</p><div class="analytics-canvas"><canvas data-chart="progress" role="img" aria-label="Doughnut chart of learner progress by status"></canvas></div></section>
       <section><h3>Learner progress by course</h3><p class="small muted">Up to 8 courses with the most learners</p><div class="analytics-canvas"><canvas data-chart="courses" role="img" aria-label="Stacked bar chart of progress by course"></canvas></div></section>
       <section><h3>Course completion rates</h3><p class="small muted">Each dot shows a course’s learner count and completion rate</p><div class="analytics-canvas"><canvas data-chart="completion" role="img" aria-label="Scatter chart of course completion rate by learner count"></canvas></div></section>
     </div>
@@ -52,7 +64,7 @@
       </table></div>
       <div class="table-wrap"><table>
         <caption>Daily activity</caption>
-        <thead><tr><th>Date</th><th>Published</th><th>Started</th><th>Module quiz submissions</th><th>Completed</th></tr></thead>
+        <thead><tr><th>Date</th><th>Published</th><th>Started</th><th>Module quiz submissions</th><th>Retake starts</th><th>Completed</th></tr></thead>
         <tbody data-day-rows></tbody>
       </table></div>
     </details>

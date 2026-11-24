@@ -22,9 +22,10 @@ function completionDate(attempt) {
 
 function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students, events }) {
   const days = new Map();
+  const metricKeys = ['published', 'started', 'submitted', 'retakes', 'completed'];
   for (let timestamp = +range.from; timestamp < +range.through; timestamp += DAY) {
     const date = philippineDate(new Date(timestamp));
-    days.set(date, { date, published: 0, started: 0, submitted: 0, completed: 0 });
+    days.set(date, { date, published: 0, started: 0, submitted: 0, retakes: 0, completed: 0 });
   }
   const record = (date, metric) => {
     if (date == null || !Number.isFinite(+new Date(date))) return;
@@ -33,10 +34,12 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
   };
 
   const byCourse = new Map();
+  const includesToday = range.through > new Date();
   for (const course of courses) {
     const publishedAt = publishedDates.get(course.id);
     record(publishedAt, 'published');
-    byCourse.set(course.id, { course, publishedAt, learners: new Map() });
+    const publishedByEnd = publishedAt ? publishedAt < range.through : includesToday && course.published;
+    byCourse.set(course.id, { course, publishedByEnd, learners: new Map() });
   }
 
   const studentIds = new Set(students.map(student => student.id));
@@ -48,7 +51,7 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
   const sectionNames = new Map(sections.map(section => [section.id, section.name]));
   for (const assignment of assignments) {
     const entry = byCourse.get(assignment.courseId);
-    if (!entry?.publishedAt || entry.publishedAt >= range.through) continue;
+    if (!entry?.publishedByEnd) continue;
     for (const student of members.get(sectionNames.get(assignment.sectionId)) || []) {
       entry.learners.set(student.id, { status: 'notStarted' });
     }
@@ -77,11 +80,14 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
     entry.learners.set(attempt.userId, { status, attemptNumber: attempt.attemptNumber });
   }
 
+  const scopedAttempts = new Set(attempts.filter(attempt => studentIds.has(attempt.userId)).map(attempt => String(attempt.id)));
+  for (const event of events) if (scopedAttempts.has(event.targetId)) record(event.createdAt, 'retakes');
+
   const status = blankStatus();
   const rows = [];
   for (const entry of byCourse.values()) {
-    const { course, learners, publishedAt } = entry;
-    if (!learners.size && (!publishedAt || publishedAt >= range.through)) continue;
+    const { course, learners, publishedByEnd } = entry;
+    if (!learners.size && !publishedByEnd) continue;
     const counts = blankStatus();
     for (const learner of learners.values()) {
       counts[learner.status]++;
@@ -92,21 +98,21 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
   }
   rows.sort((a, b) => b.total - a.total || a.title.localeCompare(b.title));
   const trend = [...days.values()];
-  const totals = Object.fromEntries(['published', 'started', 'submitted', 'completed'].map(
+  const totals = Object.fromEntries(metricKeys.map(
     key => [key, trend.reduce((sum, day) => sum + day[key], 0)]
   ));
   return { start: range.start, end: range.end, status, trend, courses: rows, totals };
 }
 
-export async function dashboardAnalytics(range) {
+export async function dashboardAnalytics(range, facultyId) {
   const before = { [Op.lt]: range.through };
   const courses = await Course.findAll({
-    where: { createdAt: before },
+    where: { createdAt: before, ...(facultyId === undefined ? {} : { ownerId: facultyId }) },
     attributes: ['id', 'title', 'published', 'starter', 'createdAt', 'updatedAt', 'modules']
   });
   const courseId = { [Op.in]: courses.map(course => course.id) };
   const [publishedDates, attempts, assignments] = await Promise.all([
-    firstPublicationDates(courses),
+    firstPublicationDates(courses, { recordedOnly: true }),
     CourseAttempt.findAll({
       where: { courseId, createdAt: before },
       attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedLessons', 'completedAt', 'createdAt', 'updatedAt'],

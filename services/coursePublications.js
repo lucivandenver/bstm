@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import { AuditLog } from '../models/adminModels.js';
 import { CourseRevision } from '../models/portalModels.js';
 
-export async function firstPublicationDates(courses) {
+export async function firstPublicationDates(courses, { recordedOnly = false } = {}) {
   const courseIds = courses.map(course => course.id);
   const [revisions, events] = await Promise.all([
     CourseRevision.findAll({
@@ -20,10 +20,12 @@ export async function firstPublicationDates(courses) {
   ];
   const earliest = new Map();
   for (const { courseId, at } of publications) {
+    if (!at) continue;
+    const timestamp = new Date(at);
     const current = earliest.get(courseId);
-    if (!current || at < current) earliest.set(courseId, at);
+    if (Number.isFinite(+timestamp) && (!current || timestamp < current)) earliest.set(courseId, timestamp);
   }
   return new Map(courses.map(course => [
-    course.id, course.starter ? course.createdAt : earliest.get(course.id) || (course.published ? course.createdAt : null)
+    course.id, course.starter ? new Date(course.createdAt) : earliest.get(course.id) || (course.published && !recordedOnly ? course.createdAt : null)
   ]));
 }
