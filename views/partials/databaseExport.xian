@@ -1,0 +1,4 @@
+<form method="post" action="/admin/maintenance/backup">
+  <input type="hidden" name="_csrf" value="{{csrf}}">
+  <button class="button secondary" type="submit">Export Database (.sql)</button>
+</form>

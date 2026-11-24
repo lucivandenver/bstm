@@ -1,0 +1,51 @@
+<section class="card space-top learning-analytics" data-learning-analytics="{{endpoint}}" aria-labelledby="analytics-title">
+  <header class="analytics-header">
+    <div>
+      <h2 id="analytics-title">Learning analytics</h2>
+      <p class="muted small">Course publishing, quiz activity and learner progress. Dates use Philippine time.</p>
+    </div>
+    <form class="analytics-filters" data-no-dirty>
+      <label>Period
+        <select name="period">
+          <option value="day">Today</option>
+          <option value="week" selected>Last 7 days</option>
+          <option value="month">Last 30 days</option>
+          <option value="custom">Custom dates</option>
+        </select>
+      </label>
+      <label data-custom-date hidden>From <input type="date" name="start" disabled></label>
+      <label data-custom-date hidden>Through <input type="date" name="end" disabled></label>
+      <button class="button secondary" type="submit">Apply</button>
+    </form>
+  </header>
+  <p class="muted small" data-analytics-message role="status">Loading learning analytics…</p>
+  <noscript>Enable JavaScript to view learning analytics.</noscript>
+  <div data-analytics-results hidden>
+    <dl class="analytics-totals">
+      <div><dt>Courses first published</dt><dd data-total="published"></dd></div>
+      <div><dt>Learners started a course</dt><dd data-total="started"></dd></div>
+      <div><dt>Quiz submissions</dt><dd data-total="submitted"></dd></div>
+      <div><dt>Attempts completed</dt><dd data-total="completed"></dd></div>
+    </dl>
+    <div class="analytics-charts">
+      <section><h3>Activity over time</h3><div class="analytics-canvas"><canvas data-chart="trend" role="img" aria-label="Line chart of first publications, starts, quiz submissions and completions by date"></canvas></div></section>
+      <section><h3>Learner progress by status</h3><div class="analytics-canvas"><canvas data-chart="progress" role="img" aria-label="Pie chart of learner progress by status"></canvas></div></section>
+      <section><h3>Learner progress by course</h3><p class="small muted">Up to 8 courses with the most learners</p><div class="analytics-canvas"><canvas data-chart="courses" role="img" aria-label="Stacked bar chart of progress by course"></canvas></div></section>
+      <section><h3>Course completion rates</h3><p class="small muted">Each dot shows a course’s learner count and completion rate</p><div class="analytics-canvas"><canvas data-chart="completion" role="img" aria-label="Scatter chart of course completion rate by learner count"></canvas></div></section>
+    </div>
+    <p class="small muted">Progress uses each learner’s latest attempt through the end date and current section membership. Answering means an unfinished attempt with saved quiz answers. Not started means a section assignment with no attempt.</p>
+    <details>
+      <summary>View chart data</summary>
+      <div class="table-wrap"><table>
+        <caption>Progress by course</caption>
+        <thead><tr><th>Course</th><th>Learners</th><th>Not started</th><th>In progress</th><th>Answering</th><th>Completed</th><th>Completion</th></tr></thead>
+        <tbody data-course-rows></tbody>
+      </table></div>
+      <div class="table-wrap"><table>
+        <caption>Daily activity</caption>
+        <thead><tr><th>Date</th><th>Published</th><th>Started</th><th>Quiz submissions</th><th>Completed</th></tr></thead>
+        <tbody data-day-rows></tbody>
+      </table></div>
+    </details>
+  </div>
+</section>

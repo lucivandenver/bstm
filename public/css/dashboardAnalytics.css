@@ -1,0 +1,28 @@
+.dashboard-toolbar, .analytics-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem 1.25rem;
+}
+.dashboard-toolbar { margin-bottom: 1rem; align-items: center; }
+.analytics-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .65rem; }
+.analytics-filters label { display: grid; gap: .25rem; }
+.learning-analytics [hidden] { display: none; }
+.learning-analytics h3 { font-size: 1rem; margin: 0 0 .35rem; }
+.analytics-totals, .analytics-charts { display: grid; gap: 1rem; margin: 1rem 0; }
+.analytics-totals { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.analytics-totals > div, .analytics-charts > section {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #deebe5;
+  border-radius: .75rem;
+}
+.analytics-totals dt { font-size: .85rem; font-weight: 600; }
+.analytics-totals dd { font-size: 1.6rem; font-weight: 750; margin: .25rem 0 0; }
+.analytics-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.analytics-canvas { position: relative; width: 100%; height: 250px; }
+.learning-analytics details { margin-top: .75rem; }
+.learning-analytics summary { cursor: pointer; font-weight: 600; }
+.learning-analytics caption { text-align: left; font-weight: 600; padding: .75rem 0 .4rem; }
+@media (max-width: 950px) { .analytics-charts { grid-template-columns: 1fr; } }
