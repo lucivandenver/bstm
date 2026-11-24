@@ -114,7 +114,8 @@
       ]));
       table('[data-day-rows]', data.trend.map(row => [row.date, ...activity.map(([key]) => row[key])]));
       const noLearners = !Object.values(data.status).some(Boolean);
-      message.textContent = `${data.start} to ${data.end}${noLearners ? ' · No learner progress recorded through the end date.' : ''}`;
+      const dates = data.start === data.end ? data.start : `${data.start} to ${data.end}`;
+      message.textContent = `${dates} · Philippine time${noLearners ? ' · No learner progress recorded through the end date.' : ''}`;
       results.hidden = false;
       if (globalThis.Chart) renderCharts(data);
       else root.querySelector('.analytics-charts').hidden = true;
@@ -128,13 +129,7 @@
   }
 
   period.addEventListener('change', () => {
-    const custom = period.value === 'custom';
-    for (const field of [start, end]) {
-      field.disabled = !custom;
-      field.required = custom;
-      field.parentElement.hidden = !custom;
-    }
-    if (!custom) load();
+    if (period.value !== 'custom') load();
   });
   form.addEventListener('submit', event => {
     event.preventDefault();

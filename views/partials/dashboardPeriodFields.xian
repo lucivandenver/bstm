@@ -1,0 +1,19 @@
+<label class="dashboard-period-field dashboard-period-select">
+  <span>{{#if allTime}}Dashboard period{{else}}Period{{/if}}</span>
+  <select name="period" data-period-select>
+    {{#if allTime}}<option value="all" {{selected period 'all'}}>All time</option>{{/if}}
+    <option value="day" {{selected period 'day'}}>Today</option>
+    <option value="week" {{selected period 'week'}}>Last 7 days</option>
+    <option value="month" {{selected period 'month'}}>Last 30 days</option>
+    <option value="custom" {{selected period 'custom'}}>Custom dates</option>
+  </select>
+</label>
+<label class="dashboard-period-field" data-custom-date{{#unless (eq period 'custom')}} hidden{{/unless}}>
+  <span>Start date</span>
+  <input type="date" name="start" value="{{start}}"{{#if today}} max="{{today}}"{{/if}}{{#if (eq period 'custom')}} required{{else}} disabled{{/if}}>
+</label>
+<label class="dashboard-period-field" data-custom-date{{#unless (eq period 'custom')}} hidden{{/unless}}>
+  <span>End date</span>
+  <input type="date" name="end" value="{{end}}"{{#if today}} max="{{today}}"{{/if}}{{#if (eq period 'custom')}} required{{else}} disabled{{/if}}>
+</label>
+<button class="button dashboard-period-apply" type="submit">Apply</button>

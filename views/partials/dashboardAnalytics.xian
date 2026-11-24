@@ -1,24 +1,14 @@
 <section class="card space-top learning-analytics" data-learning-analytics="{{endpoint}}" aria-labelledby="analytics-title">
-  <header class="analytics-header">
-    <div>
-      <h2 id="analytics-title">Learning analytics</h2>
-      <p class="muted small">Course publishing, quiz activity and learner progress. Dates use Philippine time.</p>
-    </div>
-    <form class="analytics-filters" data-no-dirty>
-      <label>Period
-        <select name="period">
-          <option value="day">Today</option>
-          <option value="week" selected>Last 7 days</option>
-          <option value="month">Last 30 days</option>
-          <option value="custom">Custom dates</option>
-        </select>
-      </label>
-      <label data-custom-date hidden>From <input type="date" name="start" disabled></label>
-      <label data-custom-date hidden>Through <input type="date" name="end" disabled></label>
-      <button class="button secondary" type="submit">Apply</button>
-    </form>
+  <header>
+    <h2 id="analytics-title">Learning analytics</h2>
+    <p class="muted small">Course publishing, quiz activity and learner progress.</p>
   </header>
-  <p class="muted small" data-analytics-message role="status">Loading learning analytics…</p>
+  <div class="dashboard-period-panel">
+    <form class="dashboard-period-form" data-no-dirty>
+      {{> dashboardPeriodFields period="week"}}
+    </form>
+    <p class="dashboard-period-status small muted" data-analytics-message role="status">Loading learning analytics…</p>
+  </div>
   <noscript>Enable JavaScript to view learning analytics.</noscript>
   <div data-analytics-results hidden>
     <dl class="analytics-totals">

@@ -1,30 +1,14 @@
 import { Op } from 'sequelize';
 import { Course, CourseAttempt, User } from '../models/learningModels.js';
-import { Section, AuditLog } from '../models/adminModels.js';
-import { CourseAssignment, CourseRevision, QuizDraft } from '../models/portalModels.js';
+import { Section } from '../models/adminModels.js';
+import { CourseAssignment, QuizDraft } from '../models/portalModels.js';
 import { allModulesPassed } from './learning.js';
 
-const DAY = 86_400_000;
-const manila = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Manila' });
-const dayKey = date => manila.format(date);
-const midnight = date => new Date(`${date}T00:00:00+08:00`);
-const validDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-  Number.isFinite(+midnight(value)) && dayKey(midnight(value)) === value;
-const periods = { day: 1, week: 7, month: 30 };
-const blankStatus = () => ({ notStarted: 0, inProgress: 0, answering: 0, completed: 0 });
+import { philippineDate } from './dashboardPeriod.js';
+import { firstPublicationDates } from './coursePublications.js';
 
-export function analyticsRange({ period = 'week', start, end }, now = new Date()) {
-  const today = dayKey(now);
-  if (Object.hasOwn(periods, period)) {
-    end = today;
-    start = dayKey(new Date(+midnight(end) - (periods[period] - 1) * DAY));
-  } else if (period !== 'custom') return null;
-  if (!validDay(start) || !validDay(end) || start > end || end > today) return null;
-  const from = midnight(start);
-  const through = new Date(+midnight(end) + DAY);
-  if ((through - from) / DAY > 366) return null;
-  return { start, end, from, through };
-}
+const DAY = 86_400_000;
+const blankStatus = () => ({ notStarted: 0, inProgress: 0, answering: 0, completed: 0 });
 
 function completionDate(attempt) {
   if (!allModulesPassed(attempt)) return null;
@@ -35,26 +19,21 @@ function completionDate(attempt) {
   return passes.every(Boolean) ? new Date(Math.max(...passes.map(Date.parse))) : attempt.updatedAt;
 }
 
-export function summarizeAnalytics(range, { courses, publications, attempts, drafts, assignments, sections, students }) {
+function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students }) {
   const days = new Map();
   for (let timestamp = +range.from; timestamp < +range.through; timestamp += DAY) {
-    const date = dayKey(new Date(timestamp));
+    const date = philippineDate(new Date(timestamp));
     days.set(date, { date, published: 0, started: 0, submitted: 0, completed: 0 });
   }
   const record = (date, metric) => {
     if (date == null || !Number.isFinite(+new Date(date))) return;
-    const day = days.get(dayKey(new Date(date)));
+    const day = days.get(philippineDate(new Date(date)));
     if (day) day[metric]++;
   };
 
-  const firstPublication = new Map();
-  for (const { courseId, at } of publications) {
-    const current = firstPublication.get(courseId);
-    if (!current || at < current) firstPublication.set(courseId, at);
-  }
   const byCourse = new Map();
   for (const course of courses) {
-    const publishedAt = course.starter ? course.createdAt : firstPublication.get(course.id) || (course.published ? course.createdAt : null);
+    const publishedAt = publishedDates.get(course.id);
     record(publishedAt, 'published');
     byCourse.set(course.id, { course, publishedAt, learners: new Map() });
   }
@@ -110,16 +89,15 @@ export function summarizeAnalytics(range, { courses, publications, attempts, dra
   return { start: range.start, end: range.end, status, trend, courses: rows, totals };
 }
 
-export async function dashboardAnalytics(range, ownerId) {
+export async function dashboardAnalytics(range) {
   const before = { [Op.lt]: range.through };
   const courses = await Course.findAll({
-    where: { createdAt: before, ...(ownerId === undefined ? {} : { ownerId }) },
+    where: { createdAt: before },
     attributes: ['id', 'title', 'published', 'starter', 'createdAt'], raw: true
   });
   const courseId = { [Op.in]: courses.map(course => course.id) };
-  const [revisions, events, attempts, assignments] = await Promise.all([
-    CourseRevision.findAll({ where: { courseId, action: ['published', 'admin-published', 'publication-approved', 'module-published'] }, attributes: ['courseId', 'action', 'createdAt', 'updatedAt'], raw: true }),
-    AuditLog.findAll({ where: { targetType: 'course', targetId: { [Op.in]: courses.map(course => String(course.id)) }, action: ['course.published', 'course.republished', 'module.published', 'module.republished'] }, attributes: ['targetId', 'createdAt'], raw: true }),
+  const [publishedDates, attempts, assignments] = await Promise.all([
+    firstPublicationDates(courses),
     CourseAttempt.findAll({
       where: { courseId, createdAt: before },
       attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedAt', 'createdAt', 'updatedAt'],
@@ -144,9 +122,5 @@ export async function dashboardAnalytics(range, ownerId) {
     },
     attributes: ['id', 'section'], raw: true
   });
-  const publications = [
-    ...events.map(row => ({ courseId: Number(row.targetId), at: row.createdAt })),
-    ...revisions.map(row => ({ courseId: row.courseId, at: row.action === 'module-published' ? row.updatedAt : row.createdAt }))
-  ];
-  return summarizeAnalytics(range, { courses, publications, attempts, drafts, assignments, sections, students });
+  return summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students });
 }

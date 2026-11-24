@@ -8,7 +8,7 @@ import { sourceLimits } from '../services/sourceLimits.js';
 import { startCourseJob, startBlueprintJob, courseJobStatus } from '../services/courseJobs.js';
 import { validatedSignature } from '../services/signatureProcessing.js';
 import { completionTotals, moduleResults, summarizeLearning } from '../services/evidence.js';
-import { Op } from 'sequelize';
+import { Op, col, fn } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { User, Course, CourseAttempt, Credential, SavedCourse, Assessment, Notification, sequelize } from '../models/learningModels.js';
 import { Section, Announcement, Setting, CareerPath } from '../models/adminModels.js';
@@ -22,6 +22,9 @@ import { generationError, safeGenerationError } from '../services/courseGenerati
 import { extractSource } from '../services/sourceExtraction.js';
 import { progress, publicQuestions, allModulesPassed, courseModuleAverage } from '../services/learning.js';
 import { finalizeAttempt, syncPublishedAttempt } from '../services/portalLearning.js';
+import { dashboardPeriod, philippineDate } from '../services/dashboardPeriod.js';
+import { firstPublicationDates } from '../services/coursePublications.js';
+import { facultyDashboardStats, inDashboardPeriod } from '../services/facultyDashboard.js';
 function savedArray(value) {
   if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }
   return Array.isArray(value) ? value : [];
@@ -39,11 +42,36 @@ export async function assignedStudents(req) { const courses = await Course.findA
 async function studentAccess(req) { const students = await assignedStudents(req); const s = students.find(s => s.id === Number(req.params.id)); if (!s) fail('Assigned student not found.', 404); return s; }
 async function ownedCourse(req, transaction) { const c = await Course.findOne({ where: { id: req.params.id, ownerId: req.user.id }, ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {}) }); if (!c) fail('Course not found or not owned by your account.', 404); return c; }
 export const dashboard = async (req, res) => {
-  const sections = await assignedSections(req), students = await assignedStudents(req), owned = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id'] });
-  const attempts = await CourseAttempt.findAll({ where: { userId: { [Op.in]: students.map(s => s.id) }, courseId: { [Op.in]: owned.map(c => c.id) } }, order: [['createdAt', 'DESC']] });
-  const pending = await PracticalSubmission.count({ where: { attemptId: { [Op.in]: attempts.map(a => a.id) }, status: 'submitted' } });
-  const { coursesCompleted: completed, modulesPassed, modulesTotal } = completionTotals(attempts);
-  render(res, 'dashboard', { title: 'Faculty overview', students: students.slice(0, 8).map(plain), sections: sections.map(plain), studentCount: students.length, courseCount: await Course.count({ where: { ownerId: req.user.id } }), publishedCount: await Course.count({ where: { ownerId: req.user.id, published: true } }), pendingCredentials: await CredentialRequest.count({ where: { facultyId: req.user.id, status: 'pending' } }), active: new Set(attempts.filter(a => !allModulesPassed(a)).map(a => a.userId)).size, pending, completed, attemptCount: attempts.length, modulesPassed, modulesTotal, completionRate: modulesTotal ? Math.round(modulesPassed / modulesTotal * 100) : 0, support: students.filter(s => attempts.some(a => a.userId === s.id && !allModulesPassed(a) && (!a.lastActivityAt || Date.now() - new Date(a.lastActivityAt) > 7 * 86400000))).map(plain) });
+  const now = new Date();
+  const { period = 'all' } = req.query;
+  const range = period === 'all' ? null : dashboardPeriod(req.query, now);
+  if (!range && period !== 'all') fail('Choose valid dates and a range of up to 366 days.', 400);
+  const dateFields = range || dashboardPeriod({ period: 'week' }, now);
+  const updatedInPeriod = range ? { updatedAt: { [Op.gte]: range.from, [Op.lt]: range.through } } : {};
+  const [sections, students, courses, pendingCredentials] = await Promise.all([
+    assignedSections(req), assignedStudents(req),
+    Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id', 'title', 'published', 'starter', 'createdAt'] }),
+    CredentialRequest.count({ where: { facultyId: req.user.id, status: 'pending', ...updatedInPeriod } })
+  ]);
+  const published = courses.filter(course => course.published);
+  const [attempts, publicationDates] = await Promise.all([
+    CourseAttempt.findAll({
+      where: { userId: { [Op.in]: students.map(student => student.id) }, courseId: { [Op.in]: courses.map(course => course.id) } },
+      attributes: ['id', 'userId', 'courseId', 'snapshot', 'quizScores', 'quizAttempts', 'createdAt', 'updatedAt', 'completedAt', 'lastActivityAt']
+    }),
+    range ? firstPublicationDates(published) : null
+  ]);
+  const pending = await PracticalSubmission.count({
+    where: { attemptId: { [Op.in]: attempts.map(attempt => attempt.id) }, status: 'submitted', ...updatedInPeriod }
+  });
+  const stats = facultyDashboardStats({ attempts, students, courses, range, now });
+  const publishedCount = range ? published.filter(course => inDashboardPeriod(publicationDates.get(course.id), range)).length : published.length;
+  render(res, 'dashboard', {
+    ...stats, title: 'Faculty overview', publishedCount, pendingCredentials, pending,
+    manyCoursesWithActivity: stats.learnerActivity.length > 8,
+    students: students.slice(0, 8).map(plain), sections: sections.map(plain), support: stats.support.map(plain),
+    filtered: Boolean(range), period, today: philippineDate(now), start: dateFields.start, end: dateFields.end
+  });
 };
 export const profile = async (req, res) => render(res, 'profile', { title: 'My faculty profile', savedSignature: await facultySignature(req.user.id), googleConnected: Boolean(req.user.googleId), returned: req.user.approvalStatus === 'returned' });
 export const saveProfile = async (req, res) => { const name = text(req.body.name, 100), facultyPosition = text(req.body.facultyPosition, 120), facultyEducation = text(req.body.facultyEducation, 200), facultyQualifications = text(req.body.facultyQualifications, 2000); if (name.length < 2 || !facultyPosition || !facultyEducation || !facultyQualifications) fail('Complete your name, position, education and qualifications.'); const resubmit = req.user.approvalStatus === 'returned'; await req.user.update({ name, facultyPosition, facultyEducation, facultyQualifications, ...(resubmit ? { approvalStatus: 'pending', facultyReviewedBy: null, facultyReviewedAt: null } : {}) }); if (resubmit) { const admins = await User.findAll({ where: { role: 'admin', active: true }, attributes: ['id'] }); await Notification.bulkCreate(admins.map(admin => ({ userId: admin.id, title: 'Faculty registration resubmitted', message: `${name} updated a returned registration for review.`, href: '/admin/faculty?approval=pending' }))); } req.flash('success_msg', resubmit ? 'Profile updated and returned registration resubmitted for Admin review.' : 'Faculty profile saved.'); res.redirect('/faculty/profile'); };
@@ -927,20 +955,75 @@ export const student = async (req, res) => {
 };
 export const note = async (req, res) => { const student = await studentAccess(req); const feedback = text(req.body.feedback, 3000), remediation = text(req.body.remediation, 1500); if (!feedback) fail('Enter feedback.'); await FacultyNote.create({ studentId: student.id, facultyId: req.user.id, feedback, remediation, visibility: req.body.visibility === 'student' ? 'student' : 'internal' }); if (req.body.visibility === 'student') await Notification.create({ userId: student.id, title: 'Faculty feedback', message: 'Your faculty added learning feedback and recommended next steps.', href: '/student/results' }); await audit(req.user.id, 'faculty.feedback_added', 'user', student.id); res.redirect(`/faculty/students/${student.id}`); };
 export const monitoring = async (req, res) => {
-  const students = await assignedStudents(req), names = new Map(students.map(s => [s.id, s]));
+  const report = req.path === '/reports';
+  const download = ['xlsx', 'csv'].includes(req.query.export);
   const courses = await Course.findAll({ where: { ownerId: req.user.id }, attributes: ['id'] });
-  const rows = await CourseAttempt.findAll({ where: { userId: { [Op.in]: students.map(s => s.id) }, courseId: { [Op.in]: courses.map(c => c.id) } }, order: [['createdAt', 'DESC']] });
-  const tasks = await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: rows.map(a => a.id) }, status: 'submitted' } });
-  const attempts = rows.map(a => { const completed = allModulesPassed(a); return { ...plain(a), status: completed ? 'completed' : a.status, student: plain(names.get(a.userId)), moduleResults: moduleResults(a), title: a.snapshot.title, ...progress(a), moduleAverage: courseModuleAverage(a), awaiting: tasks.some(t => t.attemptId === a.id), inactive: !completed && Date.now() - new Date(a.lastActivityAt || a.createdAt) > 7 * 86400000, retaking: a.attemptNumber > 1, minutes: Math.floor(a.activeSeconds / 60), elapsedDays: Math.floor((Date.now() - new Date(a.createdAt)) / 86400000), lastActivity: date(a.lastActivityAt) }; });
-  if (['xlsx', 'csv'].includes(req.query.export)) return sendWorkbook(res, 'assigned-student-progress.xlsx', [{
+  const where = { courseId: { [Op.in]: courses.map(course => course.id) } };
+  let students, pagination, studentOrder;
+  if (report || download) {
+    students = await assignedStudents(req);
+  } else {
+    const tracked = await CourseAttempt.findAll({
+      where,
+      include: [{ model: User, attributes: [], where: { role: 'student' } }],
+      attributes: ['userId'], group: ['CourseAttempt.userId'], raw: true,
+      order: [[fn('MAX', col('CourseAttempt.createdAt')), 'DESC'], [col('CourseAttempt.userId'), 'ASC']]
+    });
+    const pageSize = 5;
+    const pages = Math.max(1, Math.ceil(tracked.length / pageSize));
+    const requested = typeof req.query.page === 'string' ? Number(req.query.page) : 1;
+    const page = Math.min(pages, Math.max(1, Number.isSafeInteger(requested) ? requested : 1));
+    const offset = (page - 1) * pageSize;
+    const ids = tracked.slice(offset, offset + pageSize).map(row => row.userId);
+    studentOrder = new Map(ids.map((id, index) => [id, index]));
+    students = await User.findAll({
+      where: { id: { [Op.in]: ids }, role: 'student' }, attributes: ['id', 'name', 'section']
+    });
+    pagination = {
+      page, pages, total: tracked.length, first: offset + 1, last: offset + ids.length,
+      hasPages: pages > 1, previous: page > 1 ? page - 1 : null, next: page < pages ? page + 1 : null
+    };
+  }
+
+  const names = new Map(students.map(student => [student.id, plain(student)]));
+  const rows = await CourseAttempt.findAll({
+    where: { ...where, userId: { [Op.in]: [...names.keys()] } },
+    order: [['createdAt', 'DESC'], ['id', 'DESC']]
+  });
+  if (studentOrder) rows.sort((a, b) => studentOrder.get(a.userId) - studentOrder.get(b.userId));
+  const tasks = await PracticalSubmission.findAll({
+    where: { attemptId: { [Op.in]: rows.map(attempt => attempt.id) }, status: 'submitted' },
+    attributes: ['attemptId']
+  });
+  const awaitingGrades = new Set(tasks.map(task => task.attemptId));
+  const now = Date.now();
+  const attempts = rows.map(attempt => {
+    const completed = allModulesPassed(attempt);
+    const awaiting = awaitingGrades.has(attempt.id);
+    const metrics = progress(attempt);
+    const statusLabel = completed ? 'Completed / passed' : awaiting ? 'Awaiting faculty grading' : metrics.done === 0 ? 'Enrolled · not started' : 'Ongoing';
+    return {
+      student: names.get(attempt.userId), title: attempt.snapshot.title, attemptNumber: attempt.attemptNumber,
+      status: completed ? 'completed' : attempt.status, statusLabel, ...metrics,
+      moduleResults: moduleResults(attempt), moduleAverage: courseModuleAverage(attempt),
+      awaiting, inactive: !completed && now - new Date(attempt.lastActivityAt || attempt.createdAt) > 7 * 86400000,
+      retaking: attempt.attemptNumber > 1, minutes: Math.floor(attempt.activeSeconds / 60),
+      elapsedDays: Math.floor((now - new Date(attempt.createdAt)) / 86400000), lastActivity: date(attempt.lastActivityAt)
+    };
+  });
+  if (download) return sendWorkbook(res, 'assigned-student-progress.xlsx', [{
     name: 'Student progress',
     headers: ['Student', 'Section', 'Course', 'Attempt', 'Status', 'Progress (%)', 'Module average (%)', 'Module quiz results', 'Active minutes', 'Elapsed days', 'Last activity'],
     rows: attempts.map(a => [a.student.name, a.student.section, a.title, a.attemptNumber, a.status, a.percent, a.moduleAverage, a.moduleResults.map(module => `${module.title}: ${module.score}%`).join(' | '), a.minutes, a.elapsedDays, a.lastActivity])
   }]);
-  const assessments = await Assessment.findAll({ where: { userId: { [Op.in]: students.map(s => s.id) } }, order: [['createdAt','DESC']] });
-  const practicals = await PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: rows.filter(allModulesPassed).map(r => r.id) }, status: 'graded' } });
+  if (!report) return render(res, 'monitoring', { title: 'Progress monitoring', attempts, pagination });
+
+  const [assessments, practicals] = await Promise.all([
+    Assessment.findAll({ where: { userId: { [Op.in]: students.map(student => student.id) } }, order: [['createdAt', 'DESC']] }),
+    PracticalSubmission.findAll({ where: { attemptId: { [Op.in]: rows.filter(allModulesPassed).map(attempt => attempt.id) }, status: 'graded' } })
+  ]);
   const { domainSummary, sectionSummary } = summarizeLearning(students, rows, assessments, practicals);
-  render(res, req.path === '/reports' ? 'reports' : 'monitoring', { title: req.path === '/reports' ? 'Faculty reports' : 'Progress monitoring', attempts: attempts.map(a => ({ ...a, statusLabel: a.status === 'completed' ? 'Completed / passed' : a.awaiting ? 'Awaiting faculty grading' : a.done === 0 ? 'Enrolled · not started' : 'Ongoing' })), domainSummary, sectionSummary });
+  render(res, 'reports', { title: 'Faculty reports', attempts, domainSummary, sectionSummary });
 };
 export const assignments = async (req, res) => { const sections = await assignedSections(req), courses = await Course.findAll({ where: { ownerId: req.user.id, published: true } }), assignments = await CourseAssignment.findAll({ where: { sectionId: { [Op.in]: sections.map(s => s.id) } } }); render(res, 'assignments', { title: 'Required learning', sections: sections.map(plain), courses: courses.map(plain), assignments: assignments.map(a => ({ ...plain(a), sectionName: sections.find(s => s.id === a.sectionId)?.name, courseTitle: courses.find(c => c.id === a.courseId)?.title || 'Course managed by another faculty', date: date(a.dueAt) })) }); };
 export const assign = async (req, res) => {

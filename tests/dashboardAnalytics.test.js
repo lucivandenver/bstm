@@ -9,21 +9,21 @@ const { sequelize, User, Course, CourseAttempt } = await import('../models/learn
 const { Section } = await import('../models/adminModels.js');
 const { CourseAssignment, QuizDraft } = await import('../models/portalModels.js');
 const { bootstrapAdmin, ownerEmail } = await import('../services/accounts.js');
-const { analyticsRange } = await import('../services/dashboardAnalytics.js');
+const { dashboardPeriod } = await import('../services/dashboardPeriod.js');
 const { startServer, closeResources } = await import('../index.js');
 const bcrypt = (await import('bcryptjs')).default;
 
 test('date filters use inclusive Philippine dates and reject invalid ranges', () => {
   const now = new Date('2026-11-24T17:30:00Z');
-  assert.deepEqual(analyticsRange({ period: 'week' }, now), {
+  assert.deepEqual(dashboardPeriod({ period: 'week' }, now), {
     start: '2026-11-19', end: '2026-11-25',
     from: new Date('2026-11-18T16:00:00Z'), through: new Date('2026-11-25T16:00:00Z')
   });
-  assert.equal(analyticsRange({ period: 'custom', start: '2026-02-30', end: '2026-03-01' }, now), null);
-  assert.equal(analyticsRange({ period: 'custom', start: '2026-11-25', end: '2026-11-24' }, now), null);
+  assert.equal(dashboardPeriod({ period: 'custom', start: '2026-02-30', end: '2026-03-01' }, now), null);
+  assert.equal(dashboardPeriod({ period: 'custom', start: '2026-11-25', end: '2026-11-24' }, now), null);
 });
 
-test('dashboards report real quiz and assignment progress with faculty and backup access controls', async () => {
+test('admin analytics reports real quiz and assignment progress with role and backup access controls', async () => {
   await sequelize.sync({ force: true });
   await bootstrapAdmin();
   const server = await startServer(0);
@@ -52,8 +52,8 @@ test('dashboards report real quiz and assignment progress with faculty and backu
     await faculty.login(teacher.email, password);
     await student.login(learners[0].email, password);
     assert.match((await admin.get('/admin')).html, /Export Database \(\.sql\)/);
-    assert.match((await faculty.get('/faculty')).html, /Learning analytics/);
-    assert.doesNotMatch((await faculty.get('/faculty')).html, /Export Database/);
+    assert.doesNotMatch((await faculty.get('/faculty')).html, /Learning analytics|Export Database/);
+    assert.equal((await faculty.get('/faculty/analytics')).status, 404);
     assert.equal((await faculty.get('/admin/analytics')).status, 403);
     assert.equal((await student.get('/faculty/analytics')).status, 403);
     assert.equal((await faculty.post('/admin/maintenance/backup')).status, 403);
@@ -62,14 +62,11 @@ test('dashboards report real quiz and assignment progress with faculty and backu
     assert.equal((await admin.get('/admin/analytics?period=invalid')).status, 400);
     assert.equal((await admin.get('/vendor/chart.umd.js')).status, 200);
 
-    const facultyStats = JSON.parse((await faculty.get('/faculty/analytics?period=day')).html);
-    assert.deepEqual(facultyStats.status, { notStarted: 1, answering: 1, inProgress: 1, completed: 1 });
-    assert.deepEqual(facultyStats.totals, { published: 1, started: 3, submitted: 1, completed: 1 });
-    assert.deepEqual(facultyStats.courses.map(row => row.title), [course.title]);
     const adminStats = JSON.parse((await admin.get('/admin/analytics?period=day')).html);
-    assert.equal(adminStats.totals.published, facultyStats.totals.published + 1);
+    assert.deepEqual(adminStats.status, { notStarted: 1, answering: 1, inProgress: 1, completed: 1 });
+    assert.deepEqual(adminStats.totals, { published: 2, started: 3, submitted: 1, completed: 1 });
     assert.ok(adminStats.courses.some(row => row.title === 'Other analytics course'));
-    const prior = JSON.parse((await faculty.get('/faculty/analytics?period=custom&start=2000-01-01&end=2000-01-02')).html);
+    const prior = JSON.parse((await admin.get('/admin/analytics?period=custom&start=2000-01-01&end=2000-01-02')).html);
     assert.equal(prior.trend.length, 2);
     assert.equal(prior.courses.length, 0);
   } finally {
