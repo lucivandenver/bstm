@@ -11,7 +11,7 @@ import { Section } from '../models/adminModels.js';
 import { finalizeAttempt, ensureCompletionCredential, draftFor, scopeQuestions, validateDraftAnswers, checkQuizLimits, quizAccess, assessmentSubmissions, syncPublishedAttempt } from '../services/portalLearning.js';
 import { fail as error } from '../services/courseAuthoring.js';
 import { CareerPath } from '../models/adminModels.js';
-import { setting, genders } from '../services/accounts.js';
+import { audit, setting, genders } from '../services/accounts.js';
 import PDFDocument from 'pdfkit';
 import { Course, CourseAttempt, StudentProfile, Assessment, Credential, Notification, SavedCourse, SavedModule, sequelize } from '../models/learningModels.js';
 import { User } from '../models/userModel.js';
@@ -665,6 +665,7 @@ export const retakeModule = async (req, res) => {
       lastActivityAt: new Date()
     }, { transaction });
     await QuizDraft.destroy({ where: { attemptId: attempt.id, scope: module.id }, transaction });
+    await audit(req.user.id, 'module.retake_started', 'attempt', attempt.id, { moduleId: module.id }, transaction);
     return moduleStartHref(attempt, module.id) || `/student/learn/${attempt.id}?module=${encodeURIComponent(module.id)}`;
   });
   delete req.session.careerAi;

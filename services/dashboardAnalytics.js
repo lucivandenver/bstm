@@ -1,11 +1,12 @@
 import { Op } from 'sequelize';
 import { Course, CourseAttempt, User } from '../models/learningModels.js';
-import { Section } from '../models/adminModels.js';
+import { AuditLog, Section } from '../models/adminModels.js';
 import { CourseAssignment, QuizDraft } from '../models/portalModels.js';
 import { allModulesPassed } from './learning.js';
 
 import { philippineDate } from './dashboardPeriod.js';
 import { firstPublicationDates } from './coursePublications.js';
+import { moduleActivity, summarizeModules } from './moduleAnalytics.js';
 
 const DAY = 86_400_000;
 const blankStatus = () => ({ notStarted: 0, inProgress: 0, answering: 0, completed: 0 });
@@ -16,10 +17,10 @@ function completionDate(attempt) {
   const passes = attempt.snapshot.modules.map(module => (attempt.quizAttempts || []).find(
     result => result.scope === module.id && !result.expired && result.score >= attempt.snapshot.passingScore
   )?.at);
-  return passes.every(Boolean) ? new Date(Math.max(...passes.map(Date.parse))) : attempt.updatedAt;
+  return passes.every(Boolean) ? new Date(Math.max(...passes.map(Date.parse))) : null;
 }
 
-function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students }) {
+function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students, events }) {
   const days = new Map();
   for (let timestamp = +range.from; timestamp < +range.through; timestamp += DAY) {
     const date = philippineDate(new Date(timestamp));
@@ -53,18 +54,24 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
     }
   }
 
+  const { saved, restarts } = moduleActivity(drafts, events);
+  const attemptsByCourse = new Map();
   const answering = new Set(drafts.filter(draft => Object.keys(draft.answers || {}).length).map(draft => draft.attemptId));
   for (const attempt of attempts) {
     const entry = byCourse.get(attempt.courseId);
     if (!entry || !studentIds.has(attempt.userId)) continue;
+    if (!attemptsByCourse.has(attempt.courseId)) attemptsByCourse.set(attempt.courseId, []);
+    attemptsByCourse.get(attempt.courseId).push(attempt);
     const previous = entry.learners.get(attempt.userId);
     if (!previous?.attemptNumber) record(attempt.createdAt, 'started');
     for (const result of attempt.quizAttempts || []) {
-      if (!result.expired && result.scope !== 'final') record(result.at, 'submitted');
+      if (!result.expired && result.scope !== 'final' && result.scope !== 'pretest' && Number.isFinite(result.score)) record(result.at, 'submitted');
     }
     const completedAt = completionDate(attempt);
     record(completedAt, 'completed');
-    const status = completedAt && completedAt < range.through ? 'completed' :
+    const completeByEnd = completedAt && completedAt < range.through ||
+      attempt.updatedAt < range.through && allModulesPassed(attempt);
+    const status = completeByEnd ? 'completed' :
       answering.has(attempt.id) ? 'answering' : 'inProgress';
     // Attempts are ordered oldest to newest by attempt number.
     entry.learners.set(attempt.userId, { status, attemptNumber: attempt.attemptNumber });
@@ -72,14 +79,16 @@ function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, 
 
   const status = blankStatus();
   const rows = [];
-  for (const { course, learners, publishedAt } of byCourse.values()) {
+  for (const entry of byCourse.values()) {
+    const { course, learners, publishedAt } = entry;
     if (!learners.size && (!publishedAt || publishedAt >= range.through)) continue;
     const counts = blankStatus();
     for (const learner of learners.values()) {
       counts[learner.status]++;
       status[learner.status]++;
     }
-    rows.push({ title: course.title, total: learners.size, ...counts });
+    rows.push({ id: course.id, title: course.title, total: learners.size, ...counts,
+      modules: summarizeModules(entry, range, saved, restarts, attemptsByCourse.get(course.id) || []) });
   }
   rows.sort((a, b) => b.total - a.total || a.title.localeCompare(b.title));
   const trend = [...days.values()];
@@ -93,23 +102,28 @@ export async function dashboardAnalytics(range) {
   const before = { [Op.lt]: range.through };
   const courses = await Course.findAll({
     where: { createdAt: before },
-    attributes: ['id', 'title', 'published', 'starter', 'createdAt'], raw: true
+    attributes: ['id', 'title', 'published', 'starter', 'createdAt', 'updatedAt', 'modules']
   });
   const courseId = { [Op.in]: courses.map(course => course.id) };
   const [publishedDates, attempts, assignments] = await Promise.all([
     firstPublicationDates(courses),
     CourseAttempt.findAll({
       where: { courseId, createdAt: before },
-      attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedAt', 'createdAt', 'updatedAt'],
+      attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedLessons', 'completedAt', 'createdAt', 'updatedAt'],
       order: [['attemptNumber', 'ASC']]
     }),
     CourseAssignment.findAll({ where: { courseId, createdAt: before }, attributes: ['courseId', 'sectionId'], raw: true })
   ]);
-  const [sections, drafts] = await Promise.all([
+  const [sections, drafts, events] = await Promise.all([
     Section.findAll({ where: { id: { [Op.in]: [...new Set(assignments.map(row => row.sectionId))] } }, attributes: ['id', 'name'], raw: true }),
     QuizDraft.findAll({
       where: { attemptId: { [Op.in]: attempts.map(attempt => attempt.id) }, updatedAt: before },
-      attributes: ['attemptId', 'answers']
+      attributes: ['attemptId', 'answers', 'scope', 'startedAt']
+    }),
+    AuditLog.findAll({
+      where: { action: 'module.retake_started', targetType: 'attempt',
+        targetId: { [Op.in]: attempts.map(attempt => String(attempt.id)) }, createdAt: before },
+      attributes: ['targetId', 'createdAt', 'details'], order: [['createdAt', 'ASC'], ['id', 'ASC']]
     })
   ]);
   const students = await User.findAll({
@@ -122,5 +136,5 @@ export async function dashboardAnalytics(range) {
     },
     attributes: ['id', 'section'], raw: true
   });
-  return summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students });
+  return summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students, events });
 }

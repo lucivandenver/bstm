@@ -5,6 +5,10 @@
     <option value="day" {{selected period 'day'}}>Today</option>
     <option value="week" {{selected period 'week'}}>Last 7 days</option>
     <option value="month" {{selected period 'month'}}>Last 30 days</option>
+    {{#if calendarPresets}}
+    <option value="calendar-week" {{selected period 'calendar-week'}}>This week (Mon–today)</option>
+    <option value="calendar-month" {{selected period 'calendar-month'}}>This month (to date)</option>
+    {{/if}}
     <option value="custom" {{selected period 'custom'}}>Custom dates</option>
   </select>
 </label>

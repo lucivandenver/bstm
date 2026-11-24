@@ -12,6 +12,11 @@ export function dashboardPeriod({ period = 'week', start, end }, now = new Date(
   if (Object.hasOwn(periods, period)) {
     end = today;
     start = philippineDate(new Date(+midnight(end) - (periods[period] - 1) * DAY));
+  } else if (period === 'calendar-week' || period === 'calendar-month') {
+    end = today;
+    const date = new Date(`${today}T12:00:00Z`);
+    start = period === 'calendar-month' ? today.slice(0, 8) + '01' :
+      philippineDate(new Date(+date - ((date.getUTCDay() + 6) % 7) * DAY));
   } else if (period !== 'custom') return null;
   if (!validDay(start) || !validDay(end) || start > end || end > today) return null;
   const from = midnight(start);
