@@ -7,14 +7,13 @@
     <form class="dashboard-period-form" data-no-dirty>
       <div class="analytics-faculty-controls">
         <label class="dashboard-period-field">
-          <span>Search faculty by name</span>
-          <input type="search" data-faculty-search placeholder="e.g. Maria Santos" autocomplete="off">
-        </label>
-        <label class="dashboard-period-field">
           <span>Faculty</span>
           <select name="facultyId" data-faculty-select><option value="">All faculty</option></select>
         </label>
-        <p class="small muted" data-faculty-matches role="status" hidden></p>
+        <label class="dashboard-period-field">
+          <span>Course</span>
+          <select name="courseId" data-course-select><option value="">All courses</option></select>
+        </label>
       </div>
       {{> dashboardPeriodFields period="week" calendarPresets=true}}
     </form>
@@ -22,7 +21,7 @@
   </div>
   <noscript>Enable JavaScript to view learning analytics.</noscript>
   <div data-analytics-results hidden>
-    <p class="small muted analytics-period-note">Activity counts use both dates. Progress shows recorded status through the end date, including earlier work. Faculty filters use current course ownership. All faculty includes unassigned courses.</p>
+    <p class="small muted analytics-period-note">All charts and tables below use the applied faculty, course, and Philippine date range.</p>
     <dl class="analytics-totals">
       <div><dt>Recorded first publications</dt><dd data-total="published"></dd></div>
       <div><dt>Learners started a course</dt><dd data-total="started"></dd></div>
@@ -32,18 +31,17 @@
     </dl>
     <div class="analytics-charts">
       <section class="analytics-trend"><h3>Activity in period</h3><p class="small muted">Recorded events by Philippine calendar date</p><p class="empty" data-trend-empty hidden>No activity recorded in this period.</p><div class="analytics-canvas"><canvas data-chart="trend" role="img" aria-label="Line chart of first publications, starts, quiz submissions and completions by date"></canvas></div></section>
-      <section><h3>Progress as of end date</h3><p class="small muted">One record per learner and course</p><p class="empty" data-progress-empty hidden>No learner progress for these filters.</p><div class="analytics-canvas"><canvas data-chart="progress" role="img" aria-label="Doughnut chart of learner progress by status"></canvas></div></section>
+      <section><h3>Learner progress in period</h3><p class="small muted">One record per learner and course</p><p class="empty" data-progress-empty hidden>No learner progress for these filters.</p><div class="analytics-canvas"><canvas data-chart="progress" role="img" aria-label="Doughnut chart of learner progress by status"></canvas></div></section>
       <section><h3>Learner progress by course</h3><p class="small muted">Up to 8 courses with the most learners</p><div class="analytics-canvas"><canvas data-chart="courses" role="img" aria-label="Stacked bar chart of progress by course"></canvas></div></section>
       <section><h3>Course completion rates</h3><p class="small muted">Each dot shows a course’s learner count and completion rate</p><div class="analytics-canvas"><canvas data-chart="completion" role="img" aria-label="Scatter chart of course completion rate by learner count"></canvas></div></section>
     </div>
-    <p class="small muted">Progress uses each learner’s latest attempt through the end date and current section membership. Answering means an unfinished attempt with saved quiz answers. Not started means a section assignment with no attempt.</p>
+    <p class="small muted">Progress shows end-of-period status for learners with recorded activity or a new assignment in the period. Section membership and faculty ownership use current records. Answering means an unfinished attempt with saved quiz answers. Not started means a section assignment with no attempt.</p>
     <section class="module-analytics" aria-labelledby="module-analytics-title">
       <div class="dashboard-toolbar">
         <h3 id="module-analytics-title">Module progress by course</h3>
-        <label class="dashboard-period-field"><span>Course</span><select data-module-course></select></label>
       </div>
       <p class="small muted">One student per module. Status totals include assigned students and learners with recorded attempts. Retake counts can overlap with any status.</p>
-      <p class="small muted" data-module-empty hidden>No modules to show for this course and period.</p>
+      <p class="small muted" data-module-empty hidden>No module progress for these filters.</p>
       <div data-module-results hidden>
         <div class="analytics-canvas module-analytics-canvas"><canvas data-module-chart role="img" aria-label="Stacked bar chart of student statuses by module"></canvas></div>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Module progress and retake counts">

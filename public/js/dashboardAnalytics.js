@@ -8,36 +8,26 @@
   const charts = [];
   let request;
   let faculty = [];
-  const facultySearch = root.querySelector('[data-faculty-search]');
+  let courseOptions = [];
   const facultySelect = root.querySelector('[data-faculty-select]');
-  const facultyMatches = root.querySelector('[data-faculty-matches]');
-  const normalizeName = value => value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('en-PH');
+  const courseSelect = root.querySelector('[data-course-select]');
+
+  function setOptions(select, all, entries, label) {
+    const selected = select.value;
+    select.replaceChildren(new Option(all, ''), ...entries.map(entry => new Option(label(entry), entry.id)));
+    if (entries.some(entry => String(entry.id) === selected)) select.value = selected;
+  }
+
+  function updateCourseOptions() {
+    setOptions(courseSelect, 'All courses', courseOptions.filter(course =>
+      !facultySelect.value || String(course.ownerId) === facultySelect.value), course => course.title);
+  }
+
   const shortDate = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   const axis = { beginAtZero: true, grid: { color: '#e9eff1' }, border: { display: false }, ticks: { precision: 0 } };
   const legend = { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 14 } };
   const tooltip = { backgroundColor: '#142c32', padding: 12, usePointStyle: true };
   const barStyle = { borderRadius: 5, maxBarThickness: 22 };
-
-  function updateFacultyOptions() {
-    const selected = facultySelect.value;
-    const query = normalizeName(facultySearch.value.trim());
-    const matching = faculty.filter(person => normalizeName(person.name).includes(query));
-    const matchingIds = new Set(matching.map(person => String(person.id)));
-    const visible = faculty.filter(person => matchingIds.has(String(person.id)) || String(person.id) === selected);
-    const nameCounts = new Map();
-    for (const { name } of faculty) {
-      const key = normalizeName(name);
-      nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
-    }
-    facultySelect.replaceChildren(new Option('All faculty', ''), ...visible.map(person => {
-      const label = nameCounts.get(normalizeName(person.name)) > 1 ? `${person.name} (#${person.id})` : person.name;
-      return new Option(label, person.id);
-    }));
-    if ([...facultySelect.options].some(option => option.value === selected)) facultySelect.value = selected;
-    facultyMatches.hidden = !query;
-    facultyMatches.textContent = matching.length ? `${matching.length} matching faculty` : 'No faculty names match your search.';
-    return matching;
-  }
 
   const number = new Intl.NumberFormat('en-PH');
   const states = [
@@ -53,7 +43,6 @@
     ['retakes', 'Retake starts', '#bf365b'],
     ['completed', 'Course attempts completed', '#007042'],
   ];
-  const modulesSelect = root.querySelector('[data-module-course]');
   const moduleStates = [
     ['passed', 'Passed', '#007042'],
     ['failedWithoutRetake', 'Failed · no retake', '#a82745'],
@@ -62,7 +51,7 @@
     ['notStarted', 'Not started', '#64748b'],
     ['historyUnavailable', 'History unavailable', '#ad691a']
   ];
-  let moduleChart, coursesById;
+  let moduleChart;
   const percent = row => row.total ? Math.round(100 * row.completed / row.total) : 0;
 
   function chart(name, config) {
@@ -152,10 +141,12 @@
     }));
   }
 
-  function renderModules() {
+  function renderModules(courses) {
     moduleChart?.destroy();
     moduleChart = null;
-    const modules = coursesById.get(modulesSelect.value)?.modules ?? [];
+    const modules = courses.flatMap(course => course.modules.map(module => ({
+      ...module, title: courses.length === 1 ? module.title : `${course.title} · ${module.title}`
+    })));
     root.querySelector('[data-module-results]').hidden = !modules.length;
     root.querySelector('[data-module-empty]').hidden = !!modules.length;
     table('[data-module-rows]', modules.map(row => [
@@ -183,8 +174,6 @@
     });
   }
 
-  modulesSelect.addEventListener('change', renderModules);
-
   async function load() {
     request?.abort();
     const controller = new AbortController();
@@ -201,7 +190,10 @@
       const data = await response.json();
       if (request !== controller) return;
       faculty = data.faculty;
-      updateFacultyOptions();
+      courseOptions = data.courseOptions;
+      setOptions(facultySelect, 'All faculty', faculty, person =>
+        faculty.some(other => other.id !== person.id && other.name === person.name) ? `${person.name} (#${person.id})` : person.name);
+      updateCourseOptions();
       for (const cell of root.querySelectorAll('[data-total]')) cell.textContent = number.format(data.totals[cell.dataset.total]);
       table('[data-course-rows]', data.courses.map(row => [
         row.title, row.total, ...states.map(([key]) => row[key]), row.total ? `${percent(row)}%` : '—'
@@ -209,18 +201,13 @@
       table('[data-day-rows]', data.trend.map(row => [row.date, ...activity.map(([key]) => row[key])]));
       const noLearners = !Object.values(data.status).some(Boolean);
       const dates = data.start === data.end ? data.start : `${data.start} to ${data.end}`;
-      message.textContent = `${dates} · Philippine time · ${data.selectedFaculty?.name || 'All faculty'}${noLearners ? ' · No learner progress recorded through the end date.' : ''}`;
+      message.textContent = `${dates} · Philippine time · ${data.selectedFaculty?.name || 'All faculty'} · ${data.selectedCourse?.title || 'All courses'}${noLearners ? ' · No learner progress for these filters.' : ''}`;
       results.hidden = false;
-      const previousCourse = modulesSelect.value;
-      coursesById = new Map(data.courses.map(course => [String(course.id), course]));
-      modulesSelect.replaceChildren(...data.courses.map(course => new Option(course.title, course.id)));
-      modulesSelect.disabled = !data.courses.length;
-      if (coursesById.has(previousCourse)) modulesSelect.value = previousCourse;
-      renderModules();
+      renderModules(data.courses);
       if (globalThis.Chart) renderCharts(data);
       else root.querySelector('.analytics-charts').hidden = true;
       start.max = end.max = data.today;
-      if (period.value !== 'custom') {
+      if (period.value === query.get('period') && period.value !== 'custom') {
         start.value = data.start;
         end.value = data.end;
       }
@@ -229,24 +216,7 @@
     }
   }
 
-  facultySearch.addEventListener('input', updateFacultyOptions);
-  facultySearch.addEventListener('keydown', event => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    const matching = updateFacultyOptions();
-    if (matching.length === 1) {
-      facultySelect.value = String(matching[0].id);
-      if (form.reportValidity()) load();
-    } else {
-      facultySelect.focus();
-    }
-  });
-  facultySelect.addEventListener('change', () => {
-    if (form.reportValidity()) load();
-  });
-  period.addEventListener('change', () => {
-    if (period.value !== 'custom') load();
-  });
+  facultySelect.addEventListener('change', updateCourseOptions);
   form.addEventListener('submit', event => {
     event.preventDefault();
     load();
