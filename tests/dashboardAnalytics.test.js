@@ -7,7 +7,7 @@ process.env.TEST_DB_STORAGE = ':memory:';
 process.env.ADMIN_INITIAL_PASSWORD = 'DummyAnalyticsAdminPass!';
 const { sequelize, User, Course, CourseAttempt } = await import('../models/learningModels.js');
 const { AuditLog, Section } = await import('../models/adminModels.js');
-const { CourseAssignment, QuizDraft } = await import('../models/portalModels.js');
+const { CourseAssignment, CourseRevision, QuizDraft } = await import('../models/portalModels.js');
 const { bootstrapAdmin, ownerEmail } = await import('../services/accounts.js');
 const { dashboardPeriod } = await import('../services/dashboardPeriod.js');
 const { startServer, closeResources } = await import('../index.js');
@@ -40,7 +40,18 @@ test('admin analytics reports real quiz and assignment progress with role and ba
       User.create({ name, role: 'student', email: `analytics-student-${index}@example.com`, password: hash, section: section.name, active: true, approvalStatus: 'approved' })
     ));
     const course = await Course.create({ title: 'Faculty analytics course', slug: 'faculty-analytics-fixture', published: true, ownerId: teacher.id, modules: [{ id: 'module', title: 'Module one' }] });
-    await Course.create({ title: 'Other analytics course', slug: 'other-analytics-fixture', published: true });
+    const otherTeacher = await User.create({ name: 'Other teacher', role: 'faculty', email: 'other-teacher@example.com' });
+    const oldDate = new Date('2025-06-02T16:00:00Z');
+    const other = await Course.create({
+      title: 'Other analytics course', slug: 'other-analytics-fixture', published: true, ownerId: otherTeacher.id, createdAt: oldDate
+    });
+    await CourseRevision.create({ courseId: other.id, action: 'admin-published', createdAt: oldDate });
+    await CourseRevision.create({ courseId: course.id, action: 'admin-published' });
+    const olderLearner = await User.create({ name: 'Older learner', email: 'older-learner@example.com', createdAt: oldDate });
+    await CourseAttempt.create({ courseId: other.id, userId: olderLearner.id, attemptNumber: 1, createdAt: oldDate,
+      snapshot: { modules: [{ id: 'past', title: 'Past module' }], passingScore: 75 },
+      quizAttempts: [{ scope: 'past', score: 100, at: oldDate.toISOString() }], completedAt: oldDate
+    });
     await CourseAssignment.create({ courseId: course.id, sectionId: section.id, facultyId: teacher.id });
     const snapshot = { modules: [{ id: 'module' }], passingScore: 75 };
     const at = new Date().toISOString();
@@ -82,13 +93,26 @@ test('admin analytics reports real quiz and assignment progress with role and ba
     assert.equal((await admin.get('/vendor/chart.umd.js')).status, 200);
 
     const adminStats = JSON.parse((await admin.get('/admin/analytics?period=day')).html);
-    assert.deepEqual(adminStats.status, { notStarted: 1, answering: 1, inProgress: 4, completed: 1 });
-    assert.deepEqual(adminStats.totals, { published: 2, started: 6, submitted: 5, completed: 1 });
+    assert.deepEqual(adminStats.status, { notStarted: 1, answering: 1, inProgress: 4, completed: 2 });
+    assert.deepEqual(adminStats.totals, { published: 1, started: 6, submitted: 5, retakes: 1, completed: 1 });
     assert.deepEqual(adminStats.courses.find(row => row.id === course.id).modules, [{
       title: 'Module one', total: 7, passed: 1, failedWithoutRetake: 1, failedAfterRetake: 1, ongoing: 2,
       notStarted: 2, historyUnavailable: 0, retook: 2, retookInPeriod: 1
     }]);
     assert.ok(adminStats.courses.some(row => row.title === 'Other analytics course'));
+    assert.equal(adminStats.trend.reduce((sum, row) => sum + row.submitted, 0), adminStats.totals.submitted);
+    const scoped = JSON.parse((await admin.get(`/admin/analytics?period=day&facultyId=${teacher.id}`)).html);
+    assert.deepEqual(scoped.selectedFaculty, { id: teacher.id, name: 'Teacher' });
+    assert.deepEqual(scoped.courses.map(row => row.id), [course.id]);
+    assert.equal(scoped.status.completed, 1);
+    assert.deepEqual(scoped.totals, adminStats.totals);
+    const past = JSON.parse((await admin.get(`/admin/analytics?period=custom&start=2025-06-03&end=2025-06-03&facultyId=${otherTeacher.id}`)).html);
+    assert.deepEqual(past.totals, { published: 1, started: 1, submitted: 1, retakes: 0, completed: 1 });
+    assert.equal(past.courses[0].modules[0].passed, 1);
+    const then = JSON.parse((await admin.get(`/admin/analytics?period=custom&start=2025-06-02&end=2025-06-02&facultyId=${otherTeacher.id}`)).html);
+    assert.equal(then.totals.submitted, 0);
+    assert.deepEqual(then.courses, []);
+    assert.equal((await admin.get(`/admin/analytics?facultyId=${learners[0].id}`)).status, 400);
     const prior = JSON.parse((await admin.get('/admin/analytics?period=custom&start=2000-01-01&end=2000-01-02')).html);
     assert.equal(prior.trend.length, 2);
     assert.equal(prior.courses.length, 0);
