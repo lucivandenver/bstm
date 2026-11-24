@@ -48,10 +48,11 @@ test('admin analytics reports real quiz and assignment progress with role and ba
     await CourseRevision.create({ courseId: other.id, action: 'admin-published', createdAt: oldDate });
     await CourseRevision.create({ courseId: course.id, action: 'admin-published' });
     const olderLearner = await User.create({ name: 'Older learner', email: 'older-learner@example.com', createdAt: oldDate });
-    await CourseAttempt.create({ courseId: other.id, userId: olderLearner.id, attemptNumber: 1, createdAt: oldDate,
+    const olderAttempt = await CourseAttempt.create({ courseId: other.id, userId: olderLearner.id, attemptNumber: 1, createdAt: oldDate,
       snapshot: { modules: [{ id: 'past', title: 'Past module' }], passingScore: 75 },
       quizAttempts: [{ scope: 'past', score: 100, at: oldDate.toISOString() }], completedAt: oldDate
     });
+    await sequelize.getQueryInterface().bulkUpdate(CourseAttempt.getTableName(), { updatedAt: oldDate.toISOString() }, { id: olderAttempt.id });
     await CourseAssignment.create({ courseId: course.id, sectionId: section.id, facultyId: teacher.id });
     const snapshot = { modules: [{ id: 'module' }], passingScore: 75 };
     const at = new Date().toISOString();
@@ -79,7 +80,12 @@ test('admin analytics reports real quiz and assignment progress with role and ba
     await faculty.login(teacher.email, password);
     await student.login(learners[0].email, password);
     const dashboard = (await admin.get('/admin')).html;
-    assert.match(dashboard, /Module progress by course/);
+    assert.doesNotMatch(dashboard, /Module progress by course/);
+    const reports = (await admin.get('/admin/reports')).html;
+    assert.match(reports, /Module progress by course/);
+    assert.match(reports, /name="courseId"/);
+    assert.match(reports, /Download learning report/);
+    assert.doesNotMatch(reports, /Search faculty by name/);
     assert.doesNotMatch(dashboard, /Export Database/);
     assert.match((await admin.get('/admin/maintenance')).html, /Export Database \(\.sql\)/);
     assert.doesNotMatch((await faculty.get('/faculty')).html, /Learning analytics|Export Database/);
@@ -93,13 +99,18 @@ test('admin analytics reports real quiz and assignment progress with role and ba
     assert.equal((await admin.get('/vendor/chart.umd.js')).status, 200);
 
     const adminStats = JSON.parse((await admin.get('/admin/analytics?period=day')).html);
-    assert.deepEqual(adminStats.status, { notStarted: 1, answering: 1, inProgress: 4, completed: 2 });
+    assert.deepEqual(adminStats.status, { notStarted: 1, answering: 1, inProgress: 4, completed: 1 });
     assert.deepEqual(adminStats.totals, { published: 1, started: 6, submitted: 5, retakes: 1, completed: 1 });
     assert.deepEqual(adminStats.courses.find(row => row.id === course.id).modules, [{
       title: 'Module one', total: 7, passed: 1, failedWithoutRetake: 1, failedAfterRetake: 1, ongoing: 2,
       notStarted: 2, historyUnavailable: 0, retook: 2, retookInPeriod: 1
     }]);
-    assert.ok(adminStats.courses.some(row => row.title === 'Other analytics course'));
+    assert.ok(adminStats.courseOptions.some(row => row.id === other.id));
+    assert.ok(!adminStats.courses.some(row => row.id === other.id));
+    const chosen = JSON.parse((await admin.get(`/admin/analytics?period=day&courseId=${course.id}`)).html);
+    assert.equal(chosen.selectedCourse.id, course.id);
+    assert.deepEqual(chosen.courses.map(row => row.id), [course.id]);
+    assert.equal((await admin.get(`/admin/analytics?facultyId=${teacher.id}&courseId=${other.id}`)).status, 400);
     assert.equal(adminStats.trend.reduce((sum, row) => sum + row.submitted, 0), adminStats.totals.submitted);
     const scoped = JSON.parse((await admin.get(`/admin/analytics?period=day&facultyId=${teacher.id}`)).html);
     assert.deepEqual(scoped.selectedFaculty, { id: teacher.id, name: 'Teacher' });
