@@ -17,9 +17,19 @@
   const activity = [
     ['published', 'First published', '#6b43a7'],
     ['started', 'Started', '#2369ac'],
-    ['submitted', 'Quiz submissions', '#a04f0a'],
+    ['submitted', 'Module quiz submissions', '#a04f0a'],
     ['completed', 'Completed', '#007042'],
   ];
+  const modulesSelect = root.querySelector('[data-module-course]');
+  const moduleStates = [
+    ['passed', 'Passed', '#007042'],
+    ['failedWithoutRetake', 'Failed · no retake', '#a82745'],
+    ['failedAfterRetake', 'Failed after retake', '#8141a1'],
+    ['ongoing', 'Ongoing', '#2369ac'],
+    ['notStarted', 'Not started', '#64748b'],
+    ['historyUnavailable', 'History unavailable', '#ad691a']
+  ];
+  let moduleChart, coursesById;
   const percent = row => row.total ? Math.round(100 * row.completed / row.total) : 0;
 
   function chart(name, config) {
@@ -94,6 +104,38 @@
     }));
   }
 
+  function renderModules() {
+    moduleChart?.destroy();
+    const modules = coursesById.get(modulesSelect.value)?.modules ?? [];
+    root.querySelector('[data-module-results]').hidden = !modules.length;
+    root.querySelector('[data-module-empty]').hidden = !!modules.length;
+    table('[data-module-rows]', modules.map(row => [
+      row.title, row.total, ...moduleStates.map(([key]) => row[key]), row.retook, row.retookInPeriod
+    ]));
+    const canvas = root.querySelector('[data-module-chart]');
+    canvas.parentElement.hidden = !globalThis.Chart || !modules.length;
+    if (!globalThis.Chart || !modules.length) return;
+    canvas.parentElement.style.height = `${Math.max(210, modules.length * 30 + 90)}px`;
+    moduleChart = new Chart(canvas, {
+      type: 'bar',
+      data: { labels: modules.map(row => row.title), datasets: moduleStates.map(([key, label, color]) => ({
+        label, backgroundColor: color, data: modules.map(row => row[key])
+      })) },
+      options: {
+        indexAxis: 'y', maintainAspectRatio: false, animation: false,
+        scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true, ticks: {
+          callback(value) {
+            const label = this.getLabelForValue(value);
+            return label.length > 24 ? `${label.slice(0, 23)}…` : label;
+          }
+        } } },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+  }
+
+  modulesSelect.addEventListener('change', renderModules);
+
   async function load() {
     request?.abort();
     const controller = new AbortController();
@@ -114,10 +156,18 @@
       ]));
       table('[data-day-rows]', data.trend.map(row => [row.date, ...activity.map(([key]) => row[key])]));
       const noLearners = !Object.values(data.status).some(Boolean);
-      message.textContent = `${data.start} to ${data.end}${noLearners ? ' · No learner progress recorded through the end date.' : ''}`;
+      const dates = data.start === data.end ? data.start : `${data.start} to ${data.end}`;
+      message.textContent = `${dates} · Philippine time${noLearners ? ' · No learner progress recorded through the end date.' : ''}`;
       results.hidden = false;
+      const previousCourse = modulesSelect.value;
+      coursesById = new Map(data.courses.map(course => [String(course.id), course]));
+      modulesSelect.replaceChildren(...data.courses.map(course => new Option(course.title, course.id)));
+      modulesSelect.disabled = !data.courses.length;
+      if (coursesById.has(previousCourse)) modulesSelect.value = previousCourse;
+      renderModules();
       if (globalThis.Chart) renderCharts(data);
       else root.querySelector('.analytics-charts').hidden = true;
+      start.max = end.max = data.today;
       if (period.value !== 'custom') {
         start.value = data.start;
         end.value = data.end;
@@ -128,13 +178,7 @@
   }
 
   period.addEventListener('change', () => {
-    const custom = period.value === 'custom';
-    for (const field of [start, end]) {
-      field.disabled = !custom;
-      field.required = custom;
-      field.parentElement.hidden = !custom;
-    }
-    if (!custom) load();
+    if (period.value !== 'custom') load();
   });
   form.addEventListener('submit', event => {
     event.preventDefault();

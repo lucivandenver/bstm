@@ -1,30 +1,15 @@
 import { Op } from 'sequelize';
 import { Course, CourseAttempt, User } from '../models/learningModels.js';
-import { Section, AuditLog } from '../models/adminModels.js';
-import { CourseAssignment, CourseRevision, QuizDraft } from '../models/portalModels.js';
+import { AuditLog, Section } from '../models/adminModels.js';
+import { CourseAssignment, QuizDraft } from '../models/portalModels.js';
 import { allModulesPassed } from './learning.js';
 
-const DAY = 86_400_000;
-const manila = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Manila' });
-const dayKey = date => manila.format(date);
-const midnight = date => new Date(`${date}T00:00:00+08:00`);
-const validDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-  Number.isFinite(+midnight(value)) && dayKey(midnight(value)) === value;
-const periods = { day: 1, week: 7, month: 30 };
-const blankStatus = () => ({ notStarted: 0, inProgress: 0, answering: 0, completed: 0 });
+import { philippineDate } from './dashboardPeriod.js';
+import { firstPublicationDates } from './coursePublications.js';
+import { moduleActivity, summarizeModules } from './moduleAnalytics.js';
 
-export function analyticsRange({ period = 'week', start, end }, now = new Date()) {
-  const today = dayKey(now);
-  if (Object.hasOwn(periods, period)) {
-    end = today;
-    start = dayKey(new Date(+midnight(end) - (periods[period] - 1) * DAY));
-  } else if (period !== 'custom') return null;
-  if (!validDay(start) || !validDay(end) || start > end || end > today) return null;
-  const from = midnight(start);
-  const through = new Date(+midnight(end) + DAY);
-  if ((through - from) / DAY > 366) return null;
-  return { start, end, from, through };
-}
+const DAY = 86_400_000;
+const blankStatus = () => ({ notStarted: 0, inProgress: 0, answering: 0, completed: 0 });
 
 function completionDate(attempt) {
   if (!allModulesPassed(attempt)) return null;
@@ -32,29 +17,24 @@ function completionDate(attempt) {
   const passes = attempt.snapshot.modules.map(module => (attempt.quizAttempts || []).find(
     result => result.scope === module.id && !result.expired && result.score >= attempt.snapshot.passingScore
   )?.at);
-  return passes.every(Boolean) ? new Date(Math.max(...passes.map(Date.parse))) : attempt.updatedAt;
+  return passes.every(Boolean) ? new Date(Math.max(...passes.map(Date.parse))) : null;
 }
 
-export function summarizeAnalytics(range, { courses, publications, attempts, drafts, assignments, sections, students }) {
+function summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students, events }) {
   const days = new Map();
   for (let timestamp = +range.from; timestamp < +range.through; timestamp += DAY) {
-    const date = dayKey(new Date(timestamp));
+    const date = philippineDate(new Date(timestamp));
     days.set(date, { date, published: 0, started: 0, submitted: 0, completed: 0 });
   }
   const record = (date, metric) => {
     if (date == null || !Number.isFinite(+new Date(date))) return;
-    const day = days.get(dayKey(new Date(date)));
+    const day = days.get(philippineDate(new Date(date)));
     if (day) day[metric]++;
   };
 
-  const firstPublication = new Map();
-  for (const { courseId, at } of publications) {
-    const current = firstPublication.get(courseId);
-    if (!current || at < current) firstPublication.set(courseId, at);
-  }
   const byCourse = new Map();
   for (const course of courses) {
-    const publishedAt = course.starter ? course.createdAt : firstPublication.get(course.id) || (course.published ? course.createdAt : null);
+    const publishedAt = publishedDates.get(course.id);
     record(publishedAt, 'published');
     byCourse.set(course.id, { course, publishedAt, learners: new Map() });
   }
@@ -74,18 +54,24 @@ export function summarizeAnalytics(range, { courses, publications, attempts, dra
     }
   }
 
+  const { saved, restarts } = moduleActivity(drafts, events);
+  const attemptsByCourse = new Map();
   const answering = new Set(drafts.filter(draft => Object.keys(draft.answers || {}).length).map(draft => draft.attemptId));
   for (const attempt of attempts) {
     const entry = byCourse.get(attempt.courseId);
     if (!entry || !studentIds.has(attempt.userId)) continue;
+    if (!attemptsByCourse.has(attempt.courseId)) attemptsByCourse.set(attempt.courseId, []);
+    attemptsByCourse.get(attempt.courseId).push(attempt);
     const previous = entry.learners.get(attempt.userId);
     if (!previous?.attemptNumber) record(attempt.createdAt, 'started');
     for (const result of attempt.quizAttempts || []) {
-      if (!result.expired && result.scope !== 'final') record(result.at, 'submitted');
+      if (!result.expired && result.scope !== 'final' && result.scope !== 'pretest' && Number.isFinite(result.score)) record(result.at, 'submitted');
     }
     const completedAt = completionDate(attempt);
     record(completedAt, 'completed');
-    const status = completedAt && completedAt < range.through ? 'completed' :
+    const completeByEnd = completedAt && completedAt < range.through ||
+      attempt.updatedAt < range.through && allModulesPassed(attempt);
+    const status = completeByEnd ? 'completed' :
       answering.has(attempt.id) ? 'answering' : 'inProgress';
     // Attempts are ordered oldest to newest by attempt number.
     entry.learners.set(attempt.userId, { status, attemptNumber: attempt.attemptNumber });
@@ -93,14 +79,16 @@ export function summarizeAnalytics(range, { courses, publications, attempts, dra
 
   const status = blankStatus();
   const rows = [];
-  for (const { course, learners, publishedAt } of byCourse.values()) {
+  for (const entry of byCourse.values()) {
+    const { course, learners, publishedAt } = entry;
     if (!learners.size && (!publishedAt || publishedAt >= range.through)) continue;
     const counts = blankStatus();
     for (const learner of learners.values()) {
       counts[learner.status]++;
       status[learner.status]++;
     }
-    rows.push({ title: course.title, total: learners.size, ...counts });
+    rows.push({ id: course.id, title: course.title, total: learners.size, ...counts,
+      modules: summarizeModules(entry, range, saved, restarts, attemptsByCourse.get(course.id) || []) });
   }
   rows.sort((a, b) => b.total - a.total || a.title.localeCompare(b.title));
   const trend = [...days.values()];
@@ -110,28 +98,32 @@ export function summarizeAnalytics(range, { courses, publications, attempts, dra
   return { start: range.start, end: range.end, status, trend, courses: rows, totals };
 }
 
-export async function dashboardAnalytics(range, ownerId) {
+export async function dashboardAnalytics(range) {
   const before = { [Op.lt]: range.through };
   const courses = await Course.findAll({
-    where: { createdAt: before, ...(ownerId === undefined ? {} : { ownerId }) },
-    attributes: ['id', 'title', 'published', 'starter', 'createdAt'], raw: true
+    where: { createdAt: before },
+    attributes: ['id', 'title', 'published', 'starter', 'createdAt', 'updatedAt', 'modules']
   });
   const courseId = { [Op.in]: courses.map(course => course.id) };
-  const [revisions, events, attempts, assignments] = await Promise.all([
-    CourseRevision.findAll({ where: { courseId, action: ['published', 'admin-published', 'publication-approved', 'module-published'] }, attributes: ['courseId', 'action', 'createdAt', 'updatedAt'], raw: true }),
-    AuditLog.findAll({ where: { targetType: 'course', targetId: { [Op.in]: courses.map(course => String(course.id)) }, action: ['course.published', 'course.republished', 'module.published', 'module.republished'] }, attributes: ['targetId', 'createdAt'], raw: true }),
+  const [publishedDates, attempts, assignments] = await Promise.all([
+    firstPublicationDates(courses),
     CourseAttempt.findAll({
       where: { courseId, createdAt: before },
-      attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedAt', 'createdAt', 'updatedAt'],
+      attributes: ['id', 'courseId', 'userId', 'attemptNumber', 'snapshot', 'quizScores', 'quizAttempts', 'completedLessons', 'completedAt', 'createdAt', 'updatedAt'],
       order: [['attemptNumber', 'ASC']]
     }),
     CourseAssignment.findAll({ where: { courseId, createdAt: before }, attributes: ['courseId', 'sectionId'], raw: true })
   ]);
-  const [sections, drafts] = await Promise.all([
+  const [sections, drafts, events] = await Promise.all([
     Section.findAll({ where: { id: { [Op.in]: [...new Set(assignments.map(row => row.sectionId))] } }, attributes: ['id', 'name'], raw: true }),
     QuizDraft.findAll({
       where: { attemptId: { [Op.in]: attempts.map(attempt => attempt.id) }, updatedAt: before },
-      attributes: ['attemptId', 'answers']
+      attributes: ['attemptId', 'answers', 'scope', 'startedAt']
+    }),
+    AuditLog.findAll({
+      where: { action: 'module.retake_started', targetType: 'attempt',
+        targetId: { [Op.in]: attempts.map(attempt => String(attempt.id)) }, createdAt: before },
+      attributes: ['targetId', 'createdAt', 'details'], order: [['createdAt', 'ASC'], ['id', 'ASC']]
     })
   ]);
   const students = await User.findAll({
@@ -144,9 +136,5 @@ export async function dashboardAnalytics(range, ownerId) {
     },
     attributes: ['id', 'section'], raw: true
   });
-  const publications = [
-    ...events.map(row => ({ courseId: Number(row.targetId), at: row.createdAt })),
-    ...revisions.map(row => ({ courseId: row.courseId, at: row.action === 'module-published' ? row.updatedAt : row.createdAt }))
-  ];
-  return summarizeAnalytics(range, { courses, publications, attempts, drafts, assignments, sections, students });
+  return summarizeAnalytics(range, { courses, publishedDates, attempts, drafts, assignments, sections, students, events });
 }

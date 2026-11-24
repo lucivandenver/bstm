@@ -340,3 +340,14 @@ dialog.award-dialog.award-detail { box-sizing:border-box; width:min(760px,calc(1
 @media(max-width:1100px) { .award-gallery-flow { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:800px) { .award-gallery-flow { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:480px) { .award-gallery-flow { grid-template-columns:1fr; } }
+
+.monitoring-pagination {
+  display: grid;
+  justify-items: center;
+  gap: .55rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+.monitoring-pagination p { margin: 0; }
+.monitoring-pagination .actions { justify-content: center; gap: .6rem; }
+.monitoring-pagination .button { min-height: 44px; padding: .55rem .85rem; }

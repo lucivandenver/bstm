@@ -1,1 +1,110 @@
-{{> facultyTop}}<div class="hero-banner"><div class="teaching-banner-copy"><p class="eyebrow">YOUR TEACHING WORKSPACE</p><h2>Support the next step.</h2><p>Build learning experiences and monitor students in the courses you publish.</p></div><div class="actions"><a class="button light" href="/faculty/upload">Upload & generate</a><a class="button light secondary" href="/faculty/students">View student progress</a></div></div><div class="stats-grid space-top"><a class="stat-card dashboard-link" href="/faculty/students"><span class="stat-card-icon">{{> icon name="users"}}</span><small>Students in my courses</small><strong>{{studentCount}}</strong></a><a class="stat-card dashboard-link" href="/faculty/courses"><span class="stat-card-icon">{{> icon name="book"}}</span><small>Published courses</small><strong>{{publishedCount}}</strong></a><a class="stat-card {{#if pendingCredentials}}publication-needs-review{{/if}} dashboard-link" href="/faculty/credentials"><span class="stat-card-icon">{{> icon name="certificate"}}</span><small>Credential requests pending</small><strong>{{pendingCredentials}}</strong><span class="dashboard-card-action">Review status</span></a><a class="stat-card dashboard-link" href="/faculty/students?status=ongoing"><span class="stat-card-icon">{{> icon name="play"}}</span><small>Active learners</small><strong>{{active}}</strong></a><a class="stat-card dashboard-link" href="/faculty/reports"><span class="stat-card-icon">{{> icon name="chart"}}</span><small>Module pass rate</small><strong>{{completionRate}}%</strong><small>{{modulesPassed}} of {{modulesTotal}} modules in course attempts passed</small><small>{{completed}} of {{attemptCount}} full course attempts completed</small></a><a class="stat-card dashboard-link" href="/faculty/evaluations"><span class="stat-card-icon">{{> icon name="clock"}}</span><small>Awaiting grading</small><strong>{{pending}}</strong></a></div>{{> dashboardAnalytics endpoint="/faculty/analytics"}}<div class="grid cols-2 space-top"><section class="card"><h2>Course section targets</h2>{{#each sections}}<p class="assignment-item"><strong>{{name}}</strong><span>{{academicYear}}</span></p>{{else}}<div class="empty">Faculty are not assigned to sections. Learner monitoring follows course enrollments and course-section assignments.</div>{{/each}}{{#each students}}<p class="small"><a class="text-link" href="/faculty/students/{{id}}">{{name}} · {{studentId}}</a></p>{{/each}}<a class="text-link" href="/faculty/students">Open student records →</a></section><section class="card"><h2>Students needing a check-in</h2><p class="small muted">No recorded learning activity for at least 7 days in an ongoing course.</p>{{#each support}}<p><a class="text-link" href="/faculty/students/{{id}}">{{name}} · {{section}} →</a></p>{{else}}<div class="empty">No inactive learners to flag.</div>{{/each}}</section></div>{{> studentBottom}}
+{{> facultyTop}}
+<div class="hero-banner">
+  <div class="teaching-banner-copy">
+    <p class="eyebrow">YOUR TEACHING WORKSPACE</p>
+    <h2>Support the next step.</h2>
+    <p>Build learning experiences and monitor students in the courses you publish.</p>
+  </div>
+  <div class="actions">
+    <a class="button light" href="/faculty/upload">Upload &amp; generate</a>
+    <a class="button light secondary" href="/faculty/students">View student progress</a>
+  </div>
+</div>
+<section class="dashboard-period-panel space-top" aria-label="Faculty dashboard date filter">
+  <form class="dashboard-period-form" action="/faculty" method="get" data-no-dirty>
+    {{> dashboardPeriodFields allTime=true}}
+  </form>
+  <p class="dashboard-period-status small muted">{{#if filtered}}{{start}}{{#unless (eq start end)}} to {{end}}{{/unless}}{{else}}All time{{/if}} · Philippine time</p>
+</section>
+<div class="stats-grid space-top">
+  <a class="stat-card dashboard-link" href="/faculty/students">
+    <span class="stat-card-icon">{{> icon name="users"}}</span>
+    <small>{{#if filtered}}Students enrolled{{else}}Students in my courses{{/if}}</small>
+    <strong>{{studentCount}}</strong>
+  </a>
+  <a class="stat-card dashboard-link" href="/faculty/courses">
+    <span class="stat-card-icon">{{> icon name="book"}}</span>
+    <small>{{#if filtered}}Courses first published{{else}}Published courses{{/if}}</small>
+    <strong>{{publishedCount}}</strong>
+  </a>
+  <a class="stat-card {{#if pendingCredentials}}publication-needs-review{{/if}} dashboard-link" href="/faculty/credentials">
+    <span class="stat-card-icon">{{> icon name="certificate"}}</span>
+    <small>Credential requests pending</small>
+    <strong>{{pendingCredentials}}</strong>
+    <span class="dashboard-card-action">Review status</span>
+  </a>
+  <a class="stat-card dashboard-link" href="/faculty/students?status=ongoing">
+    <span class="stat-card-icon">{{> icon name="play"}}</span>
+    <small>Active learners</small>
+    <strong>{{active}}</strong>
+  </a>
+  <a class="stat-card dashboard-link" href="/faculty/reports">
+    <span class="stat-card-icon">{{> icon name="chart"}}</span>
+    <small>Module pass rate</small>
+    <strong>{{#if modulesTotal}}{{completionRate}}%{{else}}—{{/if}}</strong>
+    <small>{{modulesPassed}} of {{modulesTotal}} modules in course attempts passed</small>
+    <small>{{completed}} of {{attemptCount}} full course attempts completed</small>
+  </a>
+  <a class="stat-card dashboard-link" href="/faculty/evaluations">
+    <span class="stat-card-icon">{{> icon name="clock"}}</span>
+    <small>Awaiting grading</small>
+    <strong>{{pending}}</strong>
+  </a>
+</div>
+{{#if filtered}}
+<p class="small muted dashboard-period-note">Learner and module progress reflect recorded activity in the selected period. Pending counts include submissions from that period that still need review.</p>
+{{/if}}
+<div class="grid cols-2 space-top faculty-dashboard-charts">
+  <section class="card">
+    <h2>Active learners by course</h2>
+    {{#if learnerActivity.length}}
+    <p class="small muted">Students with ongoing attempts. A student can appear in more than one course.{{#if manyCoursesWithActivity}} Showing the eight courses with the most active learners.{{/if}}</p>
+    <div class="analytics-canvas" data-faculty-chart-area hidden>
+      <canvas data-faculty-activity="{{json learnerActivity}}" role="img" aria-label="Bar chart of active learners by course"></canvas>
+    </div>
+    <details>
+      <summary>View counts by course</summary>
+      <div class="table-wrap">
+        <table><thead><tr><th>Course</th><th>Active learners</th></tr></thead>
+          <tbody>{{#each learnerActivity}}<tr><td>{{title}}</td><td>{{learners}}</td></tr>{{/each}}</tbody>
+        </table>
+      </div>
+    </details>
+    {{else}}
+    <p class="empty">No active learners in this period.</p>
+    {{/if}}
+  </section>
+  <section class="card">
+    <h2>Module progress</h2>
+    {{#if modulesTotal}}
+    <p class="small muted">{{modulesPassed}} passed · {{modulesRemaining}} still to pass</p>
+    <div class="analytics-canvas" data-faculty-chart-area hidden>
+      <canvas data-modules-passed="{{modulesPassed}}" data-modules-remaining="{{modulesRemaining}}" role="img" aria-label="Doughnut chart of passed and remaining modules"></canvas>
+    </div>
+    {{else}}
+    <p class="empty">No module attempts in this period.</p>
+    {{/if}}
+  </section>
+</div>
+<div class="grid cols-2 space-top">
+  <section class="card">
+    <h2>Course section targets</h2>
+    {{#each sections}}
+    <p class="assignment-item"><strong>{{name}}</strong><span>{{academicYear}}</span></p>
+    {{else}}
+    <div class="empty">Faculty are not assigned to sections. Learner monitoring follows course enrollments and course-section assignments.</div>
+    {{/each}}
+    {{#each students}}<p class="small"><a class="text-link" href="/faculty/students/{{id}}">{{name}} · {{studentId}}</a></p>{{/each}}
+    <a class="text-link" href="/faculty/students">Open student records →</a>
+  </section>
+  <section class="card">
+    <h2>Students needing a check-in</h2>
+    <p class="small muted">No recorded learning activity for at least 7 days in an ongoing course.</p>
+    {{#each support}}
+    <p><a class="text-link" href="/faculty/students/{{id}}">{{name}} · {{section}} →</a></p>
+    {{else}}
+    <div class="empty">No inactive learners to flag.</div>
+    {{/each}}
+  </section>
+</div>
+{{> studentBottom}}
